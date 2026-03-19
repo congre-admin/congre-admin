@@ -64,3 +64,33 @@ El sistema utiliza estas expresiones tanto en el frontend (feedback inmediato) c
 ### Sanitización Pública
 `$map(payload, function($v) { $sift($v, function($val, $key) { $not($startsWith($key, 'enc_')) }) })`
 *Elimina recursivamente cualquier campo que comience con `enc_`.*
+
+## 7. Entidades Nombradas y Contexto (JSONata)
+Para simplificar las consultas y validaciones cruzadas entre módulos, el motor JSONata del Core pre-vincula las siguientes variables globales:
+
+- **`$personas`**: Acceso directo al censo completo descifrado.
+    - *Ejemplo:* `$personas[id = $.responsableId].identidad.nombre` (Obtiene el nombre de un responsable usando su ID).
+- **`$config`**: Diccionario de la tabla `Configuracion`.
+    - *Ejemplo:* `$.fecha > $config.fecha_limite`
+- **`$usuario`**: Información de la sesión activa.
+    - *Ejemplo:* `$.creadoPor = $usuario.id`
+- **`$ahora`**: Fecha y hora actual del sistema.
+
+### Contexto Global Dinámico (Etiquetas del Usuario)
+Además de las variables del manifiesto, el Core inyecta variables basadas en la tabla `Sistema_Etiquetas`. Cada registro en esta tabla genera una variable global accesible mediante su `id`.
+- **Mecánica:** El Core ejecuta `contexto_jsonata` sobre la base de datos de personas y asigna el resultado a `$id`.
+- **Ejemplo:** Si existe la etiqueta con ID `Inactivos` y consulta `$personas[$.enc_servicio.participo = false]`, cualquier plugin puede usar `$Inactivos` para obtener ese subconjunto.
+
+### Entidades Locales de Módulo
+Cada plugin puede registrar alias para sus propias tablas en el `Manifest` bajo la clave `dataAliases`. Estos alias se inyectan como variables adicionales cuando el motor ejecuta lógica para ese plugin.
+- **Ejemplo (Reuniones):** Si el manifest define `"plantillas": "Plantillas_Reuniones"`, el plugin puede usar `$plantillas[id = 'r1']` directamente.
+
+### Colecciones Inteligentes (Computed Variables)
+El Core permite definir alias para subconjuntos de datos complejos en el `Manifest`. Estas variables se evalúan dinámicamente y están disponibles globalmente o localmente.
+- **Ejemplo (Personas):** Si el manifest define `"ancianos": "$personas['Anciano' in enc_servicio.etiquetas]"`, cualquier parte del sistema puede usar `$ancianos` para obtener la lista filtrada.
+- **Uso en Selectores:** Un componente `<PersonaSelector />` puede configurarse para mostrar solo `$ancianos` de forma declarativa.
+
+### Funciones Extendidas
+El Core registra funciones personalizadas dentro del motor:
+- **`$isRole('admin')`**: Valida si el usuario actual pertenece a un perfil.
+- **`$decrypt(campo)`**: Función interna para manejar campos `enc_` de forma transparente.

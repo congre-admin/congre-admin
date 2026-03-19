@@ -13,8 +13,13 @@ Es el motor estable que proporciona los servicios esenciales a toda la aplicaci�
 
 ## 2. Definición de Plug-in
 Un módulo es una unidad independiente que se "enchufa" al Core cumpliendo esta estructura:
--   **Manifest:** JSON que define nombre, icono, permisos y tablas requeridas.
--   **Views:** Componentes React que se renderizan dentro del Shell UI.
+-   **Manifest:** JSON que define:
+    -   Metadatos base (nombre, icono, versión).
+    -   Permisos y rutas.
+    - **Data Aliases:** Definición de entidades nombradas locales para JSONata (ej: `{"plantillas": "Plantillas_Reuniones"}`).
+    - **Computed Variables:** Colecciones inteligentes pre-filtradas (ej: `{"ancianos": "$personas['Anciano' in enc_servicio.etiquetas]"}`).
+    -   **Views:** Componentes React que se renderizan dentro del Shell UI.
+
 -   **Esquema:** Definiciones dinámicas para la tabla `Sistema_Esquema`.
 -   **Lógica:** Expresiones JSONata específicas para validaciones del módulo.
 -   **Seed Data:** Archivo JSON con datos iniciales (plantillas, catálogos, configuraciones base) que se inyectan en el primer uso.
@@ -111,3 +116,29 @@ Antes de realizar un borrado de una entidad primaria (ej: una Persona), el Core 
 1. **Consulta de Uso:** El Core pregunta a los plugins registrados: `¿Alguien usa el ID [X]?`.
 2. **Respuesta del Plugin:** El plugin de *Reuniones* o *Predicación* revisa sus tablas y responde si hay vínculos activos.
 3. **Bloqueo o Alerta:** Si existen dependencias, el Core impide el borrado y muestra una lista de los lugares donde se usa ese dato, sugiriendo reasignar antes de borrar.
+
+## 10. Formato de Seed Data (Datos Iniciales)
+Para evitar IDs hardcodeados que puedan colisionar entre congregaciones, el sistema utiliza un formato de "Mapeo de Referencias" durante la provisión de módulos:
+
+### A. Estructura del JSON
+Los IDs que comienzan con `@` se consideran identificadores relativos (variables de sesión de inyección).
+
+~~~json
+{
+  "tablas": {
+    "Plantillas_Reuniones": [
+      { "id": "@reunion_vym", "nombre": "Reunión Vida y Ministerio" }
+    ],
+    "Plantillas_Secciones": [
+      { "id": "@seccion_tesoros", "reunionId": "@reunion_vym", "nombre": "Tesoros" }
+    ]
+  }
+}
+~~~
+
+### B. Proceso de Inyección (Core Logic)
+1. **Detección:** El Core identifica todos los strings que inician con `@`.
+2. **Generación:** Para cada identificador único (ej: `@reunion_vym`), el Core genera un UUID real.
+3. **Mapeo:** Se crea un diccionario temporal de traducción.
+4. **Reemplazo:** Se recorre todo el objeto de Seed Data sustituyendo las variables `@` por sus UUIDs correspondientes, preservando así la integridad referencial.
+5. **Carga:** Se envían los datos transformados al backend mediante una operación batch.

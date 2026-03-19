@@ -84,6 +84,14 @@ La ficha se divide en bloques lógicos: Identidad, Contacto, Servicio y Metadato
 -   **Organización por Pestañas:** Identidad, Contacto, Servicio y Metadatos.
 -   **Indicadores de Privacidad:** Iconos de "candado" en campos que serán cifrados mediante AES-GCM.
 
+### E. Gestión de Etiquetas y Categorías (Configuración)
+Interfaz exclusiva para administradores que permite definir la semántica del sistema:
+-   **Diccionario de Categorías:** Definición de grupos (ej: `Servicio`, `Privilegios`, `Grupos`) con asignación de color global.
+-   **Editor de Etiquetas:** 
+    -   Vinculación a una categoría.
+    -   **Contexto Inteligente:** Campo para escribir la expresión JSONata que define a este grupo (ej: `$inactivos`).
+    -   **Sincronización:** Al guardar, el Core actualiza la tabla `Sistema_Etiquetas` y refresca el motor de variables globales.
+
 ---
 
 ## 3. Privacidad y Sanitización

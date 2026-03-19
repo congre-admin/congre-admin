@@ -37,6 +37,12 @@ Para inicializar el sistema, el archivo GSheet maestro debe contener las siguien
 - `nombre`: Nombre descriptivo (ej: "Secretario", "Siervo de Territorios").
 - `permisos`: Objeto JSON con el mapa de accesos (ej: `{"personas": "RW", "territorios": "R"}`).
 
+### Tabla: `Etiquetas` (NUEVA)
+- `id`: Nombre de la etiqueta (ej: `Anciano`).
+- `categoria`: Grupo al que pertenece (ej: `Privilegios`).
+- `color`: Código hexadecimal (ej: `#2196F3`).
+- `contexto_jsonata`: Expresión asociada para la variable global (ej: `$personas['Anciano' in enc_servicio.etiquetas]`).
+
 ### Tabla: `Registro_Plugins`
 - `plugin_id`: Identificador (ej: `reuniones_programa`).
 - `ssId`: ID del GSheet físico donde reside el plugin.
