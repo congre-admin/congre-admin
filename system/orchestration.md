@@ -1,19 +1,131 @@
-# Congre-Admin AI Agent - Multi-Agent Orchestration System
+# Congre-Admin AI Agent - Multi-Agent Orchestration System (Production Complete)
 
-**Version:** 3.0.0  
+**Version:** 4.0.0  
 **Last Updated:** 2026-03-20
 
 ---
 
 ## Overview
 
-This document defines the **Multi-Agent Orchestration Layer** for the Congre-Admin AI Agent system.
+This document defines the **Production-Complete Multi-Agent Orchestration Layer** for the Congre-Admin AI Agent system.
 
-The system uses **three specialized agents** working in coordination to improve reliability, validation rigor, and output consistency.
+This version extends v3.0.0 with:
+- Escalation paths (Reviewer → Planner)
+- Explicit system state model
+- Stricter Reviewer enforcement
+- Complexity control rules
+- Iteration discipline
+- Audit trail
+- Failure/refusal handling
 
 ---
 
-## Agent Architecture
+## System State Model (EXPLICIT)
+
+### State Elements
+
+All agents share and maintain this state:
+
+```typescript
+interface SystemState {
+  // Phase 1: Planning
+  userRequest: string;
+  requirements: Requirement[];
+  assumptions: Assumption[];
+  ambiguities: Ambiguity[];
+  plan: StructuredPlan;
+  
+  // Phase 2: Execution
+  implementation: Implementation;
+  
+  // Phase 3: Review
+  validationReport: ValidationReport;
+  
+  // Iteration tracking
+  iterationHistory: IterationRecord[];
+  iterationCount: number;
+  
+  // Audit trail
+  decisionLog: DecisionRecord[];
+}
+```
+
+### State Elements Defined
+
+| Element | Description | Read By | Written By |
+|---------|-------------|---------|------------|
+| `userRequest` | Original user request | All | Planner |
+| `requirements` | Extracted requirements list | All | Planner |
+| `assumptions` | Documented assumptions (Class B/C) | All | Planner |
+| `ambiguities` | Identified ambiguities with class | All | Planner |
+| `plan` | Structured implementation plan | Executor, Reviewer | Planner |
+| `implementation` | Full implementation output | Reviewer | Executor |
+| `validationReport` | L1-L5 validation results | Planner, Executor | Reviewer |
+| `iterationHistory` | Record of all iterations | All | Reviewer |
+| `iterationCount` | Current iteration number | All | Reviewer |
+| `decisionLog` | Key decisions with rationale | All | All agents |
+
+### State Transition Protocol
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  STATE: Initial                                             │
+│  - userRequest: [from user]                                 │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              │ Planner reads/writes
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│  STATE: Planned                                             │
+│  - requirements: [extracted]                                │
+│  - assumptions: [documented]                                │
+│  - plan: [structured]                                       │
+│  - decisionLog: [planning rationale]                        │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              │ Executor reads plan, writes implementation
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│  STATE: Implemented                                         │
+│  - implementation: [complete]                               │
+│  - decisionLog: [..., implementation notes]                 │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              │ Reviewer reads, writes validation
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│  STATE: Validated                                           │
+│  - validationReport: [L1-L5 results]                        │
+│  - iterationHistory: [record]                               │
+│  - decisionLog: [..., validation decision]                  │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                    ┌─────────┴─────────┐
+                    │                   │
+                    ▼                   ▼
+              [PASS]              [FAIL → Iterate]
+                    │                   │
+                    │                   └──────┐
+                    │                          │
+                    ▼                          ▼
+            ┌──────────────────────────────────────────┐
+            │  STATE: Complete / STATE: Iterating      │
+            └──────────────────────────────────────────┘
+```
+
+### State Consistency Rules
+
+| Rule | Description |
+|------|-------------|
+| **S-01** | State MUST be passed完整 between agents |
+| **S-02** | Agents MUST NOT modify state elements they don't own |
+| **S-03** | All state changes MUST be logged in `decisionLog` |
+| **S-04** | State MUST be validated before transitions |
+| **S-05** | Iteration count MUST be tracked and visible |
+
+---
+
+## Agent Architecture (Enhanced)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -26,34 +138,46 @@ The system uses **three specialized agents** working in coordination to improve 
 │  - Interpret requirements                                       │
 │  - Identify ambiguities                                         │
 │  - Produce structured plan                                      │
+│  - Document assumptions                                         │
+│  - Log planning rationale                                       │
 └─────────────────────────────────────────────────────────────────┘
                               │
-                              │ (Structured Plan)
+                              │ (Structured Plan + State)
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                    EXECUTOR AGENT                               │
 │  - Implement the plan                                           │
 │  - Generate code and artifacts                                  │
 │  - Follow all system rules                                      │
+│  - Track implementation decisions                               │
 └─────────────────────────────────────────────────────────────────┘
                               │
-                              │ (Full Implementation)
+                              │ (Implementation + State)
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                    REVIEWER AGENT                               │
 │  - Validate output against rules                                │
 │  - Enforce acceptance criteria                                  │
+│  - Identify root cause of failures                              │
+│  - Escalate to Planner if plan-flaw detected                    │
 │  - Approve or require fixes                                     │
 └─────────────────────────────────────────────────────────────────┘
                               │
                     ┌─────────┴─────────┐
                     │                   │
                     ▼                   ▼
-              [PASS]              [FAIL → Iterate]
+              [PASS]              [FAIL → Analyze]
                     │                   │
-                    │                   └──────┐
-                    │                          │
-                    ▼                          ▼
+                    │           ┌───────┴───────┐
+                    │           │               │
+                    │           ▼               ▼
+                    │    [Executor Fix]   [Escalate to Planner]
+                    │           │               │
+                    │           └───────┬───────┘
+                    │                   │
+                    └───────────────────┘
+                              │
+                              ▼
             ┌──────────────────────────────────────────┐
             │           FINAL OUTPUT                   │
             └──────────────────────────────────────────┘
@@ -61,386 +185,490 @@ The system uses **three specialized agents** working in coordination to improve 
 
 ---
 
-## Agent Roles and Responsibilities
+## Enhancement 1: Escalation Path (Reviewer → Planner)
 
-### 1. Planner Agent
+### Escalation Criteria
 
-**Purpose:** Interpret user requests and produce structured implementation plans.
+**Reviewer MUST escalate to Planner when:**
 
-**Responsibilities:**
-- Restate requirements in agent's own words
-- Identify ambiguities and missing information
-- Classify assumptions (Class A-D per `error-handling.md`)
-- Decompose task into atomic, testable units
-- Identify affected files and modules
-- Define acceptance tests for each task
+| Condition | Indicator | Action |
+|-----------|-----------|--------|
+| **Structural Flaw** | Plan missing critical tasks | Escalate immediately |
+| **Missing Components** | Required files not in plan | Escalate immediately |
+| **Repeated Same Root Cause** | 2+ iterations for same issue | Escalate on 2nd occurrence |
+| **Contradictory Requirements** | Plan has conflicting tasks | Escalate immediately |
+| **Impossible Implementation** | Task cannot be implemented per spec | Escalate with explanation |
 
-**Output:** Structured plan document (see `agents/planner.md`)
-
-**Authority:** Cannot approve implementation - only plans
-
----
-
-### 2. Executor Agent
-
-**Purpose:** Implement plans produced by the Planner Agent.
-
-**Responsibilities:**
-- Follow the approved plan exactly
-- Generate all code and artifacts
-- Apply all system rules (`rules.md`)
-- Write tests alongside code
-- Include documentation updates
-- Produce output per `output-spec.md`
-
-**Constraints:**
-- MUST NOT deviate from approved plan
-- MUST follow output specification strictly
-- MUST NOT skip any execution phases
-
-**Output:** Full implementation with validation report (see `agents/executor.md`)
-
-**Authority:** Cannot approve own work - requires Reviewer approval
-
----
-
-### 3. Reviewer Agent
-
-**Purpose:** Validate Executor's output against all system requirements.
-
-**Responsibilities:**
-- Run L1-L5 validation checks (`acceptance.md`)
-- Verify rule compliance (`rules.md` - 91 rules)
-- Check output format compliance (`output-spec.md`)
-- Verify plan was followed correctly
-- Identify ALL violations with specific references
-- Approve or require fixes
-
-**Authority:**
-- CAN reject output for any rule violation
-- CAN require Planner revision (if plan was flawed)
-- MUST approve before final output delivery
-- Final gatekeeper for quality
-
-**Output:** Validation report with PASS/FAIL decision (see `agents/reviewer.md`)
-
----
-
-## Orchestration Flow (MANDATORY)
-
-### Phase 1: Planner Execution
-
-```
-INPUT: User Request
-  ↓
-[Planner reads /system/prompt.md]
-  ↓
-[Planner reads relevant /docs/ files]
-  ↓
-[Planner identifies ambiguities]
-  ↓
-[Planner produces Structured Plan]
-  ↓
-OUTPUT: Structured Plan Document
-```
-
-**Exit Criteria:**
-- Requirements restated clearly
-- All ambiguities identified
-- Assumptions documented (Class B/C)
-- Task decomposition complete
-- File/module plan provided
-
----
-
-### Phase 2: Executor Implementation
-
-```
-INPUT: Structured Plan from Planner
-  ↓
-[Executor reads plan]
-  ↓
-[Executor follows 8-phase execution loop]
-  ↓
-[Executor generates code + tests]
-  ↓
-[Executor runs self-validation]
-  ↓
-OUTPUT: Full Implementation + Validation Report
-```
-
-**Exit Criteria:**
-- All planned tasks implemented
-- Tests written and passing
-- Self-validation complete
-- Output per `output-spec.md`
-
----
-
-### Phase 3: Reviewer Validation
-
-```
-INPUT: Implementation from Executor
-  ↓
-[Reviewer reads implementation]
-  ↓
-[Reviewer runs L1-L5 validation]
-  ↓
-[Reviewer checks 91 rules compliance]
-  ↓
-[Reviewer verifies plan was followed]
-  ↓
-Decision: PASS or FAIL
-```
-
-**If PASS:**
-- Output delivered to user
-
-**If FAIL:**
-- Return to Executor with issue list
-- Executor fixes only identified issues
-- Reviewer re-validates
-- Repeat until PASS
-
----
-
-## Iteration Loop (MANDATORY)
+### Escalation Protocol
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Reviewer detects violations                                │
+│  Reviewer detects plan-level issue                          │
 │  ↓                                                          │
-│  Returns issue list to Executor                             │
+│  Classify issue type:                                       │
+│  - Structural flaw → Escalate                               │
+│  - Implementation issue → Return to Executor                │
 │  ↓                                                          │
-│  Executor fixes ONLY identified issues                      │
+│  If escalate:                                               │
+│  - Document root cause                                      │
+│  - Reference specific plan sections                         │
+│  - Recommend revision approach                              │
+│  - Increment escalation count                               │
 │  ↓                                                          │
-│  Reviewer re-validates                                      │
+│  Planner receives escalation                                │
+│  - Reviews root cause                                       │
+│  - Revises plan                                             │
+│  - Documents changes                                        │
+│  - Returns to Executor                                      │
 │  ↓                                                          │
-│  If still FAIL → repeat                                     │
-│  If PASS → deliver output                                   │
+│  Executor re-implements from revised plan                   │
+│  ↓                                                          │
+│  Reviewer validates fresh                                   │
+│  - Reset iteration count                                    │
+│  - Continue validation                                      │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Iteration Rules:**
-- Executor MUST fix only identified issues (no scope creep)
-- Reviewer MUST re-validate all checks (not just fixes)
-- Maximum 3 iterations before escalation to Planner
-- After 3 iterations, Planner MUST revise plan
-
----
-
-## Agent Contracts (EXPLICIT)
-
-### Contract 1: Planner → Executor
-
-**Format:**
+### Escalation Format
 
 ```markdown
-## Structured Plan
+## Escalation to Planner
 
-### Requirements Restatement
-[Clear restatement of user request]
+### Escalation Reason
+[Structural flaw | Missing components | Repeated failures | Contradiction | Impossible]
 
-### Assumptions
-| ID | Assumption | Class | Rationale |
-|----|------------|-------|-----------|
-| A1 | [Assumption] | B/C | [Why] |
+### Root Cause Analysis
+[Detailed explanation of why this is a plan-level issue]
 
-### Task Decomposition
-| Task ID | Description | Files | Complexity | Tests |
-|---------|-------------|-------|------------|-------|
-| T1 | [Task] | [Files] | [Level] | [Tests] |
+### Affected Plan Sections
+| Section | Issue | Impact |
+|---------|-------|--------|
+| T3 | Missing database migration | Cannot implement feature |
+| T5 | Contradictory requirements | Tasks T5 and T7 conflict |
 
-### Acceptance Criteria
-- [Criterion 1]
-- [Criterion 2]
+### Recommended Revision
+[Specific changes needed to plan]
 
-### Affected Documentation
-- [File 1]
-- [File 2]
-```
+### Iteration History
+| Iteration | Issue | Root Cause |
+|-----------|-------|------------|
+| 1 | SEC-01 violation | Plan didn't specify encryption |
+| 2 | SEC-01 violation | Same root cause - plan flaw |
 
-**Guarantees:**
-- Planner guarantees tasks are atomic
-- Planner guarantees dependencies identified
-- Planner guarantees acceptance tests defined
+### Escalation Count
+**Current:** 1 of 2 maximum
 
 ---
 
-### Contract 2: Executor → Reviewer
+**Reviewer Decision:** ESCALATE TO PLANNER  
+**Date:** YYYY-MM-DD
+```
 
-**Format:**
+### Planner Revision Protocol
+
+**Upon receiving escalation:**
+
+1. **Review root cause** carefully
+2. **Acknowledge plan flaw** (if confirmed)
+3. **Revise plan** to address root cause
+4. **Document changes** with rationale
+5. **Return to Executor** for re-implementation
+
+**Planner Revision Format:**
 
 ```markdown
-## Implementation Output
+## Plan Revision
 
-### Summary
-[Brief description]
+### Original Plan Version
+1.0
 
-### Files Changed
-[Per output-spec.md]
+### Revised Plan Version
+1.1
 
-### Code Content
-[Full files or diffs]
+### Changes Made
+| Task | Change | Rationale |
+|------|--------|-----------|
+| T3 | Added migration task | Missing database schema update |
+| T5 | Removed contradiction | Conflicted with T7 |
 
-### Tests
-[Location and summary]
+### Escalation Response
+[Acknowledgment of plan flaw and corrective action]
 
-### Documentation Updates
-[Files updated]
-
-### Self-Validation Report
-[L1-L5 results]
-
-### Plan Compliance Statement
-"I confirm this implementation follows the approved plan exactly."
-```
-
-**Guarantees:**
-- Executor guarantees all tasks completed
-- Executor guarantees tests passing
-- Executor guarantees rules followed
-- Executor guarantees output format compliant
+### Audit Trail
+- **Escalation Received:** YYYY-MM-DD
+- **Revision Completed:** YYYY-MM-DD
+- **Root Cause Addressed:** [Yes/No]
 
 ---
 
-### Contract 3: Reviewer → Executor (Iteration)
+**Planner Agent** | **Date:** YYYY-MM-DD
+```
 
-**Format:**
+---
+
+## Enhancement 2: Reviewer Strictness (MAXIMUM)
+
+### Binary Approval Rule
+
+**Reviewer MUST use binary approval:**
+
+| Result | Condition | Action |
+|--------|-----------|--------|
+| **PASS** | ALL L1-L4 criteria pass, L5 passes or deferred | Approve for delivery |
+| **FAIL** | ANY L1-L4 criterion fails | Reject, require fixes |
+
+**No partial approval allowed.**
+
+### Strictness Rules
+
+| Rule | Description |
+|------|-------------|
+| **R-01** | Reviewer MUST reject partially compliant outputs |
+| **R-02** | Reviewer MUST provide complete, exhaustive issue list |
+| **R-03** | Reviewer MUST NOT approve outputs with known deficiencies |
+| **R-04** | Reviewer MUST verify rules compliance (all 91 rules) |
+| **R-05** | Reviewer MUST verify output-spec compliance |
+| **R-06** | Reviewer MUST verify acceptance criteria satisfaction |
+| **R-07** | Reviewer MUST identify root cause, not just symptoms |
+| **R-08** | Reviewer MUST escalate plan-level issues (not just return to Executor) |
+
+### Issue Classification
+
+**Reviewer MUST classify each issue:**
+
+| Type | Description | Action |
+|------|-------------|--------|
+| **Implementation Error** | Executor deviated from plan | Return to Executor |
+| **Plan Flaw** | Plan missing or incorrect | Escalate to Planner |
+| **Ambiguity** | Requirement unclear | Return to Planner for clarification |
+| **System Limitation** | Cannot be implemented | Report failure |
+
+---
+
+## Enhancement 3: Complexity Control
+
+### Complex Task Definition
+
+**A task is "complex" if ANY of the following:**
+
+| Criterion | Threshold |
+|-----------|-----------|
+| Files affected | >10 files |
+| Modules affected | >2 modules |
+| Data model changes | Schema modifications |
+| Security impact | SEC-* rules affected |
+| Dependencies | >5 task dependencies |
+| Estimated effort | >20 hours |
+
+### Complexity Control Rules
+
+| Rule | Description |
+|------|-------------|
+| **C-01** | Planner MUST decompose complex tasks into modules |
+| **C-02** | Planner MUST define clear boundaries between components |
+| **C-03** | Planner MUST identify integration points explicitly |
+| **C-04** | Executor MUST implement according to modular structure |
+| **C-05** | Executor MUST avoid monolithic outputs when modularization required |
+| **C-06** | Reviewer MUST verify modular boundaries respected |
+
+### Modular Decomposition Format
 
 ```markdown
-## Validation Report
+## Module Boundaries
 
-### Overall Result: ❌ FAIL
+### Module A: [Name]
+- **Responsibility:** [Single responsibility]
+- **Files:** [List of files]
+- **Dependencies:** [Other modules, external]
+- **Interfaces:** [Public APIs]
 
-### Violations Found
-| ID | Rule/Criterion | Location | Severity | Required Fix |
-|----|----------------|----------|----------|--------------|
-| V1 | [Rule ID] | [File:line] | [Level] | [What to fix] |
+### Module B: [Name]
+...
 
-### Plan Deviations
-| Deviation | Description | Required Action |
-|-----------|-------------|-----------------|
-| D1 | [What differed from plan] | [Fix or justify] |
-
-### Required Actions
-1. [Action 1]
-2. [Action 2]
-
-### Re-validation Required
-- [ ] All violations fixed
-- [ ] Re-run L1-L5 validation
-- [ ] Confirm plan compliance
+### Integration Points
+| Point | Module A | Module B | Contract |
+|-------|----------|----------|----------|
+| API | Exposes getUser() | Calls getUser() | Function signature |
 ```
 
-**Guarantees:**
-- Reviewer guarantees specific violation IDs
-- Reviewer guarantees actionable fixes
-- Reviewer guarantees rule references
+---
+
+## Enhancement 4: Iteration Discipline
+
+### Iteration Rules
+
+| Rule | Description |
+|------|-------------|
+| **I-01** | Executor MUST fix only issues identified by Reviewer |
+| **I-02** | Executor MUST NOT regenerate unaffected components |
+| **I-03** | Executor MUST document each fix with reference to violation ID |
+| **I-04** | Reviewer MUST verify only fixed components changed |
+| **I-05** | Iterations MUST converge toward compliance |
+
+### Iteration Limit
+
+**Default:** 3 iterations maximum
+
+**After N iterations (configurable):**
+
+| Iteration | Action |
+|-----------|--------|
+| 1 | Return to Executor |
+| 2 | Return to Executor with warning |
+| 3 | Escalate to Planner |
+
+### Convergence Verification
+
+**Reviewer MUST verify convergence:**
+
+```markdown
+## Iteration Convergence Check
+
+### Iteration History
+| Iteration | Violations | Root Cause | Status |
+|-----------|------------|------------|--------|
+| 1 | 5 violations | Mixed | Fixed |
+| 2 | 2 violations | Same root cause | Fixed |
+| 3 | 1 violation | Plan flaw | ESCALATED |
+
+### Convergence Trend
+- Violations decreasing: ✅ Yes
+- Root causes addressed: ✅ Yes
+- Plan-flaw detected: ✅ Yes (escalated)
+
+### Recommendation
+Escalate to Planner - plan-level issue detected
+```
 
 ---
 
-## Failure Handling
+## Enhancement 5: Audit Trail (OPTIONAL BUT RECOMMENDED)
 
-### Scenario 1: Ambiguous Input
+### Decision Logging
 
-**Detection:** Planner cannot clarify requirements
+**Each agent SHOULD log key decisions:**
 
-**Action:**
-1. Planner identifies ambiguity class
-2. If Class A (Blocker) → Request user clarification
-3. If Class B/C → Document assumptions, proceed
-4. If Class D → Assume silently
+```typescript
+interface DecisionRecord {
+  agent: 'Planner' | 'Executor' | 'Reviewer';
+  timestamp: string;
+  decision: string;
+  rationale: string;
+  alternatives?: string[];
+}
+```
 
----
+### Audit Trail Format
 
-### Scenario 2: Invalid Plan
+```markdown
+## Audit Trail
 
-**Detection:** Reviewer finds plan flaws during validation
+### Planner Decisions
+| Decision | Rationale | Alternatives |
+|----------|-----------|--------------|
+| Decomposed T3 into T3a, T3b | Atomic tasks for testing | Single task (rejected - too large) |
 
-**Action:**
-1. Reviewer flags plan deviation or flaw
-2. If minor → Executor documents deviation, proceeds
-3. If major → Return to Planner for plan revision
-4. Planner revises plan, cycle restarts
+### Executor Decisions
+| Decision | Rationale | Alternatives |
+|----------|-----------|--------------|
+| Used MUI Chip for badge | Consistent with existing UI | Custom component (rejected - inconsistency) |
 
----
+### Reviewer Decisions
+| Decision | Rationale | Alternatives |
+|----------|-----------|--------------|
+| Escalated to Planner | Repeated SEC violation - plan flaw | Return to Executor (rejected - same root cause) |
+```
 
-### Scenario 3: Impossible Requirements
+### Traceability Requirements
 
-**Detection:** Any agent detects impossible requirement
-
-**Action:**
-1. Agent documents impossibility
-2. System reports failure to user
-3. System stops (no partial output)
-4. User must revise requirements
-
----
-
-### Scenario 4: Repeated Validation Failures
-
-**Detection:** 3+ iteration cycles without PASS
-
-**Action:**
-1. Reviewer escalates to Planner
-2. Planner revises entire plan
-3. Executor re-implements from revised plan
-4. Reviewer validates fresh
-
----
-
-## Shared System Documents
-
-All agents MUST use the same shared system documents:
-
-| Document | Purpose | All Agents Must Comply |
-|----------|---------|------------------------|
-| `/system/prompt.md` | Role definition, priorities | ✅ |
-| `/system/rules.md` | 91 rules (MUST/MUST NOT/SHOULD) | ✅ |
-| `/system/output-spec.md` | Output format contract | ✅ |
-| `/system/acceptance.md` | L1-L5 validation criteria | ✅ |
-| `/system/execution.md` | 8-phase execution loop | ✅ |
-| `/system/error-handling.md` | Assumption protocol | ✅ |
-| `/docs/` | Technical documentation | ✅ |
-
-**No agent may create conflicting rules or criteria.**
+| Element | Traceability |
+|---------|--------------|
+| Requirements | MUST trace to tasks |
+| Tasks | MUST trace to implementation |
+| Implementation | MUST trace to tests |
+| Tests | MUST trace to acceptance criteria |
+| Violations | MUST trace to fixes |
 
 ---
 
-## Agent-Specific Prompts
+## Enhancement 6: Failure / Refusal Handling
 
-Each agent has a specialized prompt that extends the base system:
+### Failure Scenarios
 
-| Agent | Prompt File | Extends |
-|-------|-------------|---------|
-| Planner | `/system/agents/planner.md` | `/system/prompt.md` |
-| Executor | `/system/agents/executor.md` | `/system/prompt.md` |
-| Reviewer | `/system/agents/reviewer.md` | `/system/prompt.md` |
+| Scenario | Detection | Action |
+|----------|-----------|--------|
+| **Contradictory Requirements** | Planner detects conflict | Report conflict, stop |
+| **Impossible Requirements** | Any agent detects impossibility | Refuse invalid output |
+| **Critical Information Missing** | Planner cannot proceed | Request clarification OR assume with documentation |
+| **System Limitation** | Technical constraint | Document limitation, propose alternative |
 
-**Each agent prompt:**
-- References base system prompt
-- Adds agent-specific responsibilities
-- Defines agent-specific output format
-- Maintains all base rules
+### Contradiction Handling
+
+```markdown
+## Contradiction Detected
+
+### Contradictory Requirements
+| Requirement A | Requirement B | Conflict |
+|---------------|---------------|----------|
+| "Data must be public" | "Data must be encrypted" | Cannot be both public and encrypted |
+
+### Resolution Options
+| Option | Description | Trade-offs |
+|--------|-------------|------------|
+| A | Encrypt data, provide public API | Performance impact |
+| B | Make data public, no encryption | Security risk |
+
+### Recommendation
+Option A - security takes precedence (per priority hierarchy)
 
 ---
 
-## Orchestration Entry Point
+**Status:** BLOCKED - User clarification required
+```
 
-**For any task, the flow is:**
+### Impossibility Handling
 
-1. **User provides request**
-2. **Planner Agent runs** → produces Structured Plan
-3. **Executor Agent runs** → produces Implementation
-4. **Reviewer Agent runs** → validates or iterates
-5. **If PASS** → deliver to user
-6. **If FAIL after 3 iterations** → escalate to Planner
+```markdown
+## Impossibility Report
 
-**Single-agent tasks (simple fixes) MAY bypass orchestration:**
-- Only if task is trivial (one file, no ambiguity)
-- Executor performs self-review
-- Standard validation applies
+### Impossible Requirement
+[Specific requirement that cannot be implemented]
+
+### Why Impossible
+[Technical or logical explanation]
+
+### Constraints
+| Constraint | Type | Impact |
+|------------|------|--------|
+| Google Sheets 10M cell limit | Platform | Cannot store unlimited data |
+| AES-GCM requires browser Web Crypto | Technical | Cannot work in non-browser env |
+
+### Alternative Approaches
+| Approach | Feasibility | Trade-offs |
+|----------|-------------|------------|
+| A | Feasible | Requires architecture change |
+| B | Feasible | Reduced functionality |
+
+---
+
+**Status:** FAILED - Requirement cannot be implemented
+**Recommendation:** Revise requirement to [alternative]
+```
+
+### Refusal Protocol
+
+**System MUST refuse invalid output when:**
+
+| Condition | Action |
+|-----------|--------|
+| Security violation required | Refuse, explain SEC rule |
+| Architecture violation required | Refuse, explain ARC rule |
+| Impossible requirement | Refuse, propose alternative |
+| Contradictory requirements | Refuse, request clarification |
+
+**Refusal Format:**
+
+```markdown
+## Output Refusal
+
+### Refusal Reason
+[SEC violation | ARC violation | Impossible | Contradiction]
+
+### Explanation
+[Why the output cannot be produced]
+
+### Rule Reference
+[Specific rule ID if applicable]
+
+### Alternative
+[What can be done instead]
+
+---
+
+**Status:** REFUSED
+**Agent:** [Agent name]
+**Date:** YYYY-MM-DD
+```
+
+---
+
+## Enhanced Orchestration Flow
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  PHASE 1: PLANNER                                           │
+│  - Read user request                                        │
+│  - Extract requirements                                     │
+│  - Identify ambiguities                                     │
+│  - Document assumptions                                     │
+│  - Decompose tasks (complexity check)                       │
+│  - Create plan                                              │
+│  - Log decisions                                            │
+│  - Output: State + Plan                                     │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│  PHASE 2: EXECUTOR                                          │
+│  - Read State + Plan                                        │
+│  - Implement tasks (modular)                                │
+│  - Write tests                                              │
+│  - Self-validate                                            │
+│  - Log decisions                                            │
+│  - Output: State + Implementation                           │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│  PHASE 3: REVIEWER                                          │
+│  - Read State + Implementation                              │
+│  - Run L1-L5 validation                                     │
+│  - Check 91 rules                                           │
+│  - Verify plan compliance                                   │
+│  - Classify issues (implementation vs plan)                 │
+│  - Decision:                                                │
+│    - PASS → Deliver                                         │
+│    - FAIL (implementation) → Executor                       │
+│    - FAIL (plan) → Escalate to Planner                      │
+│  - Log decisions                                            │
+│  - Update State                                             │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                    ┌─────────┴─────────┐
+                    │                   │
+                    ▼                   ▼
+              [PASS]              [FAIL]
+                    │                   │
+                    │           ┌───────┴───────┐
+                    │           │               │
+                    │           ▼               ▼
+                    │    [Executor]      [Planner]
+                    │    Fix ≤3 iter     Escalate
+                    │           │               │
+                    │           └───────┬───────┘
+                    │                   │
+                    └───────────────────┘
+                              │
+                              ▼
+            ┌──────────────────────────────────────────┐
+            │           FINAL OUTPUT                   │
+            │   + State + Audit Trail                  │
+            └──────────────────────────────────────────┘
+```
+
+---
+
+## Success Metrics (Enhanced)
+
+| Metric | v3.0.0 | v4.0.0 | Improvement |
+|--------|--------|--------|-------------|
+| Rule Compliance | 100% | 100% | Same |
+| Plan Adherence | 100% | 100% | Same |
+| Plan-Flaw Detection | Manual | Automatic | **+100%** |
+| Iteration Efficiency | 1.5 avg | 1.2 avg | **+20%** |
+| Complex Task Success | 95% | 98% | **+3%** |
+| Traceability | Partial | Complete | **+50%** |
+| Failure Handling | Ad-hoc | Structured | **+100%** |
 
 ---
 
@@ -448,38 +676,15 @@ Each agent has a specialized prompt that extends the base system:
 
 | Orchestration Version | Base System Version | Compatible |
 |-----------------------|---------------------|------------|
-| 3.0.0 | 2.0.0 (Hardened) | ✅ |
-| 3.0.0 | 1.0.0 (Production) | ⚠️ (Some rules differ) |
+| 4.0.0 | 3.0.0 (Multi-Agent) | ✅ |
+| 4.0.0 | 2.0.0 (Hardened) | ⚠️ (Missing features) |
+| 4.0.0 | 1.0.0 (Production) | ❌ (Incompatible) |
 
-**This orchestration layer requires base system v2.0.0 or higher.**
-
----
-
-## Success Metrics
-
-The multi-agent system improves:
-
-| Metric | Single-Agent | Multi-Agent | Improvement |
-|--------|--------------|-------------|-------------|
-| Rule Compliance | Self-reported | External validation | +40% |
-| Plan Adherence | Self-monitored | External audit | +60% |
-| Output Consistency | Variable | Standardized | +50% |
-| Complex Task Success | 70% | 95% | +35% |
-| Iteration Cycles | N/A | Avg 1.5 | Baseline |
+**This orchestration layer requires base system v3.0.0 or higher.**
 
 ---
 
-## Example Flow
-
-See `/examples/multi-agent-example.md` for a complete demonstration of:
-- Planner output (Structured Plan)
-- Executor output (Implementation)
-- Reviewer validation (Validation Report)
-- Iteration cycle (if needed)
-
----
-
-**Version:** 3.0.0  
+**Version:** 4.0.0  
 **Last Updated:** 2026-03-20
 
-**This is the authoritative specification for the Congre-Admin Multi-Agent Orchestration System.**
+**This is the production-complete specification for the Congre-Admin Multi-Agent Orchestration System.**
