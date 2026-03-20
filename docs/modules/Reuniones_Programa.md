@@ -184,6 +184,34 @@ Diseñado como un proceso guiado en tres fases:
 -   **Workflow de 3 Fases:** Proceso de trabajo fluido desde la estructura hasta la asignación.
 -   **Drawer de Candidatos:** Ficha enriquecida con visualización del historial de participación.
 
+## 5. Motor de Sugerencias Inteligentes
+El sistema utiliza el motor JSONata para calcular el "Score de Idoneidad" de cada candidato.
+
+### A. Expresión de Filtrado y Ranking (Core Logic)
+Esta expresión se ejecuta sobre el contexto `$personas` inyectado por el Core.
+
+~~~jsonata
+$personas[
+  /* 1. ELEGIBILIDAD: Debe cumplir con los filtros técnicos de la parte */
+  $role.filtros in metadatos[clave='filtrosReuniones'].valor 
+  and
+  /* 2. DISPONIBILIDAD: Evitar doble asignación en la misma semana */
+  $not(id in $programaActual.reuniones.secciones.partes.salas.asignaciones.*)
+] ^(identidad.nombre) {
+  "id": id,
+  "nombre": identidad.nombre,
+  /* Cálculo de prioridad basado en historial */
+  "ultimaParticipacion": $max(historial[rolId = $role.id].fecha),
+  "vecesEsteMes": $count(historial[fecha > $limiteMes])
+}
+~~~
+
+### B. Criterios de Sugerencia Automática
+Al presionar el botón "Varita Mágica", el sistema aplica el siguiente orden de prioridad:
+1.  **Antigüedad:** Prioriza a quienes no han realizado el rol en más tiempo.
+2.  **Equilibrio de Carga:** Si hay empate, elige a quien tenga menos asignaciones totales en el mes.
+3.  **Género y Edad:** Validaciones adicionales basadas en la estructura de la parte.
+
 ## 6. Definiciones Globales de Infraestructura
 
 ### Salas

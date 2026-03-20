@@ -2,6 +2,26 @@
 
 En la arquitectura modular de Congre-Admin, el Backend se define como un **Proveedor de Servicios** (Data Provider) que debe cumplir con un protocolo de comunicación estándar. Actúa como el motor de ejecución para un sistema modular con segmentación física de datos.
 
+---
+
+> ## ⚠️ Nota sobre la Implementación de Referencia (`api.gs`)
+>
+> El archivo `backend/src/api.gs` es una **implementación de referencia (Proof of Concept)** que demuestra:
+> - La mecánica básica de comunicación GET/POST con Google Apps Script
+> - Operaciones CRUD básicas sobre Google Sheets
+> - Un esquema de cifrado funcional (XXTEA)
+>
+> **NO está completo.** Las siguientes características de la especificación **no están implementadas**:
+> - ❌ Autenticación (`challenge`, `login`, `register`)
+> - ❌ Validación de sesiones (`sessionToken`)
+> - ❌ Motor JSONata para validaciones
+> - ❌ Control de permisos RBAC
+> - ❌ Borrado lógico (`_deleted`) y versionado (`_v`, `_ts`)
+>
+> **El backend debe evolucionar para cumplir con esta especificación.** 
+
+---
+
 ## 1. El Protocolo Backend (API Multi-ID)
 Cualquier implementación de backend debe cumplir con las siguientes normas estructurales:
 

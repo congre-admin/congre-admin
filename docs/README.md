@@ -15,10 +15,14 @@ Este sistema modular permite la gestión integral de una congregación bajo una 
 10. [**Notificaciones Locales**](./architecture/Notificaciones.md): Estrategia de Background Sync y Privacidad.
 11. [**Guía de Instalación (Setup)**](./architecture/Instalacion.md): Manual para el "Día 0" y despliegue.
 12. [**Acceso y Despliegue**](./architecture/Despliegue.md): Estrategia de hosting y parámetros de URL.
+13. [**Estructura del Proyecto**](./architecture/Estructura_Proyecto.md): Organización de carpetas `/src` y reglas de acoplamiento.
 
 ## 📦 Especificación del Backend
 - [**Protocolo del Backend**](./architecture/Backend.md): Implementación en GAS y GSheets.
 - [**Estándar de Documentación**](./architecture/Guia_Documentacion.md): Cómo definir nuevos plug-ins.
+
+## 📋 Mantenimiento
+- [**Changelog**](./CHANGELOG.md): Registro de cambios en la documentación.
 
 ## 🧩 Módulos del Sistema (Plug-ins)
 

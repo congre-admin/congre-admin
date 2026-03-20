@@ -1,0 +1,2 @@
+- Informe de asistencia a las reuniones
+- Resúmen y promedios para el SC

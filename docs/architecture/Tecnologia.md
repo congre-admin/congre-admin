@@ -34,7 +34,25 @@ Congre-Admin utiliza un stack moderno, descentralizado y de alto rendimiento, op
     - **Passkeys (WebAuthn):** Acceso biométrico seguro sin contraseñas.
     - **TOTP:** Generación de códigos temporales (Google Authenticator).
 
-## 4. Backend y Persistencia
+## 4. Protocolo de Cifrado de Archivos (Vault de Drive)
+Para adjuntos sensibles (Cartas, PDFs privados), se sigue este flujo técnico obligatorio:
+
+### A. Flujo de Subida (Upload)
+1. **Lectura:** El frontend lee el archivo mediante `FileReader.readAsArrayBuffer()`.
+2. **Cifrado:**
+   - Se genera un **IV de 12 bytes** aleatorio.
+   - Se cifra el buffer completo usando **AES-GCM (256-bit)** con la **Master Key**.
+3. **Empaquetado:** Se concatena `IV + Ciphertext` en un solo `Blob`.
+4. **Transporte:** Se envía el `Blob` a GAS mediante una petición `POST` (multipart/form-data o Base64 según cuota).
+5. **Resultado:** GAS guarda el archivo en Drive con extensión `.enc`.
+
+### B. Flujo de Descarga (Download/Viewer)
+1. **Obtención:** El frontend descarga el archivo como `ArrayBuffer`.
+2. **Extracción:** Se separan los primeros 12 bytes (IV) del resto (Ciphertext).
+3. **Descifrado:** Se procesa con la **Master Key** local.
+4. **Visualización:** El buffer resultante se convierte en un `Blob URL` (`URL.createObjectURL(blob)`) para ser mostrado en un `<iframe>` o visor de PDF interno.
+
+## 5. Backend y Persistencia
 - **Proveedor Primario:** [Google Apps Script (GAS)](https://developers.google.com/apps-script).
 - **Base de Datos:** [Google Sheets](https://www.google.com/sheets/about/) como motor de almacenamiento distribuido.
 - **Estrategia de Segmentación:**
@@ -46,7 +64,31 @@ Congre-Admin utiliza un stack moderno, descentralizado y de alto rendimiento, op
 - **Persistencia de Sesión:** Los parámetros de conexión (`api` url y `ssId` inicial) se pueden pasar vía URL y se persisten en `localStorage`.
 - **PWA (Progressive Web App):** Soporte para instalación en dispositivos móviles y funcionamiento offline parcial mediante Service Workers.
 
-## 6. Catálogo de Validaciones JSONata (Ejemplos Reales)
+## 6. Stack Técnico y Dependencias (`package.json`)
+Para garantizar la compatibilidad, el proyecto debe utilizar las siguientes librerías principales:
+
+### Core Framework
+- **React 19** + **Vite 6** (Frontend Tooling).
+- **TypeScript 5.x** (Strict Mode obligatorio).
+
+### Interfaz y UX
+- **@mui/material v6** + **@mui/icons-material**: Implementación de Material Design 3.
+- **tailwindcss v4**: Estilizado atómico y layout responsivo.
+- **@tanstack/react-table v8**: Motor de tablas avanzado.
+- **framer-motion**: Animaciones suaves para transiciones de módulos y Drawers.
+
+### Gestión de Datos y Estado
+- **@tanstack/react-query v5**: Sincronización y caché de datos.
+- **@tanstack/query-sync-storage-persister**: Integración con IndexedDB.
+- **jsonata**: Motor de consultas y transformaciones.
+- **idb-keyval**: Utilidad ligera para manejo de IndexedDB.
+
+### Criptografía y Archivos
+- **pdf-lib**: Manipulación y generación de reportes PDF (Overlay).
+- **lucide-react**: Set de iconos complementarios.
+- **PBKDF2**: Implementado mediante la Web Crypto API nativa.
+
+## 7. Catálogo de Validaciones JSONata (Ejemplos Reales)
 El sistema utiliza estas expresiones tanto en el frontend (feedback inmediato) como en el backend (integridad).
 
 ### Validación de Conflictos de Horario

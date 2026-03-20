@@ -1,6 +1,6 @@
 # Congre-Admin: Módulo de Reuniones
 
-Este módulo gestiona la confección y difusión de los programas de reuniones semanales, integrando plantillas jerárquicas y una agenda de discursos públicos.
+Este módulo gestiona la confección y difusión de los programas de reuniones semanales, integrando plantillas jerárquicas y una agenda de discursos públicos, así como el registro de asistencia.
 
 ## Lista de Plug-ins y Menús
 
@@ -15,6 +15,11 @@ Núcleo de confección y visualización del programa semanal.
 Gestión de la agenda de oradores locales y visitantes.
 -   **Administrar discursos** (`shield_lock`): Control de arreglos entrantes y salientes, directorio externo y registro histórico.
 -   [Ver Definición Detallada](./Reuniones_Discursos.md)
+
+### 3. Plug-in: Asistencia (Nuevo)
+Registro y reporte de asistencia a reuniones.
+-   **Asistencia** (`shield_lock`): Carga semanal de asistencia y generación del informe mensual S-3-S.
+-   [Ver Definición Detallada](../modules/Admin_Registros.md#C-registro-de-asistencia-nuevo)
 
 ---
 
