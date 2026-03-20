@@ -18,8 +18,10 @@ Un módulo es una unidad independiente que se "enchufa" al Core cumpliendo esta 
     -   Permisos y rutas.
     - **Data Aliases:** Definición de entidades nombradas locales para JSONata (ej: `{"plantillas": "Plantillas_Reuniones"}`).
     - **Computed Variables:** Colecciones inteligentes pre-filtradas (ej: `{"ancianos": "$personas['Anciano' in enc_servicio.etiquetas]"}`).
+    - **Dashboard Widgets:** Definición de micro-vistas para la página de inicio.
+        *   `component`: Nombre del componente de resumen.
+        *   `query`: Expresión JSONata para obtener los datos del widget (ej: `$asignaciones[fecha = $semanaActual]`).
     -   **Views:** Componentes React que se renderizan dentro del Shell UI.
-
 -   **Esquema:** Definiciones dinámicas para la tabla `Sistema_Esquema`.
 -   **Lógica:** Expresiones JSONata específicas para validaciones del módulo.
 -   **Seed Data:** Archivo JSON con datos iniciales (plantillas, catálogos, configuraciones base) que se inyectan en el primer uso.

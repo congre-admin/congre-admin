@@ -29,7 +29,8 @@ Para inicializar el sistema, el archivo GSheet maestro debe contener las siguien
 - `id`: UUID único.
 - `username`: Correo electrónico.
 - `wrapped_mk`: Master Key cifrada.
-- `perfilId`: ID del perfil asignado (ej: `p_secretario`).
+- `perfilId`: ID del perfil asignado.
+- `personaId`: (Opcional) ID de la entidad en la base de datos de Personas.
 - `auth_factor`: `passkey`, `totp`, `email`.
 
 ### Tabla: `Perfiles` (NUEVA)

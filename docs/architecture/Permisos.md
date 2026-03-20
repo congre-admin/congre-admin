@@ -25,7 +25,13 @@ Esta matriz define el control de acceso granular (RBAC) para todos los módulos 
 
 *¹ **Nota:** El rol `user` puede tener permiso para editar campos de contacto pero no etiquetas de servicio (configurable en el esquema).*
 
-## 3. Seguridad de Campos (Nivel de Atributo)
+## 3. Acceso Basado en Contexto (Filtrado por PersonaId)
+Cuando un usuario está vinculado a una entidad mediante `personaId`, el sistema aplica reglas de visibilidad dinámica:
+
+- **Propiedad de Grupo:** Los perfiles con alcance limitado (ej: `Superintendente de Grupo`) solo pueden ver y editar registros cuyos metadatos coincidan con los de su propia ficha de persona (ej: mismo `grupoId`).
+- **Auto-Consulta:** Cualquier usuario puede acceder a su propia ficha de persona descifrada para consultar sus asignaciones personales y territorios.
+
+## 4. Seguridad de Campos (Nivel de Atributo)
 El sistema debe filtrar los campos basándose en el prefijo `enc_`:
 - **Si el usuario no tiene una sesión válida (Public):** El backend DEBE omitir todos los campos `enc_`.
 - **Si el usuario tiene sesión:** El frontend descifra los campos `enc_` usando la Master Key.

@@ -20,7 +20,12 @@ Control de acceso y privilegios del sistema.
 -   **Usuarios** (`shield_lock`): Gestión de cuentas, permisos y factores de autenticación (2FA/Passkeys).
 -   [Ver Definición Detallada](./Admin_Usuarios.md)
 
-### 4. Plug-in: Sistema
+### 4. Plug-in: Anuncios y Cartelera
+Gestión de la comunicación oficial y eventos.
+-   **Anuncios** (`shield_lock`): Creación y publicación de avisos, cartas y eventos en la cartelera de inicio.
+-   [Ver Definición Detallada](./Admin_Anuncios.md)
+
+### 5. Plug-in: Sistema
 Configuración técnica del marco de trabajo.
 -   **Ajustes** (`shield_lock`): Opciones generales y configuración de plug-ins activos.
 -   [Ver Definición Detallada](./Admin_Sistema.md)
