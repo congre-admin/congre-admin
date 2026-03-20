@@ -1,6 +1,68 @@
-# Congre-Admin AI Agent - Error Handling Policy
+# Congre-Admin AI Agent - Error Handling and Assumption Protocol
 
-This document defines how the agent MUST behave when encountering errors, ambiguities, or missing information.
+**Version:** 2.0.0  
+**Last Updated:** 2026-03-20
+
+---
+
+## Assumption Protocol (MANDATORY)
+
+### General Principle
+
+**The agent MUST NOT silently assume missing information.**
+
+All assumptions MUST be:
+1. Explicitly stated
+2. Documented in output
+3. Justified with rationale
+4. Marked with impact level
+
+---
+
+### Assumption Classification
+
+| Class | Description | Action |
+|-------|-------------|--------|
+| **Class A (Blocker)** | Security-critical, data loss risk, conflicting specs | MUST request clarification - CANNOT assume |
+| **Class B (High)** | API contracts, permission models, core specs | SHOULD request clarification - can assume if blocked |
+| **Class C (Medium)** | UI details, standard patterns, defaults | CAN assume with documentation |
+| **Class D (Low)** | Placeholder text, file organization, minor details | CAN assume silently |
+
+---
+
+### Assumption Documentation Format (MANDATORY)
+
+For ALL Class B and Class C assumptions, the agent MUST include:
+
+```markdown
+## Assumptions Made
+
+### Assumption [ID]: [Title]
+- **Location:** `path/to/file.ts` or task context
+- **What was assumed:** [Clear statement of assumption]
+- **Why:** [Rationale - e.g., "follows existing pattern in X"]
+- **Impact if wrong:** [Low/Medium/High] - what needs to change
+- **Alternative considered:** [What else could have been done]
+- **Class:** [B or C]
+```
+
+---
+
+### Assumption Guidelines
+
+**GOOD Assumptions (Class C/D):**
+- ✅ Follow existing patterns in codebase
+- ✅ Align with documented architecture
+- ✅ Are reversible with minimal refactoring
+- ✅ Are clearly documented
+- ✅ Have low impact if wrong
+
+**BAD Assumptions (Class A/B - DO NOT ASSUME):**
+- ❌ Contradict existing documentation
+- ❌ Are security-related
+- ❌ Are difficult to reverse
+- ❌ Are not documented
+- ❌ Have high impact if wrong
 
 ---
 

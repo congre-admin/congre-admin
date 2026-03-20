@@ -16,43 +16,42 @@ Cada entrada debe incluir:
 
 ## 2026-03-20
 
+### Modificado
+
+**Archivos:** `/system/*` (todos los archivos del sistema)
+
+**Descripción:** **AI Agent System - Hardened (v2.0.0)**
+
+Se actualizó todo el sistema de agente AI de "production-capable" a "high-reliability/near-deterministic":
+
+| Archivo | Versión | Cambios Principales |
+|---------|---------|---------------------|
+| `system/prompt.md` | 2.0.0 | Prioridad de resolución, protocolo de asunciones, 8 fases |
+| `system/execution.md` | 2.0.0 | Loop de 8 fases (Pre-Flight + Post-Flight), condición de parada explícita |
+| `system/rules.md` | 2.0.0 | 91 reglas (de 72), todas atómicas y testeables |
+| `system/acceptance.md` | 2.0.0 | Validación L1-L5 con checklists explícitos |
+| `system/error-handling.md` | 2.0.0 | Protocolo de asunciones (Clases A-D) |
+| `system/QUICKREF.md` | 2.0.0 | Referencia rápida actualizada |
+| `examples/01-new-component.md` | 2.0.0 | Ejemplo "gold standard" con 8 fases completas |
+
+**Mejoras Clave:**
+- **8 fases** de ejecución (Pre-Flight + Post-Flight añadidos)
+- **91 reglas** (de 72) - todas atómicas y testeables
+- **5 niveles de validación** (L1-L5) con checklists explícitos
+- **Protocolo de asunciones** formal (Clases A-D)
+- **Condición de parada explícita** (5 criterios)
+- **Jerarquía de prioridad** (5 niveles)
+- **Checklists de 10 items** para Post-Flight
+
+**Características del Sistema Hardened:**
+- Minimiza variación de interpretación entre ejecuciones
+- Comportamiento predecible y repetible
+- Todas las reglas son enforceables y testeables
+- Opera con mínima intervención humana
+
+---
+
 ### Agregado
-
-**Archivos:** `/system/` (nuevo directorio completo), `/examples/`
-
-**Descripción:** **AI Agent System - Production Ready**
-
-Se creó la especificación completa del agente AI con los siguientes archivos:
-
-| Archivo | Propósito |
-|---------|-----------|
-| `system/prompt.md` | System prompt canónico del agente |
-| `system/execution.md` | Loop de ejecución obligatorio (6 fases) |
-| `system/output-spec.md` | Contrato de formato de salida |
-| `system/rules.md` | 72 reglas (MUST/MUST NOT/SHOULD) |
-| `system/acceptance.md` | Criterios de validación (L1-L5) |
-| `system/error-handling.md` | Política de manejo de ambigüedades |
-| `examples/README.md` | Índice de ejemplos |
-| `examples/01-new-component.md` | Ejemplo completo: creación de componente |
-
-**Características del Sistema:**
-- 5 niveles de validación (L1-L5)
-- 72 reglas categorizadas (Security, Architecture, Code, Data, Testing, Documentation)
-- Loop de ejecución de 6 fases (Analyze → Plan → Implement → Validate → Refine → Output)
-- Política de manejo de errores y ambigüedades
-- Ejemplos completos con walkthrough
-
----
-
-**Archivos:** `README.md`, `docs/README.md`
-
-**Descripción:** Actualización de índices
-
-- Agregada sección "AI Agent System" en README.md raíz
-- Agregada referencia a documentación del sistema en docs/README.md
-- Agregada tabla de estado del proyecto
-
----
 
 **Archivos:** `docs/modules/Admin_Registros.md`, `docs/modules/Reuniones.md`
 
@@ -129,7 +128,7 @@ Se creó la especificación completa del agente AI con los siguientes archivos:
 
 | Fecha | Versión | Descripción |
 |-------|---------|-------------|
-| 2026-03-20 | 2.0.0 | AI Agent System production-ready + Asistencia feature |
+| 2026-03-20 | 2.0.0 | AI Agent System Hardened + Asistencia feature |
 | 2026-03-19 | 1.1.0 | Blindaje técnico y módulos completos |
 | 2026-03-XX | 1.0.0 | Documentación inicial de arquitectura y módulos |
 
