@@ -2,6 +2,17 @@
 
 Este sistema modular permite la gestión integral de una congregación bajo una arquitectura de **Núcleo y Plug-ins**, garantizando seguridad de **Conocimiento Cero**.
 
+## 🤖 AI Agent System
+
+La especificación del agente AI se encuentra en `/system` (raíz del proyecto):
+- [**System Prompt**](../system/prompt.md): Punto de entrada del agente
+- [**Execution Loop**](../system/execution.md): Flujo de trabajo obligatorio
+- [**Output Specification**](../system/output-spec.md): Formato de salida
+- [**Rules**](../system/rules.md): Reglas y restricciones
+- [**Acceptance Criteria**](../system/acceptance.md): Criterios de validación
+- [**Error Handling**](../system/error-handling.md): Manejo de ambigüedades
+- [**Examples**](../examples/): Ejemplos completos
+
 ## 🏗️ Arquitectura y Core
 1.  [**Arquitectura del Sistema**](./architecture/Arquitectura.md): Definición del Núcleo, Plug-ins y Segmentación de Datos.
 2.  [**Especificación Tecnológica**](./architecture/Tecnologia.md): Stack React/GAS, JSONata y AES-GCM.
