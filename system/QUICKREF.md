@@ -1,39 +1,47 @@
-# Congre-Admin AI Agent - Quick Reference (Hardened)
+# Congre-Admin AI Agent - Quick Reference (Multi-Agent)
 
-**Version:** 2.0.0  
+**Version:** 3.0.0  
 **Last Updated:** 2026-03-20
 
-Quick reference card for using the hardened AI agent system.
+Quick reference card for using the multi-agent AI system.
 
 ---
 
-## Entry Point
+## System Mode
 
-**Start here:** `/system/prompt.md`
+**MULTI-AGENT SYSTEM** with three specialized agents:
 
-This file defines the agent's role, priorities, priority resolution hierarchy, and references all supporting documents.
-
----
-
-## The Execution Loop (8 Phases - MANDATORY)
-
-```
-[0] PRE-FLIGHT → [1] ANALYZE → [2] PLAN → [3] IMPLEMENT → 
-[4] VALIDATE → [5] REFINE → [6] POST-FLIGHT → [7] OUTPUT
-```
-
-| Phase | Purpose | Exit Criteria |
+| Agent | Purpose | Specification |
 |-------|---------|---------------|
-| **0. Pre-Flight** | Restate task, identify ambiguities | Task clear, assumptions listed |
-| **1. Analyze** | Read docs, identify constraints | All relevant docs read |
-| **2. Plan** | Break into atomic tasks | Tasks atomic, tests defined |
-| **3. Implement** | Code one task at a time | All tasks done, tests written |
-| **4. Validate** | L1-L5 validation checklist | L1-L4 PASS, L5 PASS/deferred |
-| **5. Refine** | Fix validation failures | All blockers fixed |
-| **6. Post-Flight** | Final confirmation | All 10 checks PASS |
-| **7. Output** | Deliver per output-spec | Format compliant |
+| **Planner** | Interpret requirements, produce plans | `/system/agents/planner.md` |
+| **Executor** | Implement plans | `/system/agents/executor.md` |
+| **Reviewer** | Validate output | `/system/agents/reviewer.md` |
 
-**This loop is MANDATORY. You CANNOT skip any phase.**
+**Orchestration:** `/system/orchestration.md`
+
+---
+
+## Multi-Agent Flow
+
+```
+User Request → Planner → Executor → Reviewer → Output
+                   ↓          ↓
+              Plan      Implementation
+                         ↓
+                    Validation
+                         ↓
+                   [PASS/FAIL]
+```
+
+### When to Use Multi-Agent
+
+| Task Type | Mode | Reason |
+|-----------|------|--------|
+| Complex feature (multiple files) | Multi-agent | Requires planning + validation |
+| Bug fix with security impact | Multi-agent | Requires review |
+| Simple fix (one file, no ambiguity) | Single-agent | Overhead not needed |
+| Documentation update | Single-agent | Straightforward |
+| Refactoring | Multi-agent | Requires careful review |
 
 ---
 
