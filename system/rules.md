@@ -501,6 +501,48 @@ All rules in this system use RFC 2119 directive keywords:
 
 ---
 
+## Category 8: Operational Optimization Rules (SHOULD - NON-BLOCKER)
+
+### Cost-Awareness
+
+| ID | Rule | Rationale |
+|----|------|-----------|
+| **COST-01** | SHOULD prefer simplest solution that satisfies all requirements | Prevents over-engineering |
+| **COST-02** | MUST avoid unnecessary abstractions, layers, or components | Minimizes complexity |
+| **COST-03** | SHOULD minimize total implementation size when possible | Efficiency |
+| **COST-04** | SHOULD reuse existing components before creating new ones | Reusability |
+| **COST-05** | MUST NOT add dependencies without justification | Dependency control |
+
+### Convergence Optimization
+
+| ID | Rule | Rationale |
+|----|------|-----------|
+| **CONV-01** | SHOULD prioritize fixes that resolve multiple issues simultaneously | Iteration efficiency |
+| **CONV-02** | SHOULD minimize number of iterations to reach compliance | Speed |
+| **CONV-03** | SHOULD group related issues to enable efficient correction | Reviewer efficiency |
+| **CONV-04** | SHOULD fix cascading issues in single iteration | Cascade prevention |
+
+### Controlled Determinism
+
+| ID | Rule | Rationale |
+|----|------|-----------|
+| **DET-01** | SHOULD prefer consistent reasoning paths over alternative valid approaches | Reproducibility |
+| **DET-02** | SHOULD avoid unnecessary creativity when standard solution exists | Pattern consistency |
+| **DET-03** | MUST prioritize reproducibility across runs | Determinism |
+| **DET-04** | SHOULD follow established patterns from `/docs/` and `/src/` | Consistency |
+| **DET-05** | MUST NOT introduce novel solutions when existing patterns suffice | Pattern adherence |
+
+### Convergence Safety
+
+| ID | Rule | Rationale |
+|----|------|-----------|
+| **SAFE-01** | MUST escalate if iteration count unchanged 2x | Stall prevention |
+| **SAFE-02** | MUST escalate if fix scope expanding | Scope control |
+| **SAFE-03** | MUST escalate if root cause unclear | Root-cause focus |
+| **SAFE-04** | SHOULD prioritize root-cause fixes over superficial corrections | Effective fixes |
+
+---
+
 ## Rule Violation Handling
 
 ### Critical Violations (SEC-*, ARC-*)

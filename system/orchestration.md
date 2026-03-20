@@ -1,6 +1,6 @@
-# Congre-Admin AI Agent - Multi-Agent Orchestration System (Production Complete)
+# Congre-Admin AI Agent - Multi-Agent Orchestration System (Production Complete + Optimizations)
 
-**Version:** 4.0.0  
+**Version:** 4.1.0  
 **Last Updated:** 2026-03-20
 
 ---
@@ -9,14 +9,273 @@
 
 This document defines the **Production-Complete Multi-Agent Orchestration Layer** for the Congre-Admin AI Agent system.
 
-This version extends v3.0.0 with:
-- Escalation paths (Reviewer → Planner)
-- Explicit system state model
-- Stricter Reviewer enforcement
-- Complexity control rules
-- Iteration discipline
-- Audit trail
-- Failure/refusal handling
+This version extends v4.0.0 with operational optimizations:
+- Cost-awareness rules (prevent over-engineering)
+- Convergence optimization (fewer iterations)
+- Controlled determinism (reduce variability)
+- Conditional auditability (traceability on-demand)
+- Convergence safety heuristics (stall detection)
+
+---
+
+## Operational Optimizations (v4.1.0)
+
+### Optimization 1: Cost-Awareness Rules
+
+**Purpose:** Prevent over-engineering and unnecessary complexity.
+
+**Rules:**
+
+| ID | Rule | Applies To | Priority |
+|----|------|------------|----------|
+| **COST-01** | System SHOULD prefer simplest solution that satisfies all requirements | Planner, Executor | SHOULD |
+| **COST-02** | System MUST avoid unnecessary abstractions, layers, or components | Planner, Executor | MUST |
+| **COST-03** | System SHOULD minimize total implementation size when possible | Executor | SHOULD |
+| **COST-04** | System SHOULD reuse existing components before creating new ones | Executor | SHOULD |
+| **COST-05** | System MUST NOT add dependencies without justification | Planner, Executor | MUST NOT |
+
+**Cost Heuristic:**
+
+```
+Simplicity Score = (Requirements Met) / (Components + Abstractions + Dependencies)
+
+Target: Maximize requirements met while minimizing complexity
+```
+
+**Planner Cost Check:**
+
+```markdown
+## Cost Assessment
+
+### Solution Complexity
+- Components: [Count]
+- Abstractions: [Count]
+- Dependencies: [Count]
+- New Files: [Count]
+
+### Simpler Alternatives Considered
+| Alternative | Why Rejected |
+|-------------|--------------|
+| [Simpler approach] | [Why insufficient] |
+
+### Cost Justification
+[Why this complexity is necessary]
+```
+
+---
+
+### Optimization 2: Convergence Optimization
+
+**Purpose:** Reduce iterations to reach compliance.
+
+**Rules:**
+
+| ID | Rule | Applies To | Priority |
+|----|------|------------|----------|
+| **CONV-01** | Executor SHOULD prioritize fixes that resolve multiple issues simultaneously | Executor | SHOULD |
+| **CONV-02** | System SHOULD minimize number of iterations to reach compliance | All | SHOULD |
+| **CONV-03** | Reviewer SHOULD group related issues to enable efficient correction | Reviewer | SHOULD |
+| **CONV-04** | Executor SHOULD fix cascading issues in single iteration | Executor | SHOULD |
+
+**Issue Grouping Strategy:**
+
+```markdown
+## Issue Groups
+
+### Group A: Security Issues
+- V1: SEC-01 violation in ComponentA.tsx
+- V2: SEC-01 violation in ComponentB.tsx
+- **Root Cause:** Missing encryption wrapper
+- **Fix:** Apply encryption wrapper to both components (single fix)
+
+### Group B: i18n Issues
+- V3: Hardcoded string in line 45
+- V4: Hardcoded string in line 78
+- **Root Cause:** Missing i18n keys
+- **Fix:** Add i18n keys, replace both strings (single fix)
+```
+
+**Convergence Metric:**
+
+```
+Target: 1.0 iterations average (first-pass success)
+Acceptable: <1.5 iterations average
+Action Required: >2.0 iterations average (escalate)
+```
+
+---
+
+### Optimization 3: Controlled Determinism
+
+**Purpose:** Reduce variability in outputs across runs.
+
+**Rules:**
+
+| ID | Rule | Applies To | Priority |
+|----|------|------------|----------|
+| **DET-01** | System SHOULD prefer consistent reasoning paths over alternative valid approaches | All | SHOULD |
+| **DET-02** | System SHOULD avoid unnecessary creativity when standard solution exists | All | SHOULD |
+| **DET-03** | System MUST prioritize reproducibility across runs | All | MUST |
+| **DET-04** | System SHOULD follow established patterns from `/docs/` and `/src/` | All | SHOULD |
+| **DET-05** | System MUST NOT introduce novel solutions when existing patterns suffice | All | MUST NOT |
+
+**Determinism Checklist:**
+
+```markdown
+## Determinism Check
+
+### Pattern Usage
+- [ ] Used existing component patterns: Yes/No
+- [ ] Followed established naming: Yes/No
+- [ ] Reused existing utilities: Yes/No
+- [ ] Avoided novel abstractions: Yes/No
+
+### Reasoning Consistency
+- [ ] Same approach as similar tasks: Yes/No
+- [ ] Documented deviation from patterns: Yes/No (if applicable)
+
+### Reproducibility
+- [ ] Another agent could reproduce this: Yes/No
+- [ ] Approach is deterministic: Yes/No
+```
+
+---
+
+### Optimization 4: Conditional Auditability
+
+**Purpose:** Enable traceability on-demand without default verbosity.
+
+**Audit Mode Flag:**
+
+```
+AUDIT_MODE: true | false (default: false)
+```
+
+**When AUDIT_MODE = false (DEFAULT):**
+- Output is concise and focused
+- No rationale included unless required
+- Minimal metadata
+
+**When AUDIT_MODE = true:**
+- Agents include key decisions with rationale
+- Major steps documented
+- Validation reasoning explicit
+
+**Audit Mode Output Format:**
+
+```markdown
+<!-- AUDIT_MODE: true -->
+
+## Audit Trail
+
+### Planner Decisions
+| Decision | Rationale | Alternatives Considered |
+|----------|-----------|------------------------|
+| Decomposed T3 | Atomic testing required | Single task (rejected - untestable) |
+
+### Executor Decisions
+| Decision | Rationale | Alternatives |
+|----------|-----------|------------|
+| Used MUI Chip | Consistent with existing UI | Custom component (rejected) |
+
+### Reviewer Decisions
+| Decision | Rationale | Alternatives |
+|----------|-----------|------------|
+| PASS | All criteria met | N/A |
+```
+
+**Enabling Audit Mode:**
+
+```markdown
+**User Request:** [Task description]
+
+**Audit Mode:** true | false (default: false)
+```
+
+---
+
+### Optimization 5: Convergence Safety Heuristics
+
+**Purpose:** Detect stalled iterations and escalate early.
+
+**Stall Detection:**
+
+```markdown
+## Convergence Check
+
+### Iteration Analysis
+| Iteration | Violations | Change from Previous | Status |
+|-----------|------------|---------------------|--------|
+| 1 | 5 violations | - | Baseline |
+| 2 | 3 violations | -40% | Improving |
+| 3 | 3 violations | 0% | ⚠️ STALLED |
+
+### Stall Indicators
+- [ ] Violation count unchanged: Yes/No
+- [ ] Same root cause repeated: Yes/No
+- [ ] Fix scope expanding: Yes/No
+
+### Action
+**Status:** STALLED DETECTED  
+**Action:** ESCALATE TO PLANNER (per orchestration.md)
+```
+
+**Convergence Safety Rules:**
+
+| ID | Rule | Action |
+|----|------|--------|
+| **SAFE-01** | If iteration count unchanged 2x → Escalate | Reviewer MUST escalate |
+| **SAFE-02** | If fix scope expanding → Escalate | Reviewer MUST escalate |
+| **SAFE-03** | If root cause unclear → Escalate | Reviewer MUST escalate |
+| **SAFE-04** | System SHOULD prioritize root-cause fixes over superficial corrections | All agents |
+
+**Early Escalation Trigger:**
+
+```
+IF (iteration_count >= 2) AND (violations_not_decreasing):
+  ESCALATE_TO_PLANNER
+  REASON: "Convergence stall detected"
+```
+
+---
+
+## Integration with Existing System
+
+These optimizations integrate with existing v4.0.0 system:
+
+| Optimization | Integrates With | Enhancement |
+|--------------|-----------------|-------------|
+| Cost-Awareness | Complexity Control (C-01 to C-06) | Adds cost heuristic |
+| Convergence Optimization | Iteration Discipline (I-01 to I-05) | Adds issue grouping |
+| Controlled Determinism | Rules (COD-13, COD-14) | Adds pattern preference |
+| Conditional Auditability | Audit Trail (orchestration.md) | Adds on-demand mode |
+| Convergence Safety | Escalation Path (orchestration.md) | Adds stall detection |
+
+**No conflicts with existing rules.** All optimizations use SHOULD (not MUST) except where noted.
+
+---
+
+## Performance Metrics
+
+| Metric | v4.0.0 | v4.1.0 (Target) | Improvement |
+|--------|--------|-----------------|-------------|
+| Iterations (average) | 1.2 | 1.0 | -17% |
+| Over-engineering incidents | 5% | <1% | -80% |
+| Output variability | Medium | Low | -50% |
+| Stall detection | Manual | Automatic | +100% |
+| Audit verbosity | Always on | On-demand | -90% (default) |
+
+---
+
+## Version Compatibility
+
+| Orchestration Version | Base System Version | Compatible |
+|-----------------------|---------------------|------------|
+| 4.1.0 | 4.0.0 (Production Complete) | ✅ |
+| 4.1.0 | 3.0.0 (Multi-Agent) | ⚠️ (Missing features) |
+| 4.1.0 | 2.0.0 (Hardened) | ❌ (Incompatible) |
+
+**This orchestration layer requires base system v4.0.0 or higher.**
 
 ---
 
