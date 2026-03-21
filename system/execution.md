@@ -214,10 +214,11 @@ Follow `/system/error-handling.md` to request clarification or document assumpti
 - [ ] L3-03: No hardcoded secrets (search for keys, passwords, tokens)
 - [ ] L3-04: Input sanitization (all user inputs sanitized)
 - [ ] L3-05: No sensitive logs (no console.log with PII)
-- [ ] L3-06: Encryption algorithm (uses AES-GCM, not XXTEA)
-- [ ] L3-07: IV uniqueness (unique 12-byte IV per encryption)
-- [ ] L3-08: Key derivation (PBKDF2 with 600,000 iterations)
-- [ ] L3-09: No Master Key storage (MK not in localStorage)
+- [ ] L3-06: CORS configured (backend validates request origins)
+- [ ] L3-07: Encryption algorithm (uses AES-GCM, not XXTEA)
+- [ ] L3-08: IV uniqueness (unique 12-byte IV per encryption)
+- [ ] L3-09: Key derivation (PBKDF2 with 600,000 iterations)
+- [ ] L3-10: No Master Key storage (MK not in localStorage)
 
 **L3 Pass Criteria:** ALL MUST pass. Zero security violations allowed.
 

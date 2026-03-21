@@ -235,6 +235,7 @@ When conflicts occur:
 | Example | File | Description |
 |---------|------|-------------|
 | New Component | `examples/01-new-component.md` | PersonaCard (GOLD STANDARD) |
+| Multi-Agent Flow | `examples/multi-agent-example.md` | Full Planner → Executor → Reviewer walkthrough |
 | Index | `examples/README.md` | All examples |
 
 ---

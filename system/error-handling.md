@@ -210,6 +210,50 @@ The agent MAY proceed with assumptions when:
 
 ---
 
+## 3b. Pre-Resolved Conflicts (AUTHORITATIVE DECISIONS)
+
+The following conflicts have been identified and resolved by the system owner. Agents MUST use these decisions without requesting further clarification.
+
+### CONFLICT-01: Session Role Model
+**Conflict:** `Esquemas_Comunes.md` defines `session.user.role` as a flat string (e.g. `"admin"`). `Permisos.md` defines access via `perfilId` referencing the `Perfiles` table with a JSON permissions map.
+
+**Resolution (AUTHORITATIVE):** Both representations are used at different layers:
+- The `sessionToken` payload carries a flat `role` string for fast route-guard checks (`"admin"`, `"user"`, `"viewer"`, `"public"`). This is a simplified access tier.
+- Detailed field-level permissions are always resolved via `perfilId` → `Perfiles` table lookup. The `role` string is a UX convenience, never the source of truth for data access decisions.
+- Mapping: `admin` → `p_admin`, `user` → module-specific profile, `viewer` → read-only profile. The backend always validates against the `Perfiles` table.
+
+**Affected files:** `Esquemas_Comunes.md`, `Permisos.md`
+
+---
+
+### CONFLICT-02: Master Key Wrapping Mechanism
+**Conflict:** `Tecnologia.md` section 3 states the MK is wrapped with a PBKDF2-derived Wrapping Key (from the user's password). `Backend.md` section 4 states the MK is "cifrada con el TOTP Secret" of each user.
+
+**Resolution (AUTHORITATIVE):** Both are correct for different auth factors. The system supports two wrapping strategies per auth method:
+
+| Auth Method | Wrapping Key Source |
+|-------------|---------------------|
+| Password + TOTP | PBKDF2(password, salt) derives the Wrapping Key |
+| Passkey (WebAuthn) | A device-bound key derived from the Passkey credential |
+
+TOTP itself does NOT wrap the MK directly. TOTP is the second factor that authorizes the server to release the `wrapped_mk` to the client. The PBKDF2 derivation then unwraps it locally. `Backend.md` section 4 language is imprecise and should be read as: "the MK is only released after TOTP/Passkey validation."
+
+**Affected files:** `Backend.md`, `Tecnologia.md`, `Instalacion.md`
+
+---
+
+### CONFLICT-03: Backend GAS — WebAuthn Limitation
+**Conflict:** The API spec requires `challenge`/`login`/`register` with WebAuthn/Passkey support, but Google Apps Script has no native WebAuthn API.
+
+**Resolution (AUTHORITATIVE):** WebAuthn credential creation and assertion are performed entirely client-side via `navigator.credentials`. GAS only stores and retrieves the serialized public key (`credentialPublicKey`) and challenge nonce. The client validates the assertion locally; GAS validates only that the challenge it issued matches. Agents implementing the auth flow MUST follow this split:
+
+- **Client:** All `navigator.credentials.create()` / `.get()` calls
+- **GAS:** Store `{ userId, credentialId, credentialPublicKey, counter }` in `Usuarios` sheet; issue and validate challenge nonces via `CacheService`
+
+If implementing GAS auth, treat missing WebAuthn server-side support as a **known constraint**, not a blocker. Stub the server-side validation with challenge nonce matching as a minimum viable implementation.
+
+---
+
 ## 4. Conflict Resolution
 
 ### 4.1 Types of Conflicts
@@ -431,5 +475,47 @@ Escalate (request human intervention) when:
 
 ---
 
-**Version:** 1.0.0  
+## 9. Backend Implementation Gap Handling
+
+`Backend.md` explicitly flags that `api.gs` is a **proof of concept** with these features NOT yet implemented: `challenge`/`login`/`register`, session token validation, JSONata engine, RBAC, soft delete, and versioning.
+
+### When an agent encounters an unimplemented backend feature:
+
+**STEP 1 — Classify the gap:**
+
+| Gap Type | Example | Action |
+|----------|---------|--------|
+| Auth endpoints | `challenge`, `login`, `register` | Implement stub + flag |
+| Session validation | `sessionToken` check | Implement stub + flag |
+| JSONata engine in GAS | Server-side validation | Client-side only + flag |
+| RBAC enforcement | Permission checks in GAS | Document as TODO + flag |
+
+**STEP 2 — Implement a stub:**
+Create a minimal implementation that satisfies the API contract without full security. Mark every stub with a standard comment:
+
+```javascript
+// STUB: [Feature name] — not production-ready
+// See Backend.md "Note on Reference Implementation"
+// TODO: Replace with full implementation before production deployment
+```
+
+**STEP 3 — Flag in output:**
+Include a `Backend Gap` section in the validation report:
+
+```markdown
+## Backend Gaps (Non-blocking for frontend development)
+
+| Feature | Status | Stub Location | Production Risk |
+|---------|--------|---------------|-----------------|
+| Session validation | STUB | `api.gs:doPost` | HIGH — validates all tokens as valid |
+| RBAC enforcement | STUB | `api.gs:getPermissions` | HIGH — returns full access |
+| JSONata validation | MISSING | N/A | MEDIUM — no server-side schema check |
+```
+
+**STEP 4 — Do NOT block frontend work:**
+Backend gaps are **not blockers** for frontend implementation tasks. The frontend `DataService` is designed to be backend-agnostic. Frontend agents should implement against the API contract in `API.md` and note which backend features are stubs.
+
+---
+
+**Version:** 2.0.0  
 **Last Updated:** 2026-03-20

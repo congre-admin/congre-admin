@@ -69,8 +69,12 @@ Este plug-in gestiona la creación, personalización y difusión de los programa
     "asignarAutomatico": true,
     "salas": ["a1", "a2"],
     "roles": [
-        { "id": "r_principal", "etiqueta": "Participante", "cantidad": 1, "filtros": ["f1"] },
-        { "id": "r_ayudante", "etiqueta": "Ayudante", "cantidad": 1, "filtros": ["f2"] }
+        { 
+            "id": "r_principal", 
+            "etiqueta": "Participante", 
+            "cantidad": 1, 
+            "filters": ["$Varones", "$Estudiantes"] 
+        }
     ]
 }
 ~~~
@@ -79,7 +83,8 @@ Este plug-in gestiona la creación, personalización y difusión de los programa
 - **descripcion:** Breve explicación técnica para diferenciar partes similares.
 - **asignarAutomatico:** Habilita el motor de sugerencias e integración con discursos.
 - **salas:** IDs de las salas donde se presenta la parte.
-- **roles:** Array flexible de asignaciones vinculadas. Cada rol define sus propios filtros de validación.
+- **roles:** Array flexible de asignaciones vinculadas. Cada rol define sus propios criterios de selección.
+    - **filters:** Array de nombres de **Etiquetas Virtuales** globales. El motor realiza una intersección (AND) para determinar los candidatos válidos.
 
 ### B. Programa Generado (Output Detallado)
 El objeto de programa generado incluye metadatos para controlar su visibilidad y trazabilidad. Las asignaciones se organizan por sala y rol, utilizando siempre arrays de IDs.

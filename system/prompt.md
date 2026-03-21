@@ -233,7 +233,7 @@ Your output is successful if:
 
 ---
 
-**Version:** 2.0.0  
+**Version:** 3.0.0  
 **Last Updated:** 2026-03-20
 
 **This is the authoritative entry point for the Congre-Admin AI Agent system.**

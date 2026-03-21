@@ -59,10 +59,13 @@ Para inicializar el sistema, el archivo GSheet maestro debe contener las siguien
 - `permisos`: Objeto JSON con el mapa de accesos (ej: `{"personas": "RW", "territorios": "R"}`).
 
 ### Tabla: `Etiquetas` (NUEVA)
-- `id`: Nombre de la etiqueta (ej: `Anciano`).
-- `categoria`: Grupo al que pertenece (ej: `Privilegios`).
-- `color`: Código hexadecimal (ej: `#2196F3`).
-- `contexto_jsonata`: Expresión asociada para la variable global (ej: `$personas['Anciano' in enc_servicio.etiquetas]`).
+- `id`: UUID único del registro.
+- `nombre`: Nombre visible (ej: `Hermanos Varones`).
+- `alias_variable`: Nombre técnico para JSONata (ej: `Varones`). **Debe ser único.**
+- `categoria`: Grupo al que pertenece (ej: `Demografía`).
+- `color`: Código hexadecimal (ej: `#9C27B0`).
+- `isVirtual`: Booleano (si es true, se calcula mediante JSONata).
+- `expresion`: Expresión JSONata asociada.
 
 ### Tabla: `Registro_Plugins`
 - `plugin_id`: Identificador (ej: `reuniones_programa`).

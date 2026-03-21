@@ -631,7 +631,7 @@ See `/examples/multi-agent-example.md` for a complete example of:
 
 ---
 
-**Version:** 3.0.0  
+**Version:** 4.0.0  
 **Last Updated:** 2026-03-20
 
 **This is the authoritative specification for the Congre-Admin Reviewer Agent.**

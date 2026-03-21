@@ -11,6 +11,7 @@ This directory contains complete examples demonstrating correct usage of the age
 | [01-new-component](#example-01-create-new-component) | Creating a new React component with tests | Low |
 | [02-new-module](#example-02-create-new-module) | Creating a complete new module | High |
 | [03-bug-fix](#example-03-bug-fix) | Fixing a security vulnerability | Medium |
+| [multi-agent-example](./multi-agent-example.md) | Full Planner → Executor → Reviewer orchestration walkthrough | High |
 
 ---
 
@@ -122,8 +123,14 @@ export const PersonaCard: React.FC<PersonaCardProps> = ({
 }) => {
   const { t } = useTranslation();
 
-  // SECURITY: Use nombreAbreviado to avoid exposing encrypted surname
+  // SECURITY: Use nombreAbreviado to avoid exposing encrypted surname (SEC-01)
   const displayName = persona.identidad.nombreAbreviado || persona.identidad.nombre;
+
+  // SECURITY (SEC-01): This component reads enc_servicio and enc_contacto fields.
+  // It MUST only be used inside authenticated views where DataService has already
+  // decrypted the Persona object. NEVER pass a raw (undecrypted) Persona from a
+  // public data source to this component. For public-facing persona displays,
+  // use sanitizeForPublicView() first and render only non-enc_ fields.
 
   const handleClick = () => {
     onClick?.(persona);
@@ -276,15 +283,15 @@ All tests pass:
 |-----------|--------|
 | TypeScript compiles | ✅ Pass |
 | Tests pass | ✅ Pass (4/4) |
-| Security rules followed | ✅ Pass (enc_ fields not exposed) |
+| SEC-01: enc_ fields | ✅ Pass (component is authenticated-view-only; enc_ fields are pre-decrypted by DataService before reaching this component — see security comment in source) |
 | i18n compliance | ✅ Pass (all strings use t()) |
 | Architecture compliance | ✅ Pass (Core component pattern) |
 | M3 components used | ✅ Pass (Card, Typography, Button, Chip) |
 
 ---
 
-**Validated by:** AI Agent  
-**Date:** 2026-03-20  
+**Validated by:** AI Agent
+**Date:** 2026-03-20
 **Result:** PASS  
 **Confidence:** High
 ```
@@ -375,7 +382,59 @@ The module should appear under the "Administración" section.
 
 ### Final Output
 
-[Due to length, this would continue with full implementation of all files...]
+> **Note:** This example focuses on the planning and structure phase.
+> The gold standard for complete file output (with validation reports, test files,
+> and post-flight checks) is `examples/01-new-component.md`.
+> For a new module, apply the same output pattern to each task in the plan above.
+
+**Key files the Executor MUST produce for this module:**
+
+```
+src/modules/anuncios/
+├── manifest.json              ← Required by ARC-05
+├── index.ts                   ← Public exports
+├── anuncios.types.ts          ← TypeScript types (COD-01)
+├── components/
+│   └── AnuncioCard.tsx        ← Card component + AnuncioCard.test.tsx
+├── hooks/
+│   └── useAnuncios.ts         ← Data hook + useAnuncios.test.ts
+└── views/
+    ├── AnunciosList.tsx        ← List view (public + admin tabs)
+    └── AnuncioEditor.tsx       ← Editor view (admin only, shield_lock)
+```
+
+**Minimum viable `manifest.json` for this module:**
+```json
+{
+  "id": "admin_anuncios",
+  "seccion": "Administración",
+  "nombre": "Anuncios",
+  "icono": "campaign",
+  "version": "1.0.0",
+  "dependencias": [],
+  "dataAliases": {
+    "anuncios": "Anuncios"
+  },
+  "dashboardWidgets": [
+    {
+      "component": "AnuncioWidget",
+      "query": "$anuncios[prioridad = 1 and _deleted != true]"
+    }
+  ],
+  "navegacion": [
+    { "id": "lista", "label": "anuncios.nav.lista", "privacidad": "public" },
+    { "id": "gestionar", "label": "anuncios.nav.gestionar", "privacidad": "shield_lock" }
+  ]
+}
+```
+
+**Validation checklist specific to this module:**
+- [ ] SEC-01: `AnunciosList` public tab MUST NOT render any `enc_` fields
+- [ ] ARC-02: No imports from other `src/modules/*/` directories
+- [ ] ARC-05: `manifest.json` present with all required fields
+- [ ] UI-06: "Gestionar" tab uses `shield_lock` icon
+- [ ] DAT-05: All announcement IDs are UUIDs
+- [ ] TST-01: Each `.tsx` file has a co-located `.test.tsx`
 
 ---
 
@@ -431,7 +490,77 @@ CRITICAL - Encrypted PII may be exposed to unauthenticated users
 
 ### Final Output
 
-[Due to length, this would continue with full implementation...]
+> **Note:** This example is a security bug fix. The Executor MUST produce actual corrected code, not a description. Below is the complete fix for the sanitization function described in the plan.
+
+**MODIFIED: `src/core/utils/sanitize.ts`**
+
+```typescript
+/**
+ * Recursively removes all fields prefixed with `enc_` from an object.
+ * Used to sanitize data before sending to public views or unauthenticated users.
+ *
+ * @security SEC-01, DAT-03 — Never expose encrypted fields publicly.
+ * @param data - Object or array to sanitize
+ * @returns New object with all enc_ fields removed (deep clone, no mutation)
+ */
+export function sanitizeForPublicView<T>(data: T): T {
+  if (Array.isArray(data)) {
+    return data.map(sanitizeForPublicView) as unknown as T;
+  }
+  if (data !== null && typeof data === 'object') {
+    return Object.entries(data).reduce((acc, [key, value]) => {
+      if (key.startsWith('enc_')) return acc;
+      return { ...acc, [key]: sanitizeForPublicView(value) };
+    }, {} as T);
+  }
+  return data;
+}
+```
+
+**NEW: `src/core/utils/sanitize.test.ts`**
+
+```typescript
+import { sanitizeForPublicView } from './sanitize';
+
+describe('sanitizeForPublicView', () => {
+  it('removes top-level enc_ fields', () => {
+    const input = { id: '1', nombre: 'Test', enc_apellido: 'secret' };
+    expect(sanitizeForPublicView(input)).toEqual({ id: '1', nombre: 'Test' });
+  });
+
+  it('removes enc_ fields from nested objects', () => {
+    const input = { id: '1', contacto: { telefono: '123', enc_email: 'secret' } };
+    expect(sanitizeForPublicView(input)).toEqual({ id: '1', contacto: { telefono: '123' } });
+  });
+
+  it('removes enc_ fields from objects inside arrays', () => {
+    const input = [{ id: '1', enc_data: 'secret' }, { id: '2', nombre: 'ok' }];
+    expect(sanitizeForPublicView(input)).toEqual([{ id: '1' }, { id: '2', nombre: 'ok' }]);
+  });
+
+  it('does not mutate the original object', () => {
+    const input = { id: '1', enc_secret: 'x' };
+    sanitizeForPublicView(input);
+    expect(input).toHaveProperty('enc_secret');
+  });
+
+  it('handles null and primitive values safely', () => {
+    expect(sanitizeForPublicView(null)).toBeNull();
+    expect(sanitizeForPublicView('string')).toBe('string');
+    expect(sanitizeForPublicView(42)).toBe(42);
+  });
+});
+```
+
+**Validation report excerpt (L3 Security):**
+
+| ID | Criterion | Status | Notes |
+|----|-----------|--------|-------|
+| L3-01 | No exposed `enc_` fields | ✅ PASS | `sanitizeForPublicView` now recursive |
+| L3-04 | Input sanitization | ✅ PASS | Applied at DataService layer |
+
+**Overall Result:** ✅ PASS  
+**Validated by:** Reviewer Agent | **Date:** 2026-03-20 | **Confidence:** High
 
 ---
 

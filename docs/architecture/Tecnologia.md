@@ -127,10 +127,18 @@ Además de las variables del manifiesto, el Core inyecta variables basadas en la
 Cada plugin puede registrar alias para sus propias tablas en el `Manifest` bajo la clave `dataAliases`. Estos alias se inyectan como variables adicionales cuando el motor ejecuta lógica para ese plugin.
 - **Ejemplo (Reuniones):** Si el manifest define `"plantillas": "Plantillas_Reuniones"`, el plugin puede usar `$plantillas[id = 'r1']` directamente.
 
-### Colecciones Inteligentes (Computed Variables)
-El Core permite definir alias para subconjuntos de datos complejos en el `Manifest`. Estas variables se evalúan dinámicamente y están disponibles globalmente o localmente.
-- **Ejemplo (Personas):** Si el manifest define `"ancianos": "$personas['Anciano' in enc_servicio.etiquetas]"`, cualquier parte del sistema puede usar `$ancianos` para obtener la lista filtrada.
-- **Uso en Selectores:** Un componente `<PersonaSelector />` puede configurarse para mostrar solo `$ancianos` de forma declarativa.
+### Promoción Universal de Etiquetas (Global Context)
+Todas las etiquetas definidas se promueven automáticamente a variables globales usando su `alias_variable`.
+
+#### Reglas de Nomenclatura y Unicidad
+Para evitar conflictos técnicos y colisiones de nombres:
+1. **Unicidad:** El sistema valida que el `alias_variable` sea único en toda la tabla `Etiquetas`.
+2. **Formato:** Solo se permiten caracteres alfanuméricos (sin espacios ni símbolos especiales).
+3. **Protección de Reservadas:** El sistema impide usar nombres reservados del motor JSONata (ej: `count`, `sum`, `map`) como alias.
+4. **Prioridad:** Si un plugin intenta inyectar una variable local con el mismo nombre que una global, la **local** tiene precedencia dentro del contexto de ese plugin.
+
+#### Mecanismo de Inyección
+`$variable = isVirtual ? evaluate(expresion) : personas[alias_variable in enc_servicio.etiquetas]`
 
 ### Funciones Extendidas
 El Core registra funciones personalizadas dentro del motor:

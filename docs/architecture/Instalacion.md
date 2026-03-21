@@ -28,6 +28,12 @@ Cuando el frontend detecta que no hay `api` ni `ssId` en `localStorage`, lanza e
         *   `Siervo de Predicación Pública` (Exhibidores/Carritos)
         *   `Conductor de Predicación Telefónica` (Listados de números)
         *   `Superintendente de Grupo` (Informes y atención de grupo)
+    - **Semántica Oficial (Etiquetas Inteligentes):**
+        *   `$Varones`: `personas[identidad.genero = 'H']`
+        *   `$Hermanas`: `personas[identidad.genero = 'M']`
+        *   `$Estudiantes`: `personas[enc_servicio.escuela_estado = 'Matriculado']`
+        *   `$CandidatosLectura`: `$Varones[id in $Estudiantes.id]`
+        *   `$HermanosCapacitados`: `personas["Anciano" in etiquetas or "Siervo" in etiquetas]`
 - **Opción B:** Vincular una GSheet existente proporcionando su ID manualmente.
 
 ### Paso 3: Registro del Super-Admin

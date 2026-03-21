@@ -271,11 +271,11 @@ These optimizations integrate with existing v4.0.0 system:
 
 | Orchestration Version | Base System Version | Compatible |
 |-----------------------|---------------------|------------|
-| 4.1.0 | 4.0.0 (Production Complete) | ✅ |
-| 4.1.0 | 3.0.0 (Multi-Agent) | ⚠️ (Missing features) |
-| 4.1.0 | 2.0.0 (Hardened) | ❌ (Incompatible) |
+| 4.1.0 | 3.0.0 (Multi-Agent) | ✅ |
+| 4.1.0 | 2.0.0 (Hardened) | ⚠️ (Missing features) |
+| 4.1.0 | 1.0.0 (Production) | ❌ (Incompatible) |
 
-**This orchestration layer requires base system v4.0.0 or higher.**
+**This orchestration layer requires base system v3.0.0 or higher.**
 
 ---
 
@@ -376,11 +376,44 @@ interface SystemState {
 
 | Rule | Description |
 |------|-------------|
-| **S-01** | State MUST be passed完整 between agents |
+| **S-01** | State MUST be passed in full (all fields) between agents |
 | **S-02** | Agents MUST NOT modify state elements they don't own |
 | **S-03** | All state changes MUST be logged in `decisionLog` |
 | **S-04** | State MUST be validated before transitions |
 | **S-05** | Iteration count MUST be tracked and visible |
+
+---
+
+## Single-Model Execution (IMPORTANT)
+
+In practice, a single LLM instance will often execute all three agent roles sequentially within one session. This is fully supported. When operating in single-model mode:
+
+### Role Switching Protocol
+When transitioning between roles, the agent MUST explicitly announce the switch:
+```
+---
+**[PLANNER AGENT — COMPLETE]** Handing off to Executor.
+---
+**[EXECUTOR AGENT — STARTING]** Reading plan from above...
+```
+
+This creates a clear boundary in the output so the Reviewer can identify what was planned vs. what was implemented.
+
+### Context Budget Awareness
+- After Planner output, the agent MUST estimate remaining context budget.
+- If context is insufficient to complete Executor + Reviewer phases in one turn, the agent MUST output a **continuation marker** before truncating:
+
+```markdown
+[CONTINUATION REQUIRED]
+Completed: Planner phase
+Remaining: Executor (Tasks T1–T4), Reviewer phase
+Next turn: Begin with "EXECUTOR AGENT — CONTINUING from T1"
+```
+
+- The user must then send a continuation prompt (e.g. "continue") for the next turn to pick up at the marked point.
+
+### Iteration Discipline in Single-Model Mode
+When the Reviewer role finds violations in its own Executor output, it MUST re-enter the Executor role to fix them — not patch them inline. Use the same role-switching announcement. This maintains traceability across the output.
 
 ---
 
@@ -943,7 +976,7 @@ Option A - security takes precedence (per priority hierarchy)
 
 ---
 
-**Version:** 4.0.0  
+**Version:** 4.1.0  
 **Last Updated:** 2026-03-20
 
 **This is the production-complete specification for the Congre-Admin Multi-Agent Orchestration System.**

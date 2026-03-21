@@ -82,7 +82,7 @@ All rules in this system use RFC 2119 directive keywords:
 
 ### SEC-13: Rate Limiting
 **Rule:** SHOULD implement rate limiting on auth endpoints.  
-**Test:** Auth endpoints include request throttling.  
+**Test:** Manual review — verify `api.gs` `doPost` handler checks request frequency via `CacheService`. Look for a pattern like: `cache.get('rate:' + username)` before processing `login` or `challenge` actions.  
 **Rationale:** Prevents brute force attacks.
 
 ### SEC-14: Content Security Policy
@@ -166,12 +166,12 @@ All rules in this system use RFC 2119 directive keywords:
 
 ### ARC-14: Component Reuse
 **Rule:** SHOULD use existing components from `CongreAdmin-UI`.  
-**Test:** No duplicate component implementations.  
+**Test:** No duplicate component implementations.
 **Rationale:** Consistency and reusability.
 
 ### ARC-15: Dashboard Widgets
 **Rule:** SHOULD implement widgets for dashboard summaries.  
-**Test:** Dashboard includes module widgets with queries.  
+**Test:** Manual review — each `manifest.json` in `src/modules/*/` SHOULD include a `dashboardWidgets` array with at least one entry containing `component` and `query` fields (per `Arquitectura.md` section 2). Verify: `grep -r "dashboardWidgets" src/modules/*/manifest.json`  
 **Rationale:** User experience requirement.
 
 ---
@@ -239,8 +239,8 @@ All rules in this system use RFC 2119 directive keywords:
 **Rationale:** Predictable behavior.
 
 ### COD-13: Functional Patterns
-**Rule:** SHOULD use functional programming patterns.  
-**Test:** Pure functions, no side effects.  
+**Rule:** SHOULD use functional programming patterns (pure functions, no direct mutations of external state inside utility functions).  
+**Test:** Manual review — utility functions in `src/core/utils/` and `src/services/` should not mutate their arguments. Check: no `param.field = value` patterns inside exported functions. ESLint rule `no-param-reassign` enforces this automatically if configured in `.eslintrc`.  
 **Rationale:** Predictability and testability.
 
 ### COD-14: Function Length
@@ -573,7 +573,14 @@ All rules in this system use RFC 2119 directive keywords:
 | Data (DAT) | 6 | 3 | 3 | 12 | HIGH |
 | Testing (TST) | 5 | 2 | 3 | 10 | HIGH |
 | Documentation (DOC) | 4 | 0 | 3 | 7 | MEDIUM |
-| **TOTAL** | **45** | **21** | **25** | **91** | |
+| **SUBTOTAL (Blocker/Deferrable)** | **45** | **21** | **25** | **91** | |
+| Operational — COST (Cat. 8) | 1 | 1 | 3 | 5 | NON-BLOCKER |
+| Operational — CONV (Cat. 8) | 0 | 0 | 4 | 4 | NON-BLOCKER |
+| Operational — DET (Cat. 8) | 2 | 1 | 2 | 5 | NON-BLOCKER |
+| Operational — SAFE (Cat. 8) | 2 | 0 | 2 | 4 | NON-BLOCKER |
+| **GRAND TOTAL** | **50** | **23** | **36** | **109** | |
+
+> **Note:** The 91-rule count in `prompt.md` and elsewhere refers to the blocker/deferrable rules only (Categories 1–7). Category 8 Operational rules are supplementary guidance for efficiency — they are NEVER blockers and do not gate output delivery. When rules.md says "check all 91 rules", this means Categories 1–7. Category 8 is checked separately under convergence and cost heuristics in `orchestration.md`.
 
 ---
 
