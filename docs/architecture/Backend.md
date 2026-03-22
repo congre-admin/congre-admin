@@ -124,8 +124,15 @@ Para garantizar que no haya pérdida de información durante actualizaciones del
 - El backend nunca debe borrar una hoja si ya existe (`preserveExisting: true`).
 - Si se añaden nuevas columnas, el backend debe añadirlas al final de la cabecera actual sin alterar las existentes.
 
-### B. Sistema de Backup Manual
+### B. Migraciones de Esquema
+- Para cambios backward-compatible (agregar campos opcionales): seguir política `initSheet` no destructiva.
+- Para cambios breaking (renombrar/eliminar campos): ejecutar script de migración desde `scripts/migrations/`.
+- Toda migración debe registrarse en la tabla `Sistema_Migraciones` del GSheet Core.
+- Ver [Estrategia de Migración de Esquemas](./Migraciones.md) para detalles completos.
+
+### C. Sistema de Backup Manual
 - El Core debe exponer una función de "Exportar Backup Completo" que descargue un archivo ZIP conteniendo todos los archivos GSheet vinculados en formato JSON.
+- **Requerido:** Ejecutar backup antes de cualquier migración breaking.
 
 ## 9. Gestión de Volumen y Archivado (Cold Storage)
 Para mantener el rendimiento óptimo y no alcanzar el límite de 10M de celdas de Google Sheets:

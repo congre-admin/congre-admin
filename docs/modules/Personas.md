@@ -31,7 +31,11 @@ La ficha se divide en bloques lógicos: Identidad, Contacto, Servicio y Metadato
     },
     "metadatos": [
         { "clave": "filtrosReuniones", "valor": ["f1", "f2"], "enc": false },
-        { "clave": "discursosPreparados", "valor": [1, 5, 22], "enc": false }
+        { 
+            "clave": "contacto_emergencia", 
+            "valor": { "nombre": "María Sosa", "relacion": "Hermana", "telefono": "+54 11 0000-0000" }, 
+            "enc": true 
+        }
     ]
 }
 ~~~

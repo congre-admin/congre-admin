@@ -9,10 +9,11 @@ Administración del censo maestro de la congregación.
 -   **Personas** (`shield_lock`): Gestión de personas y entidades relacionadas. Incluye herramientas avanzadas de filtrado y exportación.
 -   [Ver Definición Detallada](./Admin_Personas.md)
 
-### 2. Plug-in: Registros
-Gestión de la actividad histórica y mensual de los publicadores.
+### 2. Plug-in: Registros e Informes
+Gestión de la actividad histórica, mensual y cierres a la sucursal.
 -   **Registros de publicador** (`shield_lock`): Gestión de las fichas de registro histórico.
 -   **Informes de predicación** (`shield_lock`): Interfaz para que superintendentes carguen la actividad mensual de sus grupos.
+-   **Cierre mensual** (`shield_lock`): Consolidación de actividad y contabilidad de publicadores (Novedades).
 -   [Ver Definición Detallada](./Admin_Registros.md)
 
 ### 3. Plug-in: Usuarios y Seguridad

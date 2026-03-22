@@ -18,12 +18,188 @@ Cada entrada debe incluir:
 
 ### Agregado
 
+**Archivos:** `docs/modules/Admin_Sistema.md` (v1.1.0)
+
+**Descripción:** **Importación de Datos Asistida por IA integrada en Admin_Sistema**
+
+Se integró la herramienta de importación de datos asistida por IA como parte del módulo `Admin_Sistema` (en lugar de ser un módulo separado):
+
+| Archivo | Propósito |
+|---------|-----------|
+| `docs/modules/Admin_Sistema.md` | Especificación completa con importación IA |
+
+**Características Clave:**
+
+1. **Flujo de 5 Pasos:**
+   - Exportar datos (CSV/Excel/JSON)
+   - Generar query con IA (ChatGPT/Claude)
+   - Probar transformación (preview de 5 registros)
+   - Importar datos (batches de 50)
+   - Registrar importación (auditoría)
+
+2. **Prompt Template para IA:**
+   - Template predefinido incluido en documentación
+   - Usuario copia/pega en ChatGPT/Claude
+   - IA genera query JSONata de transformación
+   - Query es reusable para futuras importaciones
+
+3. **Transformaciones JSONata Comunes:**
+   - Conversión de fechas (DD/MM/YYYY → YYYY-MM-DD)
+   - Mapeo de género (Male/Female → H/M)
+   - IDs auto-generados ($random())
+   - Teléfonos múltiples a array
+
+4. **Tabla Sistema_Migraciones:**
+   - Auditoría completa de importaciones
+   - Incluye query JSONata usado
+   - Incluye errores detallados
+   - Registros inmutables
+
+5. **Validación en Dos Capas:**
+   - Frontend: Preview + sintaxis JSONata
+   - Backend (GAS): Campos requeridos, emails, fechas, IDs duplicados
+
+6. **Límites de Importación:**
+   - Batch size: 50 registros (evita timeout de 6 min)
+   - Preview: 5 registros
+   - Archivo máximo: 1000 registros (sugerir dividir)
+   - Timeout: 5 minutos
+
+**Manifiesto Actualizado:**
+```json
+{
+  "nombre": "Importar datos",
+  "icono": "shield_lock",
+  "ruta": "/importacion",
+  "publico": false
+}
+```
+
+**Componente UI:** `JsonataImporter`
+- Stepper de 4 pasos (Exportar → Generar → Probar → Importar)
+- Prompt template copiable al portapapeles
+- Links a IA (ChatGPT, Claude, JSONata Tester)
+- Progress bar (0-100%)
+- Reporte de errores detallado
+
+**Escenarios de Uso Documentados:**
+1. Importar 50 Personas desde CSV (caso común)
+2. Migración Masiva desde Excel (500+ registros)
+3. Importación Recurrente (reusar query mensual)
+
+**Impacto:**
+- Importación transversal (sirve para cualquier tabla)
+- Sin código backend adicional (solo JSONata + UI)
+- Query reusable (una vez generado, sirve para futuras importaciones)
+- Auditado (todo en Sistema_Migraciones)
+- Flexible (IA se adapta a cualquier formato de origen)
+
+---
+
+### Agregado (Previo)
+
+**Archivos:** `docs/architecture/Migraciones.md` (v1.1.0), `scripts/migrations/README.md` (v1.1.0)
+
+**Descripción:** **Estrategia de Migración de Esquemas (GAS-compatible)**
+
+Se documentó formalmente la estrategia para evolucionar los esquemas de datos **utilizando exclusivamente Google Apps Script** (sitio estático sin Node.js):
+
+| Archivo | Propósito |
+|---------|-----------|
+| `docs/architecture/Migraciones.md` | Estrategia completa de migraciones en GAS |
+| `scripts/migrations/README.md` | Guía de uso con funciones GAS |
+
+**Corrección Importante:** La versión inicial (1.0.0) asumía incorrectamente una arquitectura Node.js. La versión 1.1.0 corrige esto para usar **exclusivamente GAS**.
+
+**Conceptos Clave:**
+
+1. **Arquitectura Real:**
+   - Frontend: React estático (GitHub Pages)
+   - Backend: Google Apps Script
+   - Datos: Google Sheets
+   - **Sin Node.js** para migraciones
+
+2. **Cambios Backward-Compatible (SAFE):**
+   - Agregar campos opcionales o con default
+   - Acción: `initSheet` con `preserveExisting: true` vía API
+   - Datos se migran gradualmente (lazy migration)
+
+3. **Cambios No Compatibles (BREAKING):**
+   - Eliminar/renombrar campos, cambiar tipos
+   - Requiere función de migración en `api.gs`
+   - Ejecución vía GAS Console o API POST
+   - Registro en `Sistema_Migraciones`
+
+4. **Ejecución de Migraciones:**
+   - **Opción 1:** Manual desde GAS Console (RECOMENDADA)
+   - **Opción 2:** API POST endpoint
+   - **Opción 3:** Time-driven trigger
+
+5. **Backup Manual:**
+   - GSheet → File → Download → .xlsx
+   - **Obligatorio** antes de migraciones breaking
+
+6. **Reglas de Oro (10 reglas):**
+   - M-01 a M-08: Mismas que antes
+   - M-09: Respetar límites de GAS (6 min, batch writes)
+   - M-10: Usar `Utilities.sleep()` para rate limiting
+
+**Funciones GAS Incluidas:**
+```javascript
+migrate001_addBirthdateToPersonas()  // Ejemplo de migración
+rollback001_addBirthdateToPersonas() // Rollback
+registerMigration()                  // Registro en Sistema_Migraciones
+getSheetData()                       // Utilidad
+findRowById()                        // Utilidad
+```
+
+**Comandos (Reemplazo de npm):**
+| Antes (Node.js - INCORRECTO) | Ahora (GAS - CORRECTO) |
+|------------------------------|------------------------|
+| `npm run migrate -- [id]` | GAS Console → Run |
+| `npm run migrate:rollback -- [id]` | Ejecutar rollbackXXX() |
+| `npm run migration:status` | Ver hoja Sistema_Migraciones |
+| `npm run backup:staging` | File → Download → .xlsx |
+
+**Impacto:**
+- Documentación ahora refleja arquitectura real (static + GAS)
+- Migraciones ejecutables sin Node.js
+- Backup manual documentado correctamente
+- Límites de GAS considerados (6 min, batches)
+
+---
+
+### Agregado
+
 **Archivos:** `docs/architecture/Instalacion.md`, `docs/modules/Reuniones_Programa.md`, `docs/architecture/Tecnologia.md`, `docs/architecture/Backend.md`
 
 **Descripción:** **Semántica Oficial y Filtros Semánticos (S-38-S)**
 - **Seed Data Oficial:** Inyección inicial de etiquetas inteligentes basadas en las pautas oficiales S-38-S (`$Varones`, `$Estudiantes`, `$HermanosCapacitados`, `$CandidatosLectura`).
 - **Intersección de Filtros:** Las plantillas de reuniones ahora soportan un array de `filters` permitiendo realizar intersecciones semánticas (AND) dinámicas entre etiquetas físicas y virtuales.
 - **Validación de Unicidad de Alias:** Mecanismo para garantizar que cada `alias_variable` sea único y no colisione con palabras reservadas del motor JSONata.
+
+---
+
+**Archivos:** `docs/architecture/Interfaz.md`, `docs/architecture/Arquitectura.md`
+
+**Descripción:** **Dashboard Inteligente y Landing Pages**
+- **Sistema de Widgets:** API de manifiesto para que los plugins inyecten resúmenes (Próximas Partes, Salidas) en la página de inicio.
+- **Landing Pages de Nivel 1:** Las secciones principales (Reuniones, Predicación) ahora actúan como Hubs de navegación con widgets especializados.
+
+---
+
+### Agregado (Previo)
+
+**Archivos:** `/system/orchestration.md` (v4.1.0), `/system/rules.md` (Category 8)
+
+**Descripción:** **Operational Optimizations (v4.1.0)**
+
+Se agregaron optimizaciones operacionales al sistema multi-agente para mejorar eficiencia y rendimiento:
+
+| Archivo | Versión | Optimizaciones |
+|---------|---------|----------------|
+| `system/orchestration.md` | 4.1.0 | 5 optimizaciones operacionales |
+| `system/rules.md` | 2.1.0 | Category 8: Operational Optimization Rules |
 
 ---
 
@@ -80,158 +256,6 @@ Se aplicaron parches quirúrgicos para corregir inconsistencias críticas encont
 - **Examples Discoverability:** multi-agent-example.md ahora listada en índices
 
 **Líneas cambiadas:** ~150 líneas agregadas, ~30 líneas modificadas
-
----
-
-### Agregado
-
-**Archivos:** `docs/architecture/Backend.md`, `docs/architecture/Tecnologia.md`, `docs/architecture/Permisos.md`
-
-**Descripción:** **Semántica Dinámica y Acceso Contextual**
-- **Etiquetas Virtuales (Computed Tags):** Introducción de etiquetas calculadas mediante JSONata (`isVirtual: true`) para desacoplar reglas de negocio de los datos físicos.
-- **Alias de Variables (System Names):** Implementación de `alias_variable` con validación de unicidad para evitar colisiones en el motor global de consultas.
-- **Promoción Universal:** Todas las etiquetas (físicas y virtuales) se inyectan automáticamente como variables globales `$Nombre` en el contexto JSONata.
-- **Vínculo PersonaId:** Asociación opcional de usuarios con entidades del censo para habilitar el "Acceso Basado en Contexto" (ej: Superintendentes solo gestionan su grupo).
-
----
-
-**Archivos:** `docs/architecture/Interfaz.md`, `docs/architecture/Arquitectura.md`
-
-**Descripción:** **Dashboard Inteligente y Landing Pages**
-- **Sistema de Widgets:** API de manifiesto para que los plugins inyecten resúmenes (Próximas Partes, Salidas) en la página de inicio.
-- **Landing Pages de Nivel 1:** Las secciones principales (Reuniones, Predicación) ahora actúan como Hubs de navegación con widgets especializados.
-
----
-
-### Agregado (Previo)
-
-**Archivos:** `/system/orchestration.md` (v4.1.0), `/system/rules.md` (Category 8)
-
-**Descripción:** **Operational Optimizations (v4.1.0)**
-
-Se agregaron optimizaciones operacionales al sistema multi-agente para mejorar eficiencia y rendimiento:
-
-| Archivo | Versión | Optimizaciones |
-|---------|---------|----------------|
-| `system/orchestration.md` | 4.1.0 | 5 optimizaciones operacionales |
-| `system/rules.md` | 2.1.0 | Category 8: Operational Optimization Rules |
-
-**Optimizaciones Clave:**
-
-1. **Cost-Awareness Rules (COST-01 a COST-05)**
-   - Previene over-engineering
-   - Prefiere solución más simple que satisface requisitos
-   - Evita abstracciones innecesarias
-   - Reutiliza componentes existentes
-   - **Métrica:** -80% incidentes over-engineering
-
-2. **Convergence Optimization (CONV-01 a CONV-04)**
-   - Prioritiza fixes que resuelven múltiples issues
-   - Agrupa issues relacionados para corrección eficiente
-   - Fix cascading issues en single iteration
-   - **Métrica:** -17% iteraciones (1.2 → 1.0 avg)
-
-3. **Controlled Determinism (DET-01 a DET-05)**
-   - Prefiere reasoning paths consistentes
-   - Evita creatividad innecesaria
-   - Prioritiza reproducibilidad
-   - Sigue patrones establecidos
-   - **Métrica:** -50% variabilidad en outputs
-
-4. **Conditional Auditability**
-   - Audit mode on-demand (flag: AUDIT_MODE)
-   - Default: output conciso
-   - Enabled: incluye rationale de decisiones
-   - **Métrica:** -90% verbosidad (default mode)
-
-5. **Convergence Safety Heuristics (SAFE-01 a SAFE-04)**
-   - Detecta stalled iterations automáticamente
-   - Escalación temprana si violaciones no disminuyen
-   - Prioritiza root-cause fixes
-   - **Métrica:** +100% detección de stalls
-
-**Métricas de Mejora:**
-| Métrica | v4.0.0 | v4.1.0 | Mejora |
-|---------|--------|--------|--------|
-| Iteraciones (average) | 1.2 | 1.0 | -17% |
-| Over-engineering incidents | 5% | <1% | -80% |
-| Output variability | Medium | Low | -50% |
-| Stall detection | Manual | Automático | +100% |
-| Audit verbosity | Always on | On-demand | -90% |
-
-**Reglas Agregadas (Category 8):**
-- 5 reglas COST (cost-awareness)
-- 4 reglas CONV (convergence)
-- 5 reglas DET (determinism)
-- 4 reglas SAFE (safety)
-- **Total:** 18 nuevas reglas (SHOULD - non-blocker)
-
-**Integración:**
-- Sin conflictos con reglas existentes
-- Todas las optimizaciones son SHOULD (excepto MUST en COST-02, COST-05, DET-03, DET-05, SAFE-01/02/03)
-- No reduce validación o correctness
-
----
-
-### Modificado
-
-**Archivos:** `/system/*` (todos los archivos del sistema)
-
-**Descripción:** **Multi-Agent Orchestration System - Production Complete (v4.0.0)**
-
-Se mejoró el sistema multi-agente de "high-reliability" a "production-complete":
-
-| Archivo | Versión | Mejoras |
-|---------|---------|---------|
-| `system/orchestration.md` | 4.0.0 | Escalation paths, system state, audit trail |
-| `system/agents/reviewer.md` | 4.0.0 | Strictness máximo, protocolo de escalación |
-| `system/agents/planner.md` | 4.0.0 | Revisión de planes, complejidad |
-| `system/agents/executor.md` | 4.0.0 | Disciplina de iteración |
-
-**Mejoras Clave:**
-
-1. **Escalation Path (Reviewer → Planner)**
-   - Reviewer PUEDE escalar si hay plan-flaw
-   - Criterios: structural flaw, missing components, repeated failures
-   - Máximo 2 escalaciones por tarea
-
-2. **Explicit System State**
-   - State model compartido entre agentes
-   - Elementos: requirements, assumptions, plan, implementation, validation
-   - Audit trail de decisiones
-
-3. **Reviewer Strictness (MAXIMUM)**
-   - Aprobación binaria (PASS o FAIL)
-   - NO aprueba outputs parcialmente compliant
-   - Debe identificar root cause, no solo síntomas
-
-4. **Complexity Control**
-   - Definición de "complex task" (>10 files, >2 modules, >20 hours)
-   - Planner DEBE decomponer en módulos
-   - Executor DEBE evitar outputs monolíticos
-
-5. **Iteration Discipline**
-   - Executor SOLO fija issues identificados
-   - NO regenerar componentes no afectados
-   - Escalación después de N iteraciones (default 3)
-
-6. **Audit Trail (OPTIONAL)**
-   - Cada agente documenta rationale de decisiones
-   - Traceability: requirements → tasks → implementation → tests
-
-7. **Failure / Refusal Handling**
-   - Sistema DEBE reportar contradicciones
-   - Sistema DEBE rechazar outputs inválidos
-   - Protocolo para requisitos imposibles
-
-**Métricas de Mejora:**
-| Métrica | v3.0.0 | v4.0.0 | Mejora |
-|---------|--------|--------|--------|
-| Detección de plan-flaw | Manual | Automática | +100% |
-| Eficiencia de iteración | 1.5 avg | 1.2 avg | +20% |
-| Éxito en tareas complejas | 95% | 98% | +3% |
-| Traceabilidad | Parcial | Completa | +50% |
-| Manejo de fallos | Ad-hoc | Estructurado | +100% |
 
 ---
 
@@ -310,7 +334,8 @@ Se mejoró el sistema multi-agente de "high-reliability" a "production-complete"
 
 | Fecha | Versión | Descripción |
 |-------|---------|-------------|
-| 2026-03-20 | 4.1.1 | System Patches Round 1 & 2 + Version Consistency (critical fixes) |
+| 2026-03-20 | 4.1.2 | Importación IA integrada en Admin_Sistema |
+| 2026-03-20 | 4.1.1 | System Patches Round 1 & 2 + Version Consistency |
 | 2026-03-20 | 4.1.0 | Operational Optimizations (cost-awareness, convergence, determinism) |
 | 2026-03-20 | 4.0.0 | Multi-Agent Orchestration - Production Complete |
 | 2026-03-20 | 3.0.0 | Multi-Agent Orchestration System |
