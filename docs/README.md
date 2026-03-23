@@ -27,6 +27,7 @@ La especificación del agente AI se encuentra en `/system` (raíz del proyecto):
 11. [**Guía de Instalación (Setup)**](./architecture/Instalacion.md): Manual para el "Día 0" y despliegue.
 12. [**Acceso y Despliegue**](./architecture/Despliegue.md): Estrategia de hosting y parámetros de URL.
 13. [**Estructura del Proyecto**](./architecture/Estructura_Proyecto.md): Organización de carpetas `/src` y reglas de acoplamiento.
+14. [**Diagramas de Procesos**](./architecture/Diagramas_Procesos.md): Workflows visuales (Setup, Cierre, Handshake) en Mermaid.
 
 ## 📦 Especificación del Backend
 - [**Protocolo del Backend**](./architecture/Backend.md): Implementación en GAS y GSheets.

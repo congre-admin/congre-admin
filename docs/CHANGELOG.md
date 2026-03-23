@@ -18,6 +18,64 @@ Cada entrada debe incluir:
 
 ### Agregado
 
+**Archivos:** `docs/architecture/Diagramas_Procesos.md`, `docs/modules/Admin_Registros.md`
+
+**Descripción:** **Visualización de Procesos y Contabilidad Administrativa**
+-   **Diagramas Mermaid:** Creación de una biblioteca de flujos visuales para el Setup Wizard, el Handshake de Seguridad y el Ciclo Mensual de Informes.
+-   **Bitácora de Novedades:** Implementación de la tabla `Novedades` como una cuenta corriente universal para registrar altas/bajas de publicadores y hitos administrativos (Visita SC, Cierres).
+-   **Gestión de Cumplimiento:** Dashboard para el Secretario con monitoreo de carga por grupo, recordatorios de cierre y plantillas de reclamo vía WhatsApp.
+-   **Automatización de Tardíos:** Lógica basada en timestamps (`_ts`) para identificar e incluir informes retrasados en el cierre mensual.
+
+---
+
+### Modificado
+
+**Archivos:** `docs/architecture/Backend_Alternatives.md`
+
+**Descripción:** **Análisis de Backends Alternativos**
+
+Se documentó un análisis exhaustivo de alternativas al backend actual (Google Apps Script + Google Sheets):
+
+| Backend Analizado | Tipo | Costo | Zero-Knowledge | Auto-alojable | GPL Compatible |
+|-------------------|------|-------|----------------|---------------|----------------|
+| **Google Sheets** (actual) | Spreadsheet | $0 | ❌ No | ❌ No | ✅ Sí |
+| **SQLite** | SQL (embebido) | $0 | ✅ Sí | ✅ Sí | ✅ Sí |
+| **PostgreSQL** | SQL (servidor) | $0-300/año | ✅ Sí | ✅ Sí | ✅ Sí |
+| **MongoDB** | NoSQL | $0-240/año | ✅ Sí | ✅ Sí | ⚠️ Parcial |
+| **Firebase** | NoSQL (BaaS) | $0-500/año | ❌ No | ❌ No | ⚠️ Parcial |
+| **Supabase** | PostgreSQL (BaaS) | $0-300/año | ✅ Sí | ✅ Sí | ✅ Sí |
+| **Archivos JSON** | Archivos | $0 | ✅ Sí | ✅ Sí | ✅ Sí |
+| **IPFS + P2P** | Distribuido | $0-120/año | ✅ Sí | ✅ Sí | ✅ Sí |
+
+**Recomendación Estratégica:**
+
+1. **Nivel 1 (Gratis):** Google Sheets - implementación actual
+2. **Nivel 2 (Auto-alojado):** SQLite + sync opcional - Zero-Knowledge, offline
+3. **Nivel 3 (Enterprise):** PostgreSQL/Supabase - multi-congregación, características avanzadas
+
+**Arquitectura Híbrida Recomendada:**
+- Capa de abstracción `DataService` para soportar múltiples backends
+- Exportación/importación en JSON estándar para portabilidad
+- Estrategia de backup 3-2-1 (3 copias, 2 medios, 1 fuera del sitio)
+
+**Marco de Decisiones:**
+- <50 publicadores → GSheets o SQLite
+- 50-200 publicadores → SQLite o Supabase
+- >200 publicadores → PostgreSQL
+- Zero-Knowledge requerido → SQLite, PostgreSQL, Supabase, JSON, IPFS
+- Offline requerido → SQLite, JSON Files
+- Multi-usuario → PostgreSQL, Supabase, Firebase
+
+**Impacto:**
+- Evita vendor lock-in (portabilidad entre backends)
+- Permite migración gradual según crecimiento
+- Mantiene compatibilidad con GPL v3
+- Proporciona opciones para diferentes necesidades técnicas y presupuestarias
+
+---
+
+### Agregado
+
 **Archivos:** `docs/modules/Admin_Sistema.md` (v1.1.0)
 
 **Descripción:** **Importación de Datos Asistida por IA integrada en Admin_Sistema**
