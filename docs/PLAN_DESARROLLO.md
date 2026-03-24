@@ -31,10 +31,10 @@ El Backend debe cumplir con la especificación definida en `docs/architecture/Ba
 - [x] Soporte para permisos por módulo (R/W/RW)
 
 ### 1.4 Versionado y Borrado Lógico
-- [ ] Agregar campo `_v` (versión) a todas las tablas
-- [ ] Agregar campo `_ts` (timestamp) a todas las tablas
-- [ ] Agregar campo `_deleted` (borrado lógico)
-- [ ] Implementar lógica de "Last Write Wins" con detección de conflictos
+- [x] Agregar campo `_v` (versión) a todas las tablas
+- [x] Agregar campo `_ts` (timestamp) a todas las tablas
+- [x] Agregar campo `_deleted` (borrado lógico)
+- [x] Implementar lógica de "Last Write Wins" con detección de conflictos
 
 ### 1.5 Operaciones CRUD
 - [ ] Completar `batchGetData()` - Lectura múltiple

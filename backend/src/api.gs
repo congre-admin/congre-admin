@@ -78,7 +78,71 @@ function doPost(e) {
     if (action === 'deleteData') {
       const sheet = ss.getSheetByName(sheetName);
       if (!sheet) return createResponse({ error: 'Hoja no encontrada' });
+      // Usar borrado lógico por defecto
+      const result = softDeleteRow(sheet, postData.id);
+      if (!result) {
+        return createResponse({ success: false, error: 'Registro no encontrado' });
+      }
+      clearCache(ss.getId(), sheetName);
+      return createResponse({ success: true, message: 'Borrado lógico realizado' });
+    }
+    
+    if (action === 'hardDelete') {
+      // Borrado físico (solo admin)
+      const sheet = ss.getSheetByName(sheetName);
+      if (!sheet) return createResponse({ error: 'Hoja no encontrada' });
       deleteRowById(sheet, postData.id);
+      clearCache(ss.getId(), sheetName);
+      return createResponse({ success: true, message: 'Borrado físico realizado' });
+    }
+    
+    if (action === 'restoreData') {
+      // Restaurar registro borrado lógicamente
+      const sheet = ss.getSheetByName(sheetName);
+      if (!sheet) return createResponse({ error: 'Hoja no encontrada' });
+      const result = restoreRow(sheet, postData.id);
+      if (!result) return createResponse({ success: false, error: 'Registro no encontrado' });
+      clearCache(ss.getId(), sheetName);
+      return createResponse({ success: true, message: 'Registro restaurado' });
+    }
+    
+    if (action === 'getHistory') {
+      // Obtener historial de versiones
+      const sheet = ss.getSheetByName(sheetName);
+      if (!sheet) return createResponse({ error: 'Hoja no encontrada' });
+      const history = getVersionHistory(sheet, postData.id);
+      return createResponse({ success: true, history: history });
+    }
+    
+    // Last Write Wins: validar versión antes de guardar
+    if (action === 'saveData') {
+      const sheet = ss.getSheetByName(sheetName);
+      if (!sheet) return createResponse({ error: 'Hoja no encontrada: ' + sheetName });
+      
+      // Verificar versión si se proporciona
+      if (postData.expectedVersion !== undefined) {
+        const rows = sheet.getDataRange().getValues();
+        const headers = rows[0];
+        const idIndex = headers.indexOf('id');
+        const vIndex = headers.indexOf('_v');
+        
+        for (let i = 1; i < rows.length; i++) {
+          if (rows[i][idIndex] == postData.payload.id) {
+            const currentV = vIndex >= 0 ? (parseInt(rows[i][vIndex]) || 0) : 0;
+            if (currentV > postData.expectedVersion) {
+              return createResponse({ 
+                success: false, 
+                error: 'ERR_VERSION_CONFLICT',
+                message: 'El registro fue modificado por otro usuario',
+                currentVersion: currentV
+              });
+            }
+            break;
+          }
+        }
+      }
+      
+      updateOrInsert(sheet, postData.payload, postData.onlyIfNew);
       clearCache(ss.getId(), sheetName);
       return createResponse({ success: true });
     }
@@ -181,13 +245,24 @@ function clearCache(ssId, sheetName) {
   cache.remove(ssId + '_' + sheetName);
 }
 
-// --- Utilidades de Hoja de Cálculo ---
+// ================================================================= //
+// VERSIONADO Y BORRADO LÓGICO
+// Fase 1.4: Implementación de _v, _ts, _deleted
+// ================================================================= //
 
-function getSheetData(sheet) {
+/**
+ * Obtiene datos de una hoja filtrando registros borrados
+ * @param {Sheet} sheet - Hoja de cálculo
+ * @param {boolean} includeDeleted - Si true, incluye registros borrados
+ * @return {array} Datos de la hoja
+ */
+function getSheetData(sheet, includeDeleted) {
   if (!sheet) return [];
   const rows = sheet.getDataRange().getValues();
   if (rows.length < 1) return [];
   const headers = rows[0];
+  const deletedIndex = headers.indexOf('_deleted');
+  
   return rows.slice(1).map(row => {
     let obj = {};
     headers.forEach((h, i) => {
@@ -204,27 +279,59 @@ function getSheetData(sheet) {
       }
     });
     return obj;
+  }).filter(row => {
+    // Filtrar registros borrados por defecto
+    if (includeDeleted) return true;
+    return row._deleted !== true && row._deleted !== 'true';
   });
 }
 
+/**
+ * Versión compatibility: llamada sin includeDeleted
+ */
+function getSheetData(sheet) {
+  return getSheetData(sheet, false);
+}
+
+/**
+ * Actualiza o inserta un registro con versionado automático
+ * @param {Sheet} sheet - Hoja de cálculo
+ * @param {object} item - Datos del registro
+ * @param {boolean} onlyIfNew - Si true, solo inserta si no existe
+ */
 function updateOrInsert(sheet, item, onlyIfNew) {
   if (!sheet) return;
   const rows = sheet.getDataRange().getValues();
   const headers = rows[0];
   const idIndex = headers.indexOf('id');
+  const vIndex = headers.indexOf('_v');
+  const tsIndex = headers.indexOf('_ts');
   
   let rowIndex = -1;
+  let currentV = 0;
+  
+  // Buscar registro existente (incluyendo borrados)
   for (let i = 1; i < rows.length; i++) {
     if (rows[i][idIndex] == item.id) {
       rowIndex = i + 1;
+      currentV = vIndex >= 0 ? (parseInt(rows[i][vIndex]) || 0) : 0;
       break;
     }
   }
   
-  if (rowIndex > 0 && onlyIfNew) return; // Skip if already exists and onlyIfNew is true
+  if (rowIndex > 0 && onlyIfNew) return;
+  
+  // Agregar versionado
+  const timestamp = new Date().toISOString();
+  const newItem = {
+    ...item,
+    _v: currentV + 1,
+    _ts: timestamp
+  };
   
   const values = headers.map(h => {
-    const val = item[h];
+    const val = newItem[h];
+    if (val === undefined) return '';
     return (typeof val === 'object') ? JSON.stringify(val) : val;
   });
   
@@ -233,6 +340,91 @@ function updateOrInsert(sheet, item, onlyIfNew) {
   } else {
     sheet.appendRow(values);
   }
+}
+
+/**
+ * Marca un registro como borrado (borrado lógico)
+ * @param {Sheet} sheet - Hoja de cálculo
+ * @param {string} id - ID del registro
+ * @return {boolean} true si se marcó correctamente
+ */
+function softDeleteRow(sheet, id) {
+  if (!sheet || !id) return false;
+  const rows = sheet.getDataRange().getValues();
+  if (rows.length <= 1) return false;
+  const idIndex = rows[0].indexOf('id');
+  const deletedIndex = rows[0].indexOf('_deleted');
+  const vIndex = rows[0].indexOf('_v');
+  const tsIndex = rows[0].indexOf('_ts');
+  
+  if (idIndex < 0) return false;
+  
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][idIndex] == id) {
+      const rowNum = i + 1;
+      
+      // Marcar como borrado
+      if (deletedIndex >= 0) {
+        sheet.getRange(rowNum, deletedIndex + 1).setValue(true);
+      }
+      
+      // Incrementar versión
+      if (vIndex >= 0) {
+        const currentV = parseInt(rows[i][vIndex]) || 0;
+        sheet.getRange(rowNum, vIndex + 1).setValue(currentV + 1);
+      }
+      
+      // Actualizar timestamp
+      if (tsIndex >= 0) {
+        sheet.getRange(rowNum, tsIndex + 1).setValue(new Date().toISOString());
+      }
+      
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Restaura un registro borrado lógicamente
+ * @param {Sheet} sheet - Hoja de cálculo
+ * @param {string} id - ID del registro
+ * @return {boolean} true si se restauró correctamente
+ */
+function restoreRow(sheet, id) {
+  if (!sheet || !id) return false;
+  const rows = sheet.getDataRange().getValues();
+  if (rows.length <= 1) return false;
+  const idIndex = rows[0].indexOf('id');
+  const deletedIndex = rows[0].indexOf('_deleted');
+  
+  if (idIndex < 0) return false;
+  
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][idIndex] == id) {
+      const rowNum = i + 1;
+      
+      if (deletedIndex >= 0) {
+        sheet.getRange(rowNum, deletedIndex + 1).setValue(false);
+      }
+      
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Obtiene el historial de versiones de un registro
+ * @param {Sheet} sheet - Hoja de cálculo
+ * @param {string} id - ID del registro
+ * @return {array} Historial de versiones
+ */
+function getVersionHistory(sheet, id) {
+  const allData = getSheetData(sheet, true); // Include deleted
+  return allData
+    .filter(row => row.id === id)
+    .sort((a, b) => (b._v || 0) - (a._v || 0));
 }
 
 function deleteRowById(sheet, id) {

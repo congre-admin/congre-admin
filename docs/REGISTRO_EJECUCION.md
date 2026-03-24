@@ -134,4 +134,40 @@ Este Documento registra la ejecución de cada fase del desarrollo del sistema.
 
 ---
 
+### 1.4 Versionado y Borrado Lógico ✅ COMPLETADO
+**Fecha:** 2026-03-24
+
+**Estado:** ✅ Implementado
+
+#### Tareas completadas:
+- [x] Agregar campo `_v` (versión) a todas las tablas
+- [x] Agregar campo `_ts` (timestamp) a todas las tablas
+- [x] Agregar campo `_deleted` (borrado lógico)
+- [x] Implementar lógica de "Last Write Wins" con detección de conflictos
+
+#### Funciones implementadas:
+| Función | Descripción |
+|---------|-------------|
+| `getSheetData(sheet, includeDeleted)` | Obtiene datos filtrando registros borrados |
+| `softDeleteRow()` | Marca registro como borrado (_deleted = true) |
+| `restoreRow()` | Restaura registro borrado lógicamente |
+| `getVersionHistory()` | Obtiene historial de versiones de un registro |
+| `action: hardDelete` | Borrado físico (solo admin) |
+| `action: restoreData` | Restaura registro borrado |
+| `action: getHistory` | Obtiene historial de versiones |
+| `action: saveData` | Ahora valida versión (Last Write Wins) |
+
+#### Archivos modificados:
+- `backend/src/api.gs` - Agregadas funciones de versionado y borrado lógico
+
+#### Notas:
+- Por defecto, deleteData usa borrado lógico (_deleted)
+- saveData incluye detección de conflictos de versión
+- ERR_VERSION_CONFLICT cuando hay conflicto
+
+#### Siguiente paso sugerido:
+- Fase 1.5: Operaciones CRUD
+
+---
+
 *Registro creado automáticamente durante el desarrollo*
