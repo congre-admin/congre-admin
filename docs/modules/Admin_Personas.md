@@ -1,6 +1,6 @@
 # Congre-Admin: Plug-in de Gestión de Personas
 
-Este plug-in permite administrar el censo maestro de la congregación y entidades relacionadas, integrando herramientas avanzadas de consulta y difusión.
+Este plug-in permite administrar el listado de personas maestro de la congregación y entidades relacionadas, integrando herramientas avanzadas de consulta y difusión.
 
 ## 1. Manifiesto del Módulo
 -   **ID:** `admin_personas`

@@ -41,7 +41,7 @@ La especificación del agente AI se encuentra en `/system` (raíz del proyecto):
 ### Administración
 - [**Índice de Administración**](./modules/Administracion.md)
 - [**Base de Datos de Personas**](./modules/Personas.md): Censo compartido y campos cifrados.
-- [**Gestión de Personas**](./modules/Admin_Personas.md): Interfaz administrativa del censo.
+- [**Gestión de Personas**](./modules/Admin_Personas.md): Interfaz administrativa del listado de personas.
 - [**Anuncios y Cartelera**](./modules/Admin_Anuncios.md): Hub de inicio y avisos oficiales.
 - [**Usuarios**](./modules/Admin_Usuarios.md) | [**Sistema**](./modules/Admin_Sistema.md) | [**Registros**](./modules/Admin_Registros.md)
 

@@ -110,7 +110,7 @@ El sistema utiliza estas expresiones tanto en el frontend (feedback inmediato) c
 ## 7. Entidades Nombradas y Contexto (JSONata)
 Para simplificar las consultas y validaciones cruzadas entre módulos, el motor JSONata del Core pre-vincula las siguientes variables globales:
 
-- **`$personas`**: Acceso directo al censo completo descifrado.
+- **`$personas`**: Acceso directo al listado de personas completo descifrado.
     - *Ejemplo:* `$personas[id = $.responsableId].identidad.nombre` (Obtiene el nombre de un responsable usando su ID).
 - **`$config`**: Diccionario de la tabla `Configuracion`.
     - *Ejemplo:* `$.fecha > $config.fecha_limite`

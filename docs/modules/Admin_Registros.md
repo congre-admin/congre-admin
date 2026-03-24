@@ -51,7 +51,7 @@ Este módulo gestiona el historial de actividad de los publicadores, la recolecc
 ~~~
 
 ### Tabla de Novedades (`Novedades`)
-Registro flexible de hitos administrativos y cambios en el censo (Movimientos).
+Registro flexible de hitos administrativos y cambios en el listado de publicadores (Movimientos).
 ~~~json
 {
     "id": "nov_001",

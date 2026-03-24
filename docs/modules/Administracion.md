@@ -1,11 +1,11 @@
 # Congre-Admin: Módulo de Administración
 
-Este módulo es el núcleo operativo del sistema. Centraliza la gestión del censo, los registros de actividad y la seguridad global. Todos los elementos de menú de esta sección son privados (`shield_lock`).
+Este módulo es el núcleo operativo del sistema. Centraliza la gestión del listado de personas, los registros de actividad y la seguridad global. Todos los elementos de menú de esta sección son privados (`shield_lock`).
 
 ## Lista de Plug-ins y Menús
 
 ### 1. Plug-in: Gestión de Personas
-Administración del censo maestro de la congregación.
+Administración del listado de personas maestro de la congregación.
 -   **Personas** (`shield_lock`): Gestión de personas y entidades relacionadas. Incluye herramientas avanzadas de filtrado y exportación.
 -   [Ver Definición Detallada](./Admin_Personas.md)
 

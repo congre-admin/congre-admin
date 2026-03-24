@@ -39,7 +39,7 @@ Cada entrada debe incluir:
 -   **Terminología:** Renombrado "Cierres_Informes" → "Cierres_Mensuales" en toda la documentación.
 -   **Menús Actualizados:** Registros (antes Registros de publicador), Informes (antes Informes de predicación), Cierre (antes Cierre mensual), Asistencia (antes Asistencia).
 -   **Tres Pestañas en Cierre Mensual:** Agregadas pestañas "Estado" (dashboard de cumplimiento), "Cierre" (generar cierre mensual) y "Visita SC" (documentación para visita del Superintendente de Circuito).
--   **Cuatro Pestañas en Registros:** Agregadas pestañas "Publicadores" (ver registros y descargar PDFs), "Resumen" (totales y promedios), "Movimientos" (gestión de altas/bajas, solo admin), y "Reuniones" (consulta visual de asistencia).
+-   **Terminología:** Reemplazado "censo" por "listado de personas" o "listado de publicadores" según corresponda.
 
 ---
 
