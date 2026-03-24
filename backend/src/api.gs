@@ -206,6 +206,28 @@ function doPost(e) {
       return createResponse(actionCheckPermission(postData.payload));
     }
     
+    // --- Instalación ---
+    
+    if (action === 'install') {
+      return createResponse(actionInstall(postData.payload));
+    }
+    
+    if (action === 'createSpreadsheet') {
+      return createResponse(createSpreadsheet(postData.name));
+    }
+    
+    if (action === 'initCoreTables') {
+      return createResponse(initCoreTables(postData.ssId));
+    }
+    
+    if (action === 'seedPerfiles') {
+      return createResponse(seedPerfiles(postData.ssId));
+    }
+    
+    if (action === 'seedConfiguracion') {
+      return createResponse(seedConfiguracion(postData.ssId));
+    }
+    
     return createResponse({ error: 'Acción POST no válida' });
   } catch (err) {
     return createResponse({ error: err.message });
@@ -1181,130 +1203,247 @@ function actionLogout(payload) {
 }
 
 // ================================================================= //
-// STUB: XXTEA Core Implementation — NOT production-ready
-// See error-handling.md Section 9 "Backend Implementation Gap Handling"
-// and Backend.md "Note on Reference Implementation".
-//
-// SEC-03 EXEMPTION (KNOWN GAP): This file is the proof-of-concept backend.
-// XXTEA is retained here only for field-level storage compatibility with
-// existing GSheet data created during development. It is NOT used for
-// Zero-Knowledge encryption — that is handled entirely client-side with
-// AES-GCM via the Web Crypto API (see src/core/crypto/).
-//
-// TODO: Before production deployment, either:
-//   A) Remove all XXTEA calls and migrate stored data to AES-GCM format, OR
-//   B) Replace this backend with a production implementation that uses no
-//      server-side encryption (pure ZK model — backend stores only ciphertext).
-//
-// Reviewer agents: treat SEC-03 violations in this file as KNOWN GAPS,
-// not implementation errors. Do NOT block frontend task delivery for this.
+// FUNCIONES DE INSTALACIÓN
+// Setup: createSpreadsheet, initCoreTables, seedPerfiles
 // ================================================================= //
 
-var DELTA = 0x9E3779B9;
-
-function XXTEA_ENCRYPT(data, key) {
-  if (!data || !key) return '';
-  try { return encryptToBase64(String(data), String(key)); } catch (e) { return 'ERROR: ' + e.message; }
-}
-
-function XXTEA_DECRYPT(data, key) {
-  if (!data || !key) return '';
+/**
+ * Crea un nuevo Google Spreadsheet
+ * @param {string} name - Nombre del spreadsheet
+ * @return {object} ID y URL del spreadsheet creado
+ */
+function createSpreadsheet(name) {
   try {
-    var decrypted = decryptFromBase64(String(data), String(key));
-    return decrypted === null ? '' : decrypted;
-  } catch (e) { return ''; }
+    const ss = SpreadsheetApp.create(name || 'CongreAdmin');
+    return {
+      success: true,
+      ssId: ss.getId(),
+      url: ss.getUrl(),
+      name: ss.getName()
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
 }
 
-function toUint32Array(bytes, includeLength) {
-    var length = bytes.length;
-    var n = length >> 2;
-    if ((length & 3) !== 0) { ++n; }
-    var v = [];
-    for (var i = 0; i < n; i++) { v[i] = 0; }
-    if (includeLength) { v[n] = length; }
-    for (var i = 0; i < length; ++i) { v[i >> 2] |= (bytes[i] & 0xFF) << ((i & 3) << 3); }
-    return v;
+/**
+ * Inicializa las tablas del Core en un GSheet
+ * @param {string} ssId - ID del spreadsheet
+ * @return {object} Resultado
+ */
+function initCoreTables(ssId) {
+  try {
+    const ss = SpreadsheetApp.openById(ssId);
+    const results = [];
+    
+    // Tabla: Usuarios
+    const usuariosHeaders = ['id', 'username', 'wrapped_mk', 'perfilId', 'personaId', 'auth_factor', 'totp_secret', 'public_key', 'created_at', '_v', '_ts', '_deleted'];
+    results.push(createSheetIfNotExists(ss, 'Usuarios', usuariosHeaders));
+    
+    // Tabla: Perfiles
+    const perfilesHeaders = ['id', 'nombre', 'permisos', 'descripcion', '_v', '_ts', '_deleted'];
+    results.push(createSheetIfNotExists(ss, 'Perfiles', perfilesHeaders));
+    
+    // Tabla: Registro_Plugins
+    const pluginsHeaders = ['plugin_id', 'ssId', 'status', 'config', '_v', '_ts', '_deleted'];
+    results.push(createSheetIfNotExists(ss, 'Registro_Plugins', pluginsHeaders));
+    
+    // Tabla: Configuracion
+    const configHeaders = ['clave', 'valor', 'is_public', '_v', '_ts', '_deleted'];
+    results.push(createSheetIfNotExists(ss, 'Configuracion', configHeaders));
+    
+    // Tabla: Sistema_Migraciones
+    const migracionesHeaders = ['id', 'nombre', 'version', 'ejecutada_en', 'estado', 'error', '_v', '_ts'];
+    results.push(createSheetIfNotExists(ss, 'Sistema_Migraciones', migracionesHeaders));
+    
+    return {
+      success: true,
+      message: 'Tablas del Core inicializadas',
+      tables: results
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
 }
 
-function toByteArray(v, includeLength) {
-    var length = v.length;
-    var n = length << 2;
-    if (includeLength) {
-        var m = v[length - 1];
-        n -= 4;
-        if ((m < n - 3) || (m > n)) { return null; }
-        n = m;
+/**
+ * Crea una hoja si no existe
+ */
+function createSheetIfNotExists(ss, name, headers) {
+  let sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+    sheet.appendRow(headers);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#f3f3f3');
+  }
+  return { sheet: name, status: 'created' };
+}
+
+/**
+ * Inyecta los perfiles base en la tabla Perfiles
+ * @param {string} ssId - ID del spreadsheet Core
+ * @return {object} Resultado
+ */
+function seedPerfiles(ssId) {
+  try {
+    const ss = SpreadsheetApp.openById(ssId);
+    const sheet = ss.getSheetByName('Perfiles');
+    if (!sheet) {
+      return { success: false, error: 'Hoja Perfiles no encontrada' };
     }
-    var bytes = [];
-    for (var i = 0; i < n; ++i) { bytes.push((v[i >> 2] >>> ((i & 3) << 3)) & 0xFF); }
-    return bytes;
-}
-
-function int32(i) { return i & 0xFFFFFFFF; }
-
-function mx(sum, y, z, p, e, k) {
-    return ((z >>> 5 ^ y << 2) + (y >>> 3 ^ z << 4)) ^ ((sum ^ y) + (k[p & 3 ^ e] ^ z));
-}
-
-function fixk(k) {
-    while (k.length < 4) { k.push(0); }
-    return k;
-}
-
-function encryptUint32Array(v, k) {
-    var length = v.length;
-    var n = length - 1;
-    var y, z, sum, e, p, q;
-    z = v[n];
-    sum = 0;
-    for (q = Math.floor(6 + 52 / length) | 0; q > 0; --q) {
-        sum = int32(sum + DELTA);
-        e = sum >>> 2 & 3;
-        for (p = 0; p < n; ++p) {
-            y = v[p + 1];
-            z = v[p] = int32(v[p] + mx(sum, y, z, p, e, k));
-        }
-        y = v[0];
-        z = v[n] = int32(v[n] + mx(sum, y, z, n, e, k));
+    
+    const perfilesBase = [
+      {
+        id: 'p_admin',
+        nombre: 'Super-Admin',
+        permisos: JSON.stringify({ 'core': 'RW', 'personas': 'RW', 'registros': 'RW', 'anuncios': 'RW', 'reuniones': 'RW', 'predicacion': 'RW' }),
+        descripcion: 'Acceso total al sistema',
+        _v: 1,
+        _ts: new Date().toISOString()
+      },
+      {
+        id: 'p_secretario',
+        nombre: 'Secretario',
+        permisos: JSON.stringify({ 'personas': 'RW', 'registros': 'RW', 'anuncios': 'RW', 'reuniones': 'R', 'predicacion': 'R' }),
+        descripcion: 'Gestión de personas y registros',
+        _v: 1,
+        _ts: new Date().toISOString()
+      },
+      {
+        id: 'p_comite',
+        nombre: 'Comité de Servicio',
+        permisos: JSON.stringify({ 'personas': 'R', 'registros': 'R', 'reuniones': 'R', 'predicacion': 'R' }),
+        descripcion: 'Supervisión general',
+        _v: 1,
+        _ts: new Date().toISOString()
+      },
+      {
+        id: 'p_super_grupo',
+        nombre: 'Superintendente de Grupo',
+        permisos: JSON.stringify({ 'personas': 'R', 'registros': 'RW', 'reuniones': 'R' }),
+        descripcion: 'Informes y atención de grupo',
+        _v: 1,
+        _ts: new Date().toISOString()
+      },
+      {
+        id: 'p_siervo_territorios',
+        nombre: 'Siervo de Territorios',
+        permisos: JSON.stringify({ 'predicacion': 'RW' }),
+        descripcion: 'Gestión de territorios y mapas',
+        _v: 1,
+        _ts: new Date().toISOString()
+      },
+      {
+        id: 'p_publicador',
+        nombre: 'Publicador',
+        permisos: JSON.stringify({ 'reuniones': 'R', 'predicacion': 'R' }),
+        descripcion: 'Acceso básico',
+        _v: 1,
+        _ts: new Date().toISOString()
+      }
+    ];
+    
+    // Verificar si ya hay perfiles
+    const existingData = getSheetData(sheet, true);
+    if (existingData.length > 0) {
+      return {
+        success: false,
+        error: 'Ya existen perfiles en la tabla',
+        message: 'Los perfiles base ya fueron injectados anteriormente'
+      };
     }
-    return v;
+    
+    // Insertar perfiles
+    perfilesBase.forEach(perfil => {
+      const values = Object.values(perfil);
+      sheet.appendRow(values);
+    });
+    
+    return {
+      success: true,
+      message: 'Perfiles base injectados',
+      count: perfilesBase.length
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
 }
 
-function decryptUint32Array(v, k) {
-    var length = v.length;
-    var n = length - 1;
-    var y, z, sum, e, p, q;
-    y = v[0];
-    q = Math.floor(6 + 52 / length);
-    for (sum = int32(q * DELTA); sum !== 0; sum = int32(sum - DELTA)) {
-        e = sum >>> 2 & 3;
-        for (p = n; p > 0; --p) {
-            z = v[p - 1];
-            y = v[p] = int32(v[p] - mx(sum, y, z, p, e, k));
-        }
-        z = v[n];
-        y = v[0] = int32(v[0] - mx(sum, y, z, 0, e, k));
+/**
+ * Inyecta configuración inicial
+ * @param {string} ssId - ID del spreadsheet Core
+ * @return {object} Resultado
+ */
+function seedConfiguracion(ssId) {
+  try {
+    const ss = SpreadsheetApp.openById(ssId);
+    const sheet = ss.getSheetByName('Configuracion');
+    if (!sheet) {
+      return { success: false, error: 'Hoja Configuracion no encontrada' };
     }
-    return v;
+    
+    const configBase = [
+      { clave: 'nombre_congregacion', valor: '', is_public: false },
+      { clave: 'idioma_predeterminado', valor: 'es', is_public: true },
+      { clave: 'año_servicio_actual', valor: new Date().getFullYear().toString(), is_public: false },
+      { clave: 'version_sistema', valor: '1.0.0', is_public: true }
+    ];
+    
+    configBase.forEach(conf => {
+      sheet.appendRow([
+        conf.clave, conf.valor, conf.is_public, 1, new Date().toISOString(), false
+      ]);
+    });
+    
+    return {
+      success: true,
+      message: 'Configuración base injectada'
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
 }
 
-function encryptToBase64(data, key) {
-    var dataBytes = Utilities.newBlob(data).getBytes();
-    var keyBytes = Utilities.newBlob(key).getBytes();
-    var v = toUint32Array(dataBytes, true);
-    var k = toUint32Array(keyBytes, false);
-    var encryptedV = encryptUint32Array(v, fixk(k));
-    var encryptedBytes = toByteArray(encryptedV, false);
-    return Utilities.base64Encode(encryptedBytes);
-}
-
-function decryptFromBase64(data, key) {
-    var dataBytes = Utilities.base64Decode(data);
-    var keyBytes = Utilities.newBlob(key).getBytes();
-    var v = toUint32Array(dataBytes, false);
-    var k = toUint32Array(keyBytes, false);
-    var decryptedV = decryptUint32Array(v, fixk(k));
-    var decryptedBytes = toByteArray(decryptedV, true);
-    if (decryptedBytes === null) { return null; }
-    return Utilities.newBlob(decryptedBytes).getDataAsString();
+/**
+ * Acción API: install - Proceso completo de instalación
+ */
+function actionInstall(payload) {
+  try {
+    const { nombreCongregacion, adminUsername } = payload;
+    
+    // 1. Crear Spreadsheet Core
+    const ssName = nombreCongregacion || 'CongreAdmin_Core';
+    const ssResult = createSpreadsheet(ssName);
+    if (!ssResult.success) {
+      return { success: false, error: 'Error creando spreadsheet: ' + ssResult.error };
+    }
+    
+    const ssId = ssResult.ssId;
+    
+    // 2. Inicializar tablas
+    const initResult = initCoreTables(ssId);
+    if (!initResult.success) {
+      return { success: false, error: 'Error inicializando tablas: ' + initResult.error };
+    }
+    
+    // 3. Inyectar perfiles
+    const seedResult = seedPerfiles(ssId);
+    // No fallar si ya existen
+    
+    // 4. Inyectar configuración
+    const configResult = seedConfiguracion(ssId);
+    // No fallar si ya existe
+    
+    // 5. Guardar configuración en propiedades del script
+    PropertiesService.getScriptProperties().setProperty('CORE_SS_ID', ssId);
+    
+    return {
+      success: true,
+      ssId: ssId,
+      ssUrl: ssResult.url,
+      message: 'Instalación completada exitosamente'
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
 }

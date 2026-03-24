@@ -219,4 +219,51 @@ Todas las tareas de la Fase 1 (Backend) han sido completadas:
 
 ---
 
+### 1.7 Funciones de Instalación ✅ COMPLETADO
+**Fecha:** 2026-03-24
+
+**Estado:** ✅ Implementado
+
+#### Tareas completadas:
+- [x] `createSpreadsheet()` - Crear GSheet
+- [x] `initCoreTables()` - Inicializar tablas del Core
+- [x] `seedPerfiles()` - Inyectar perfiles base
+- [x] `seedConfiguracion()` - Inyectar configuración base
+- [x] `actionInstall()` - Proceso completo de instalación
+
+#### Funciones implementadas:
+| Función | Descripción |
+|---------|-------------|
+| `createSpreadsheet()` | Crea nuevo Google Spreadsheet |
+| `initCoreTables()` | Inicializa tablas: Usuarios, Perfiles, Registro_Plugins, Configuracion, Sistema_Migraciones |
+| `createSheetIfNotExists()` | Helper para crear hojas |
+| `seedPerfiles()` | Inyecta 6 perfiles base |
+| `seedConfiguracion()` | Inyecta configuración inicial |
+| `actionInstall()` | Proceso completo de instalación |
+
+#### Acciones API:
+| Acción | Descripción |
+|--------|-------------|
+| `install` | Proceso completo de instalación |
+| `createSpreadsheet` | Crear spreadsheet |
+| `initCoreTables` | Inicializar tablas |
+| `seedPerfiles` | Inyectar perfiles |
+| `seedConfiguracion` | Inyectar configuración |
+
+#### Archivos modificados:
+- `backend/src/api.gs` - Agregadas funciones de instalación
+
+#### Notas:
+- Los perfiles base incluyen: Admin, Comité, Superintendente de Grupo, Siervo de Territorios, Publicador
+- Tablas del Core: Usuarios, Perfiles, Registro_Plugins, Configuracion, Sistema_Migraciones
+
+#### Limpieza realizada:
+- Removida nota de "implementación de referencia" de `docs/architecture/Backend.md`
+- Removido código XXTEA de `backend/src/api.gs`
+
+#### Siguiente paso sugerido:
+- Fase 2: Módulo de Administración
+
+---
+
 *Registro creado automáticamente durante el desarrollo*

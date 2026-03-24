@@ -19,6 +19,12 @@ Cada entrada debe incluir:
 ### Nuevo
 - **Desarrollo iniciado:** Creado `docs/REGISTRO_EJECUCION.md` para documentar el progreso del desarrollo.
 - **Fase 1.1 completada:** Implementación de autenticación Zero-Knowledge en `backend/src/api.gs` (challenge, login, register, TOTP, OTP email, gestión de sesiones).
+- **Fase 1.2 completada:** Gestión de sesiones (renovación, validación, cierre).
+- **Fase 1.3 completada:** Control de permisos RBAC (perfiles, validación de permisos).
+- **Fase 1.4 completada:** Versionado y borrado lógico (_v, _ts, _deleted).
+- **Fase 1.5-1.6 completadas:** Operaciones CRUD y Sistema de Logs.
+- **Fase 1.7 completada:** Funciones de instalación (createSpreadsheet, initCoreTables, seedPerfiles).
+- **Limpieza:** Removida implementación de referencia de `docs/architecture/Backend.md` y código XXTEA de `backend/src/api.gs`.
 
 ## 2026-03-24
 

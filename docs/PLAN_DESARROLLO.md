@@ -49,6 +49,13 @@ El Backend debe cumplir con la especificación definida en `docs/architecture/Ba
 
 **Entregable:** `backend/src/api.gs` completo según especificación ✅
 
+### 1.7 Funciones de Instalación
+- [x] `createSpreadsheet()` - Crear GSheet
+- [x] `initCoreTables()` - Inicializar tablas del Core
+- [x] `seedPerfiles()` - Inyectar perfiles base
+- [x] `seedConfiguracion()` - Inyectar configuración base
+- [x] `actionInstall()` - Proceso completo de instalación
+
 ---
 
 ## FASE 2: Módulo de Administración
