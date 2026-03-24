@@ -28,6 +28,14 @@ Cada entrada debe incluir:
 
 ## 2026-03-24
 
+### Corregido
+- **Code Quality:** Eliminado bloque duplicado de `saveData` en `backend/src/api.gs`. El bloque sin control de versiones (líneas 43-48) era inalcanzable ya que el bloque con versionado (líneas 118-148) siempre se ejecutaba primero.
+- **Code Quality:** Estandarizado campo `permisos` con función helper `normalizePermisos()`. Actualizadas funciones `getPermiso()` y `getUserPermisos()` para usar la nueva función.
+- **Code Quality:** Implementado rate limiting para login (5 intentos/minuto) usando CacheService.
+- **Code Quality:** Optimizado búsquedas O(n) con caché. Agregadas funciones `getCached()`, `invalidateCache()`. Actualizadas funciones `getUserByUsername()`, `getUserById()`, `getPerfilById()` para usar caché con TTL de 5 minutos.
+
+## 2026-03-24
+
 ### Modificado
 
 **Archivos:** `docs/architecture/Diagramas_Procesos.md`, `docs/modules/Admin_Registros.md`, `docs/modules/Admin_Sistema.md`, `docs/modules/Admin_Usuarios.md`, `docs/modules/Reuniones_Programa.md`

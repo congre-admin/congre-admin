@@ -261,8 +261,36 @@ Todas las tareas de la Fase 1 (Backend) han sido completadas:
 - Removida nota de "implementación de referencia" de `docs/architecture/Backend.md`
 - Removido código XXTEA de `backend/src/api.gs`
 
+---
+
+### Code Quality Fixes ✅ COMPLETADO
+**Fecha:** 2026-03-24
+
+**Estado:** ✅ Fase 1 completada (duplicado eliminado)
+
+#### Tareas completadas:
+- [x] **Verificación de issues:** Analizado `backend/src/api.gs` para identificar code quality issues
+- [x] **Issue #1 - Duplicate saveData:** Eliminado bloque duplicado de `saveData` (líneas 43-48 sin versionado). Ahora solo existe el bloque con control de versiones (línea 110+).
+- [x] **Issue #2 - Type inconsistency permisos:** Creada función helper `normalizePermisos()` para normalizar el campo permisos (string JSON → objeto). Actualizadas funciones `getPermiso()` y `getUserPermisos()`.
+- [x] **Issue #4 - O(n) performance:** Implementadas funciones `getCached()` e `invalidateCache()` usando CacheService. Actualizadas funciones `getUserByUsername()`, `getUserById()`, `getPerfilById()` para usar caché con TTL de 5 minutos.
+- [x] **Issue #5 - Rate limiting:** Implementada función `checkRateLimit()` usando CacheService. Integrada en `actionLogin()` con límite de 5 intentos por minuto por username.
+
+#### Issues identificados (completados):
+| # | Issue | Prioridad | Estado |
+|---|-------|-----------|--------|
+| 1 | Duplicate saveData | ALTA | ✅ Completado |
+| 2 | Type inconsistency `permisos` | MEDIA | ✅ Completado |
+| 3 | Null safety `getPerfilById()` | BAJA | Verificado (ok) |
+| 4 | O(n) performance | BAJA | ✅ Completado |
+| 5 | Rate limiting (login) | BAJA | ✅ Completado |
+
+#### Archivos modificados:
+- `backend/src/api.gs` - Eliminados bloques duplicados, agregadas funciones `normalizePermisos()`, `checkRateLimit()`, `getCached()`, `invalidateCache()`. Actualizadas funciones de búsqueda para usar caché.
+- `docs/CHANGELOG.md` - Agregada entrada de corrección
+- `docs/REGISTRO_EJECUCION.md` - Actualizado registro
+
 #### Siguiente paso sugerido:
-- Fase 2: Módulo de Administración
+- Fase 2: Módulo de Administración (Admin_Personas)
 
 ---
 

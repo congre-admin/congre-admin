@@ -40,14 +40,6 @@ function doPost(e) {
     const ssId = postData.ssId;
     const ss = ssId ? SpreadsheetApp.openById(ssId) : SpreadsheetApp.getActiveSpreadsheet();
     
-    if (action === 'saveData') {
-      const sheet = ss.getSheetByName(sheetName);
-      if (!sheet) return createResponse({ error: 'Hoja no encontrada: ' + sheetName });
-      updateOrInsert(sheet, postData.payload, postData.onlyIfNew);
-      clearCache(ss.getId(), sheetName);
-      return createResponse({ success: true });
-    } 
-    
     if (action === 'initSheet') {
       let sheet = ss.getSheetByName(sheetName);
       if (!sheet) {
@@ -362,6 +354,13 @@ function updateOrInsert(sheet, item, onlyIfNew) {
   } else {
     sheet.appendRow(values);
   }
+  
+  const sheetName = sheet.getName();
+  if (sheetName === 'Usuarios' && item.id) {
+    invalidateCache('u:');
+  } else if (sheetName === 'Perfiles' && item.id) {
+    invalidateCache('p:');
+  }
 }
 
 /**
@@ -500,11 +499,12 @@ function getUsuariosSheet() {
  * @return {object|null} Usuario encontrado o null
  */
 function getUserByUsername(username) {
-  const sheet = getUsuariosSheet();
-  if (!sheet) return null;
-  
-  const data = getSheetData(sheet);
-  return data.find(row => row.username === username) || null;
+  return getCached('u:un:' + username, () => {
+    const sheet = getUsuariosSheet();
+    if (!sheet) return null;
+    const data = getSheetData(sheet);
+    return data.find(row => row.username === username) || null;
+  });
 }
 
 /**
@@ -513,11 +513,12 @@ function getUserByUsername(username) {
  * @return {object|null} Usuario encontrado o null
  */
 function getUserById(id) {
-  const sheet = getUsuariosSheet();
-  if (!sheet) return null;
-  
-  const data = getSheetData(sheet);
-  return data.find(row => row.id === id) || null;
+  return getCached('u:id:' + id, () => {
+    const sheet = getUsuariosSheet();
+    if (!sheet) return null;
+    const data = getSheetData(sheet);
+    return data.find(row => row.id === id) || null;
+  });
 }
 
 /**
@@ -798,6 +799,16 @@ function actionLogin(payload) {
   try {
     const { username, code, authType } = payload;
     
+    // Rate limiting: max 5 intentos por minuto por username
+    const rateLimit = checkRateLimit('login:' + username, 5, 60);
+    if (!rateLimit.allowed) {
+      return { 
+        success: false, 
+        error: 'ERR_RATE_LIMITED: Demasiados intentos. Intenta más tarde.',
+        retryAfter: rateLimit.resetIn
+      };
+    }
+    
     // Buscar usuario
     const user = getUserByUsername(username);
     if (!user) {
@@ -1037,11 +1048,12 @@ function getPerfilesSheet() {
  * @return {object|null} Perfil encontrado o null
  */
 function getPerfilById(perfilId) {
-  const sheet = getPerfilesSheet();
-  if (!sheet) return null;
-  
-  const data = getSheetData(sheet);
-  return data.find(row => row.id === perfilId) || null;
+  return getCached('p:id:' + perfilId, () => {
+    const sheet = getPerfilesSheet();
+    if (!sheet) return null;
+    const data = getSheetData(sheet);
+    return data.find(row => row.id === perfilId) || null;
+  });
 }
 
 /**
@@ -1055,6 +1067,63 @@ function getAllPerfiles() {
 }
 
 /**
+ * Normaliza el campo permisos (string JSON → objeto)
+ * @param {string|object} permisos - Permisos en cualquier formato
+ * @return {object} Permisos como objeto
+ */
+function normalizePermisos(permisos) {
+  if (!permisos) return {};
+  if (typeof permisos === 'object') return permisos;
+  if (typeof permisos === 'string') {
+    try { return JSON.parse(permisos); } catch(e) { return {}; }
+  }
+  return {};
+}
+
+/**
+ * Verifica rate limiting para una acción
+ * @param {string} identifier - Identificador único (IP, username, etc)
+ * @param {number} maxRequests - Máximo de requests permitidos
+ * @param {number} windowSeconds - Ventana de tiempo en segundos
+ * @return {object} { allowed: boolean, remaining: number, resetIn: number }
+ */
+function checkRateLimit(identifier, maxRequests, windowSeconds) {
+  const cache = CacheService.getScriptCache();
+  const key = 'rl:' + identifier;
+  const current = parseInt(cache.get(key) || '0', 10);
+  
+  if (current >= maxRequests) {
+    const ttl = cache.getTtl(key);
+    return { allowed: false, remaining: 0, resetIn: ttl > 0 ? Math.ceil(ttl / 1000) : windowSeconds };
+  }
+  
+  cache.put(key, (current + 1).toString(), windowSeconds);
+  return { allowed: true, remaining: maxRequests - current - 1, resetIn: windowSeconds };
+}
+
+const CACHE_TTL = 300;
+
+function getCached(key, fetchFn) {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get(key);
+  if (cached) return JSON.parse(cached);
+  
+  const data = fetchFn();
+  if (data) cache.put(key, JSON.stringify(data), CACHE_TTL);
+  return data;
+}
+
+function invalidateCache(pattern) {
+  const cache = CacheService.getScriptCache();
+  const keys = cache.getAll();
+  if (keys) {
+    Object.keys(keys).forEach(k => {
+      if (k.startsWith(pattern)) cache.remove(k);
+    });
+  }
+}
+
+/**
  * Obtiene los permisos de un perfil para un módulo específico
  * @param {string} perfilId - ID del perfil
  * @param {string} modulo - Nombre del módulo
@@ -1062,18 +1131,9 @@ function getAllPerfiles() {
  */
 function getPermiso(perfilId, modulo) {
   const perfil = getPerfilById(perfilId);
-  if (!perfil || !perfil.permisos) return null;
+  if (!perfil) return null;
   
-  // Parsear permisos si es string
-  let permisos = perfil.permisos;
-  if (typeof permisos === 'string') {
-    try {
-      permisos = JSON.parse(permisos);
-    } catch (e) {
-      return null;
-    }
-  }
-  
+  const permisos = normalizePermisos(perfil.permisos);
   return permisos[modulo] || null;
 }
 
@@ -1112,18 +1172,9 @@ function getUserPermisos(userId) {
   if (!user) return {};
   
   const perfil = getPerfilById(user.perfilId);
-  if (!perfil || !perfil.permisos) return {};
+  if (!perfil) return {};
   
-  let permisos = perfil.permisos;
-  if (typeof permisos === 'string') {
-    try {
-      permisos = JSON.parse(permisos);
-    } catch (e) {
-      return {};
-    }
-  }
-  
-  return permisos;
+  return normalizePermisos(perfil.permisos);
 }
 
 /**
