@@ -128,6 +128,20 @@ function doPost(e) {
       return createResponse(invalidateAllSessions(postData.userId));
     }
     
+    // --- Permisos RBAC ---
+    
+    if (action === 'getPerfiles') {
+      return createResponse(actionGetPerfiles());
+    }
+    
+    if (action === 'getPermisos') {
+      return createResponse(actionGetPermisos(postData.payload));
+    }
+    
+    if (action === 'checkPermission') {
+      return createResponse(actionCheckPermission(postData.payload));
+    }
+    
     return createResponse({ error: 'Acción POST no válida' });
   } catch (err) {
     return createResponse({ error: err.message });
@@ -785,6 +799,178 @@ function logAccess(username, success, details) {
     ]);
   } catch (err) {
     Logger.log('Error guardando log: ' + err.message);
+  }
+}
+
+// ================================================================= //
+// CONTROL DE PERMISOS RBAC
+// Fase 1.3: Implementación de permisos
+// ================================================================= //
+
+/**
+ * Obtiene la hoja de Perfiles del GSheet Core
+ */
+function getPerfilesSheet() {
+  const ssId = getCoreSpreadsheetId();
+  if (!ssId) throw new Error('CORE_SS_ID no configurado');
+  const ss = SpreadsheetApp.openById(ssId);
+  return ss.getSheetByName('Perfiles');
+}
+
+/**
+ * Obtiene un perfil por ID
+ * @param {string} perfilId - ID del perfil
+ * @return {object|null} Perfil encontrado o null
+ */
+function getPerfilById(perfilId) {
+  const sheet = getPerfilesSheet();
+  if (!sheet) return null;
+  
+  const data = getSheetData(sheet);
+  return data.find(row => row.id === perfilId) || null;
+}
+
+/**
+ * Obtiene todos los perfiles
+ * @return {array} Lista de perfiles
+ */
+function getAllPerfiles() {
+  const sheet = getPerfilesSheet();
+  if (!sheet) return [];
+  return getSheetData(sheet);
+}
+
+/**
+ * Obtiene los permisos de un perfil para un módulo específico
+ * @param {string} perfilId - ID del perfil
+ * @param {string} modulo - Nombre del módulo
+ * @return {string} Permiso (RW, R, W, null)
+ */
+function getPermiso(perfilId, modulo) {
+  const perfil = getPerfilById(perfilId);
+  if (!perfil || !perfil.permisos) return null;
+  
+  // Parsear permisos si es string
+  let permisos = perfil.permisos;
+  if (typeof permisos === 'string') {
+    try {
+      permisos = JSON.parse(permisos);
+    } catch (e) {
+      return null;
+    }
+  }
+  
+  return permisos[modulo] || null;
+}
+
+/**
+ * Valida si un usuario tiene permiso para una acción
+ * @param {string} userId - ID del usuario
+ * @param {string} modulo - Nombre del módulo
+ * @param {string} accion - Acción (read, write, delete)
+ * @return {boolean} true si tiene permiso
+ */
+function validarPermiso(userId, modulo, accion) {
+  const user = getUserById(userId);
+  if (!user) return false;
+  
+  const permiso = getPermiso(user.perfilId, modulo);
+  if (!permiso) return false;
+  
+  // Mapeo de acciones a permisos
+  const permisosAccion = {
+    'read': ['R', 'RW'],
+    'write': ['W', 'RW'],
+    'delete': ['RW']
+  };
+  
+  const permisosPermitidos = permisosAccion[accion] || [];
+  return permisosPermitidos.includes(permiso);
+}
+
+/**
+ * Obtiene todos los permisos de un usuario
+ * @param {string} userId - ID del usuario
+ * @return {object} Objeto con permisos por módulo
+ */
+function getUserPermisos(userId) {
+  const user = getUserById(userId);
+  if (!user) return {};
+  
+  const perfil = getPerfilById(user.perfilId);
+  if (!perfil || !perfil.permisos) return {};
+  
+  let permisos = perfil.permisos;
+  if (typeof permisos === 'string') {
+    try {
+      permisos = JSON.parse(permisos);
+    } catch (e) {
+      return {};
+    }
+  }
+  
+  return permisos;
+}
+
+/**
+ * Valida permisos antes de una operación CRUD
+ * @param {object} session - Sesión validada
+ * @param {string} action - Acción (read, write, delete)
+ * @param {string} modulo - Módulo objetivo
+ * @return {object} Resultado de validación
+ */
+function checkPermission(session, action, modulo) {
+  if (!session || !session.valid) {
+    return { allowed: false, error: 'ERR_AUTH_INVALID' };
+  }
+  
+  const tienePermiso = validarPermiso(session.userId, modulo, action);
+  
+  if (!tienePermiso) {
+    logAccess(session.username, false, `Permiso denegado: ${action} en ${modulo}`);
+    return { allowed: false, error: 'ERR_PERMISSION_DENIED' };
+  }
+  
+  return { allowed: true };
+}
+
+/**
+ * Acción: getPerfiles - Obtiene todos los perfiles
+ */
+function actionGetPerfiles() {
+  try {
+    const perfiles = getAllPerfiles();
+    return { success: true, perfiles: perfiles };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Acción: getPermisos - Obtiene permisos de un usuario
+ */
+function actionGetPermisos(payload) {
+  try {
+    const permisos = getUserPermisos(payload.userId);
+    return { success: true, permisos: permisos };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Acción: checkPermission - Valida permiso para acción
+ */
+function actionCheckPermission(payload) {
+  try {
+    const result = checkPermission(
+      { valid: true, userId: payload.userId, username: payload.username },
+      payload.action,
+      payload.modulo
+    );
+    return result;
+  } catch (err) {
+    return { allowed: false, error: err.message };
   }
 }
 

@@ -26,9 +26,9 @@ El Backend debe cumplir con la especificación definida en `docs/architecture/Ba
 - [x] Renovación de sesiones
 
 ### 1.3 Control de Permisos RBAC
-- [ ] Integrar tabla `Perfiles` del Core
-- [ ] Validar permisos antes de cada operación
-- [ ] Soporte para permisos por módulo (R/W/RW)
+- [x] Integrar tabla `Perfiles` del Core
+- [x] Validar permisos antes de cada operación
+- [x] Soporte para permisos por módulo (R/W/RW)
 
 ### 1.4 Versionado y Borrado Lógico
 - [ ] Agregar campo `_v` (versión) a todas las tablas

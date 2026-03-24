@@ -97,4 +97,41 @@ Este Documento registra la ejecución de cada fase del desarrollo del sistema.
 
 ---
 
+### 1.3 Control de Permisos RBAC ✅ COMPLETADO
+**Fecha:** 2026-03-24
+
+**Estado:** ✅ Implementado
+
+#### Tareas completadas:
+- [x] Integrar tabla `Perfiles` del Core
+- [x] Validar permisos antes de cada operación
+- [x] Soporte para permisos por módulo (R/W/RW)
+
+#### Funciones implementadas:
+| Función | Descripción |
+|---------|-------------|
+| `getPerfilesSheet()` | Obtiene hoja de Perfiles |
+| `getPerfilById()` | Busca perfil por ID |
+| `getAllPerfiles()` | Obtiene todos los perfiles |
+| `getPermiso()` | Obtiene permiso para un módulo |
+| `validarPermiso()` | Valida si usuario tiene permiso |
+| `getUserPermisos()` | Obtiene todos los permisos de un usuario |
+| `checkPermission()` | Valida permisos antes de operación CRUD |
+| `actionGetPerfiles()` | Acción API: obtener perfiles |
+| `actionGetPermisos()` | Acción API: obtener permisos de usuario |
+| `actionCheckPermission()` | Acción API: validar permiso |
+
+#### Archivos modificados:
+- `backend/src/api.gs` - Agregadas funciones de control de permisos
+
+#### Notas:
+- Soporte para permisos: R (Read), W (Write), RW (Read-Write)
+- Integración con tabla Perfiles del GSheet Core
+- Función checkPermission para validar antes de operaciones CRUD
+
+#### Siguiente paso sugerido:
+- Fase 1.4: Versionado y Borrado Lógico
+
+---
+
 *Registro creado automáticamente durante el desarrollo*
