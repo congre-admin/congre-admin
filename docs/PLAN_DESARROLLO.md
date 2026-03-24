@@ -37,17 +37,17 @@ El Backend debe cumplir con la especificación definida en `docs/architecture/Ba
 - [x] Implementar lógica de "Last Write Wins" con detección de conflictos
 
 ### 1.5 Operaciones CRUD
-- [ ] Completar `batchGetData()` - Lectura múltiple
-- [ ] Completar `saveData()` - Upsert con versionado
-- [ ] Completar `deleteData()` - Borrado lógico
-- [ ] Implementar `initSheet()` - Creación de tablas
+- [x] Completar `batchGetData()` - Lectura múltiple
+- [x] Completar `saveData()` - Upsert con versionado
+- [x] Completar `deleteData()` - Borrado lógico
+- [x] Implementar `initSheet()` - Creación de tablas
 
 ### 1.6 Sistema de Logs
-- [ ] Registrar intentos de acceso fallidos
-- [ ] Registrar cambios en esquema
-- [ ] Registrar operaciones de escritura
+- [x] Registrar intentos de acceso fallidos
+- [x] Registrar cambios en esquema
+- [x] Registrar operaciones de escritura
 
-**Entregable:** `backend/src/api.gs` completo según especificación
+**Entregable:** `backend/src/api.gs` completo según especificación ✅
 
 ---
 
