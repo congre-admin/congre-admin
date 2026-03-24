@@ -21,9 +21,9 @@ El Backend debe cumplir con la especificación definida en `docs/architecture/Ba
 - [x] Soporte para OTP vía Email
 
 ### 1.2 Gestión de Sesiones
-- [ ] Implementar validación de `sessionToken`
-- [ ] Manejo de expiración de tokens
-- [ ] Renovación de sesiones
+- [x] Implementar validación de `sessionToken`
+- [x] Manejo de expiración de tokens
+- [x] Renovación de sesiones
 
 ### 1.3 Control de Permisos RBAC
 - [ ] Integrar tabla `Perfiles` del Core

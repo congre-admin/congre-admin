@@ -65,4 +65,36 @@ Este Documento registra la ejecución de cada fase del desarrollo del sistema.
 
 ---
 
+### 1.2 Gestión de Sesiones ✅ COMPLETADO
+**Fecha:** 2026-03-24
+
+**Estado:** ✅ Implementado
+
+#### Tareas completadas:
+- [x] Implementar validación de `sessionToken`
+- [x] Manejo de expiración de tokens
+- [x] Renovación de sesiones
+
+#### Funciones implementadas:
+| Función | Descripción |
+|---------|-------------|
+| `refreshSessionToken()` | Renueva/extiende un token de sesión |
+| `getActiveSessions()` | Obtiene todas las sesiones activas de un usuario |
+| `invalidateAllSessions()` | Cierra todas las sesiones de un usuario |
+| `action refreshSession` | Acción API para renovar sesión |
+| `action getActiveSessions` | Acción API para obtener sesiones activas |
+| `action invalidateAllSessions` | Acción API para cerrar todas las sesiones |
+
+#### Archivos modificados:
+- `backend/src/api.gs` - Agregadas funciones de renovación de sesiones
+
+#### Notas:
+- Renovación automática cuando quedan menos de 1 hora de sesión
+- Soporte para cerrar todas las sesiones (útil para cambio de contraseña)
+
+#### Siguiente paso sugerido:
+- Fase 1.3: Control de Permisos RBAC
+
+---
+
 *Registro creado automáticamente durante el desarrollo*

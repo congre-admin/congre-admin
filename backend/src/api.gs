@@ -116,6 +116,18 @@ function doPost(e) {
       return createResponse(session);
     }
     
+    if (action === 'refreshSession') {
+      return createResponse(refreshSessionToken(postData.sessionToken));
+    }
+    
+    if (action === 'getActiveSessions') {
+      return createResponse(getActiveSessions(postData.userId));
+    }
+    
+    if (action === 'invalidateAllSessions') {
+      return createResponse(invalidateAllSessions(postData.userId));
+    }
+    
     return createResponse({ error: 'Acción POST no válida' });
   } catch (err) {
     return createResponse({ error: err.message });
@@ -436,6 +448,88 @@ function invalidateSession(token) {
       allProperties.setProperty(key, JSON.stringify(sessions));
     }
   }
+}
+
+/**
+ * Renueva/extiende un token de sesión
+ * @param {string} token - Token de sesión a renovar
+ * @return {object} Nuevo token o error
+ */
+function refreshSessionToken(token) {
+  const allProperties = PropertiesService.getUserProperties();
+  const keys = allProperties.getKeys();
+  
+  for (const key of keys) {
+    if (!key.startsWith('sessions_')) continue;
+    
+    let sessions = JSON.parse(allProperties.getProperty(key) || '[]');
+    const sessionIndex = sessions.findIndex(s => s.token === token);
+    
+    if (sessionIndex !== -1) {
+      const session = sessions[sessionIndex];
+      
+      // Verificar que no ha expirado
+      if (new Date(session.expiresAt) < new Date()) {
+        return { success: false, error: 'ERR_SESSION_EXPIRED' };
+      }
+      
+      // Verificar si está próximo a expirar (menos de 1 hora)
+      const timeLeft = new Date(session.expiresAt) - new Date();
+      const oneHour = 60 * 60 * 1000;
+      
+      if (timeLeft > oneHour) {
+        // No necesita renovación aún
+        return { 
+          success: true, 
+          message: 'Sesión válida', 
+          expiresAt: session.expiresAt,
+          needsRefresh: false
+        };
+      }
+      
+      // Renovar sesión
+      const newExpiresAt = new Date(Date.now() + SESSION_TTL * 1000).toISOString();
+      sessions[sessionIndex].expiresAt = newExpiresAt;
+      sessions[sessionIndex].lastRefresh = new Date().toISOString();
+      
+      allProperties.setProperty(key, JSON.stringify(sessions));
+      
+      return { 
+        success: true, 
+        expiresAt: newExpiresAt,
+        needsRefresh: false
+      };
+    }
+  }
+  
+  return { success: false, error: 'ERR_SESSION_NOT_FOUND' };
+}
+
+/**
+ * Obtiene todas las sesiones activas de un usuario
+ * @param {string} userId - ID del usuario
+ * @return {array} Lista de sesiones activas
+ */
+function getActiveSessions(userId) {
+  const sessions = getUserSessions(userId);
+  const now = new Date();
+  
+  return sessions.filter(s => new Date(s.expiresAt) > now).map(s => ({
+    token: s.token,
+    createdAt: s.createdAt,
+    expiresAt: s.expiresAt,
+    lastRefresh: s.lastRefresh || null
+  }));
+}
+
+/**
+ * Cierra todas las sesiones de un usuario
+ * @param {string} userId - ID del usuario
+ * @return {object} Resultado
+ */
+function invalidateAllSessions(userId) {
+  PropertiesService.getUserProperties().deleteProperty('sessions_' + userId);
+  return { success: true, message: 'Todas las sesiones cerradas' };
 }
 
 /**
