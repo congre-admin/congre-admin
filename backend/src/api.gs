@@ -88,6 +88,33 @@ function doPost(e) {
       if (sheet) ss.deleteSheet(sheet);
       return createResponse({ success: true });
     }
+
+    // --- Autenticación ---
+    
+    if (action === 'register') {
+      return createResponse(actionRegister(postData.payload));
+    }
+    
+    if (action === 'login') {
+      return createResponse(actionLogin(postData.payload));
+    }
+    
+    if (action === 'challenge') {
+      return createResponse(actionChallenge(postData.payload));
+    }
+    
+    if (action === 'requestOTP') {
+      return createResponse(actionRequestOTP(postData.payload));
+    }
+    
+    if (action === 'logout') {
+      return createResponse(actionLogout(postData.payload));
+    }
+    
+    if (action === 'validateSession') {
+      const session = validateSession(postData.sessionToken);
+      return createResponse(session);
+    }
     
     return createResponse({ error: 'Acción POST no válida' });
   } catch (err) {
@@ -200,6 +227,485 @@ function deleteRowById(sheet, id) {
 function createResponse(data) {
   return ContentService.createTextOutput(JSON.stringify(data))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ================================================================= //
+// AUTENTICACIÓN ZERO-KNOWLEDGE
+// Fase 1.1: Implementación de autenticación
+// ================================================================= //
+
+const SESSION_TTL = 86400; // 24 horas en segundos
+const CORE_SS_ID = 'CORE_SS_ID'; // Configurar en propiedades del script
+
+/**
+ * Obtiene el ID del GSheet Core desde las propiedades del script
+ */
+function getCoreSpreadsheetId() {
+  return PropertiesService.getScriptProperties().getProperty('CORE_SS_ID');
+}
+
+/**
+ * Obtiene la hoja de Usuarios del GSheet Core
+ */
+function getUsuariosSheet() {
+  const ssId = getCoreSpreadsheetId();
+  if (!ssId) throw new Error('CORE_SS_ID no configurado');
+  const ss = SpreadsheetApp.openById(ssId);
+  return ss.getSheetByName('Usuarios');
+}
+
+/**
+ * Busca un usuario por username (email)
+ * @param {string} username - Email del usuario
+ * @return {object|null} Usuario encontrado o null
+ */
+function getUserByUsername(username) {
+  const sheet = getUsuariosSheet();
+  if (!sheet) return null;
+  
+  const data = getSheetData(sheet);
+  return data.find(row => row.username === username) || null;
+}
+
+/**
+ * Busca un usuario por ID
+ * @param {string} id - ID del usuario
+ * @return {object|null} Usuario encontrado o null
+ */
+function getUserById(id) {
+  const sheet = getUsuariosSheet();
+  if (!sheet) return null;
+  
+  const data = getSheetData(sheet);
+  return data.find(row => row.id === id) || null;
+}
+
+/**
+ * Crea un nuevo usuario
+ * @param {object} userData - Datos del usuario
+ * @return {object} Usuario creado
+ */
+function createUser(userData) {
+  const sheet = getUsuariosSheet();
+  if (!sheet) throw new Error('Hoja Usuarios no encontrada');
+  
+  // Verificar si el usuario ya existe
+  const existing = getUserByUsername(userData.username);
+  if (existing) {
+    throw new Error('ERR_USER_EXISTS: El usuario ya existe');
+  }
+  
+  const user = {
+    id: Utilities.getUuid(),
+    username: userData.username,
+    wrapped_mk: userData.wrapped_mk || '',
+    perfilId: userData.perfilId || 'p_publicador',
+    personaId: userData.personaId || null,
+    auth_factor: userData.auth_factor || 'email',
+    totp_secret: userData.totp_secret || null,
+    public_key: userData.public_key || null,
+    created_at: new Date().toISOString(),
+    _ts: new Date().toISOString()
+  };
+  
+  updateOrInsert(sheet, user, false);
+  clearCache(getCoreSpreadsheetId(), 'Usuarios');
+  
+  return { success: true, user: { id: user.id, username: user.username } };
+}
+
+/**
+ * Actualiza un usuario existente
+ * @param {string} id - ID del usuario
+ * @param {object} updates - Campos a actualizar
+ * @return {object} Usuario actualizado
+ */
+function updateUser(id, updates) {
+  const sheet = getUsuariosSheet();
+  if (!sheet) throw new Error('Hoja Usuarios no encontrada');
+  
+  const user = getUserById(id);
+  if (!user) {
+    throw new Error('ERR_USER_NOT_FOUND: Usuario no encontrado');
+  }
+  
+  const updatedUser = {
+    ...user,
+    ...updates,
+    _ts: new Date().toISOString()
+  };
+  
+  updateOrInsert(sheet, updatedUser, false);
+  clearCache(getCoreSpreadsheetId(), 'Usuarios');
+  
+  return { success: true, user: { id: updatedUser.id, username: updatedUser.username } };
+}
+
+/**
+ * Genera un token de sesión
+ * @param {string} userId - ID del usuario
+ * @return {object} Token de sesión
+ */
+function generateSessionToken(userId) {
+  const user = getUserById(userId);
+  if (!user) {
+    throw new Error('ERR_USER_NOT_FOUND');
+  }
+  
+  const token = Utilities.getUuid() + '_' + Utilities.getUuid();
+  const expiresAt = new Date(Date.now() + SESSION_TTL * 1000).toISOString();
+  
+  // Guardar sesión en propiedades (en producción, usar base de datos)
+  const sessionData = {
+    token: token,
+    userId: userId,
+    createdAt: new Date().toISOString(),
+    expiresAt: expiresAt
+  };
+  
+  const userSessions = getUserSessions(userId);
+  userSessions.push(sessionData);
+  PropertiesService.getUserProperties().setProperty(
+    'sessions_' + userId,
+    JSON.stringify(userSessions)
+  );
+  
+  return {
+    sessionToken: token,
+    expiresAt: expiresAt,
+    userId: userId
+  };
+}
+
+/**
+ * Obtiene las sesiones de un usuario
+ */
+function getUserSessions(userId) {
+  const stored = PropertiesService.getUserProperties().getProperty('sessions_' + userId);
+  return stored ? JSON.parse(stored) : [];
+}
+
+/**
+ * Valida un token de sesión
+ * @param {string} token - Token de sesión
+ * @return {object|null} Datos de sesión o null si es inválido
+ */
+function validateSession(token) {
+  const allProperties = PropertiesService.getUserProperties();
+  const keys = allProperties.getKeys();
+  
+  for (const key of keys) {
+    if (!key.startsWith('sessions_')) continue;
+    
+    const sessions = JSON.parse(allProperties.getProperty(key) || '[]');
+    const session = sessions.find(s => s.token === token);
+    
+    if (session) {
+      // Verificar si no ha expirado
+      if (new Date(session.expiresAt) > new Date()) {
+        const user = getUserById(session.userId);
+        return {
+          valid: true,
+          userId: session.userId,
+          username: user?.username,
+          expiresAt: session.expiresAt
+        };
+      }
+    }
+  }
+  
+  return { valid: false };
+}
+
+/**
+ * Cierra una sesión
+ * @param {string} token - Token de sesión a cerrar
+ */
+function invalidateSession(token) {
+  const allProperties = PropertiesService.getUserProperties();
+  const keys = allProperties.getKeys();
+  
+  for (const key of keys) {
+    if (!key.startsWith('sessions_')) continue;
+    
+    let sessions = JSON.parse(allProperties.getProperty(key) || '[]');
+    const initialLength = sessions.length;
+    sessions = sessions.filter(s => s.token !== token);
+    
+    if (sessions.length !== initialLength) {
+      allProperties.setProperty(key, JSON.stringify(sessions));
+    }
+  }
+}
+
+/**
+ * Acción: register - Crea un nuevo usuario
+ * @param {object} payload - Datos del usuario
+ * @return {object} Respuesta
+ */
+function actionRegister(payload) {
+  try {
+    const result = createUser({
+      username: payload.username,
+      wrapped_mk: payload.wrapped_mk,
+      perfilId: payload.perfilId,
+      personaId: payload.personaId,
+      auth_factor: payload.auth_factor || 'email',
+      totp_secret: payload.totp_secret,
+      public_key: payload.public_key
+    });
+    
+    return {
+      success: true,
+      user: result.user
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: err.message
+    };
+  }
+}
+
+/**
+ * Acción: login - Autentica usuario y devuelve token
+ * @param {object} payload - Credenciales
+ * @return {object} Respuesta con token
+ */
+function actionLogin(payload) {
+  try {
+    const { username, code, authType } = payload;
+    
+    // Buscar usuario
+    const user = getUserByUsername(username);
+    if (!user) {
+      return { success: false, error: 'ERR_AUTH_INVALID: Usuario no encontrado' };
+    }
+    
+    // Verificar factor de autenticación
+    if (authType === 'totp' || user.auth_factor === 'totp') {
+      if (!code) {
+        return { success: false, error: 'ERR_OTP_REQUIRED: Se requiere código TOTP' };
+      }
+      // Verificar TOTP (en implementación real, usar библиотека)
+      const isValid = verifyTOTP(user.totp_secret, code);
+      if (!isValid) {
+        logAccess(username, false, 'TOTP inválido');
+        return { success: false, error: 'ERR_AUTH_INVALID: Código TOTP inválido' };
+      }
+    } else if (authType === 'email' || user.auth_factor === 'email') {
+      if (!code) {
+        return { success: false, error: 'ERR_OTP_REQUIRED: Se requiere código de verificación' };
+      }
+      // Verificar código OTP de email
+      const isValid = verifyEmailOTP(username, code);
+      if (!isValid) {
+        logAccess(username, false, 'OTP email inválido');
+        return { success: false, error: 'ERR_AUTH_INVALID: Código inválido' };
+      }
+    }
+    
+    // Generar token de sesión
+    const session = generateSessionToken(user.id);
+    
+    logAccess(username, true, 'Login exitoso');
+    
+    return {
+      success: true,
+      sessionToken: session.sessionToken,
+      wrapped_mk: user.wrapped_mk,
+      expiresAt: session.expiresAt,
+      user: {
+        id: user.id,
+        username: user.username,
+        perfilId: user.perfilId
+      }
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Acción: challenge - Genera desafío para WebAuthn/Passkey
+ * @param {object} payload - Datos del desafío
+ * @return {object} Respuesta con desafío
+ */
+function actionChallenge(payload) {
+  try {
+    const user = getUserByUsername(payload.username);
+    
+    if (!user) {
+      return { success: false, error: 'ERR_USER_NOT_FOUND' };
+    }
+    
+    // Generar desafío (en implementación real, usar WebAuthn)
+    const challenge = Utilities.getUuid();
+    
+    // Guardar desafío temporalmente
+    PropertiesService.getUserProperties().setProperty(
+      'challenge_' + payload.username,
+      JSON.stringify({
+        challenge: challenge,
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString() // 5 min
+      })
+    );
+    
+    return {
+      success: true,
+      challenge: challenge,
+      publicKey: user.public_key
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Acción: requestOTP - Envía código por email
+ * @param {object} payload - Datos del request
+ * @return {object} Respuesta
+ */
+function actionRequestOTP(payload) {
+  try {
+    const user = getUserByUsername(payload.username);
+    
+    if (!user) {
+      return { success: false, error: 'ERR_USER_NOT_FOUND' };
+    }
+    
+    // Generar código OTP de 6 dígitos
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    // Guardar código temporalmente (en producción, usar tabla)
+    PropertiesService.getUserProperties().setProperty(
+      'otp_' + payload.username,
+      JSON.stringify({
+        code: code,
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString() // 10 min
+      })
+    );
+    
+    // Enviar email
+    sendOTPEmail(user.username, code);
+    
+    logAccess(payload.username, true, 'OTP enviado');
+    
+    return { success: true, message: 'Código enviado' };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Envía código OTP por email
+ * @param {string} email - Email del destinatario
+ * @param {string} code - Código OTP
+ */
+function sendOTPEmail(email, code) {
+  try {
+    MailApp.sendEmail({
+      to: email,
+      subject: 'Código de verificación - Congre-Admin',
+      body: 'Tu código de verificación es: ' + code + '\n\nEste código expira en 10 minutos.'
+    });
+  } catch (err) {
+    Logger.log('Error enviando email: ' + err.message);
+    throw new Error('ERR_EMAIL_SEND: No se pudo enviar el email');
+  }
+}
+
+/**
+ * Verifica código OTP de email
+ * @param {string} username - Username
+ * @param {string} code - Código a verificar
+ * @return {boolean} true si es válido
+ */
+function verifyEmailOTP(username, code) {
+  const stored = PropertiesService.getUserProperties().getProperty('otp_' + username);
+  if (!stored) return false;
+  
+  const otpData = JSON.parse(stored);
+  
+  // Verificar si no ha expirado
+  if (new Date(otpData.expiresAt) < new Date()) {
+    return false;
+  }
+  
+  // Verificar código
+  if (otpData.code !== code) {
+    return false;
+  }
+  
+  // Eliminar código usado
+  PropertiesService.getUserProperties().deleteProperty('otp_' + username);
+  
+  return true;
+}
+
+/**
+ * Verifica código TOTP (implementación básica)
+ * En producción, usar библиотека como jsSHA
+ * @param {string} secret - Secreto TOTP
+ * @param {string} code - Código a verificar
+ * @return {boolean} true si es válido
+ */
+function verifyTOTP(secret, code) {
+  if (!secret || !code) return false;
+  
+  // Implementación simplificada - en producción usar google-authenticator o similar
+  // Por ahora, aceptamos cualquier código de 6 dígitos si el secreto existe
+  // TODO: Implementar verificación TOTP real
+  
+  // Placeholder: en producción, integrar библиотека TOTP
+  return code.length === 6 && /^\d+$/.test(code);
+}
+
+/**
+ * Registra acceso en log
+ * @param {string} username - Usuario
+ * @param {boolean} success - Si fue exitoso
+ * @param {string} details - Detalles
+ */
+function logAccess(username, success, details) {
+  try {
+    const ssId = getCoreSpreadsheetId();
+    if (!ssId) return;
+    
+    const ss = SpreadsheetApp.openById(ssId);
+    let sheet = ss.getSheetByName('Logs_Accesos');
+    
+    if (!sheet) {
+      sheet = ss.insertSheet('Logs_Accesos');
+      sheet.appendRow(['timestamp', 'username', 'success', 'details', 'ip']);
+    }
+    
+    sheet.appendRow([
+      new Date().toISOString(),
+      username,
+      success ? 'YES' : 'NO',
+      details,
+      'SERVER'
+    ]);
+  } catch (err) {
+    Logger.log('Error guardando log: ' + err.message);
+  }
+}
+
+/**
+ * Acción: logout - Cierra sesión
+ * @param {object} payload - Token de sesión
+ * @return {object} Respuesta
+ */
+function actionLogout(payload) {
+  try {
+    invalidateSession(payload.sessionToken);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
 }
 
 // ================================================================= //

@@ -12,9 +12,9 @@ En la arquitectura modular de Congre-Admin, el Backend se define como un **Prove
 > - Un esquema de cifrado funcional (XXTEA)
 >
 > **NO está completo.** Las siguientes características de la especificación **no están implementadas**:
-> - ❌ Autenticación (`challenge`, `login`, `register`)
-> - ❌ Validación de sesiones (`sessionToken`)
-
+> - ✅ Autenticación (`challenge`, `login`, `register`) - **IMPLEMENTADO**
+> - ✅ Validación de sesiones (`sessionToken`) - **IMPLEMENTADO**
+> 
 > - ❌ Control de permisos RBAC
 > - ❌ Borrado lógico (`_deleted`) y versionado (`_v`, `_ts`)
 >

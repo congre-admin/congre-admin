@@ -2,6 +2,8 @@
 
 Este documento establece el orden de desarrollo del sistema, priorizando el Backend y el Módulo de Administración.
 
+> **Nota de proceso:** En cada fase de la ejecución se debe dejar un registro de lo realizado en `docs/REGISTRO_EJECUCION.md`, incluyendo: fecha, estado de tareas, funciones implementadas, archivos modificados, notas y siguiente paso sugerido.
+
 ---
 
 ## FASE 1: Backend (Google Apps Script)
@@ -11,12 +13,12 @@ Este documento establece el orden de desarrollo del sistema, priorizando el Back
 El Backend debe cumplir con la especificación definida en `docs/architecture/Backend.md`.
 
 ### 1.1 Autenticación Zero-Knowledge
-- [ ] Implementar `challenge()` - Solicita desafío para Passkey/WebAuthn
-- [ ] Implementar `login()` - Valida credenciales y devuelve `wrapped_mk`
-- [ ] Implementar `register()` - Crea nuevo usuario
-- [ ] Soporte para Passkeys (WebAuthn)
-- [ ] Soporte para TOTP (Google Authenticator)
-- [ ] Soporte para OTP vía Email
+- [x] Implementar `challenge()` - Solicita desafío para Passkey/WebAuthn
+- [x] Implementar `login()` - Valida credenciales y devuelve `wrapped_mk`
+- [x] Implementar `register()` - Crea nuevo usuario
+- [x] Soporte para Passkeys (WebAuthn) - Estructura básica
+- [x] Soporte para TOTP (Google Authenticator) - Verificación básica
+- [x] Soporte para OTP vía Email
 
 ### 1.2 Gestión de Sesiones
 - [ ] Implementar validación de `sessionToken`

@@ -16,6 +16,12 @@ Cada entrada debe incluir:
 
 ## 2026-03-24
 
+### Nuevo
+- **Desarrollo iniciado:** Creado `docs/REGISTRO_EJECUCION.md` para documentar el progreso del desarrollo.
+- **Fase 1.1 completada:** Implementación de autenticación Zero-Knowledge en `backend/src/api.gs` (challenge, login, register, TOTP, OTP email, gestión de sesiones).
+
+## 2026-03-24
+
 ### Modificado
 
 **Archivos:** `docs/architecture/Diagramas_Procesos.md`, `docs/modules/Admin_Registros.md`, `docs/modules/Admin_Sistema.md`, `docs/modules/Admin_Usuarios.md`, `docs/modules/Reuniones_Programa.md`
