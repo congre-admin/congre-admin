@@ -14,6 +14,35 @@ Cada entrada debe incluir:
 
 ---
 
+## 2026-03-24
+
+### Modificado
+
+**Archivos:** `docs/architecture/Diagramas_Procesos.md`, `docs/modules/Admin_Registros.md`, `docs/modules/Admin_Sistema.md`, `docs/modules/Admin_Usuarios.md`, `docs/modules/Reuniones_Programa.md`
+
+**Descripción:** **Reorganización de Diagramas y Terminología**
+
+-   **Diagramas por Módulo:** Los diagramas de flujo fueron movidos de `Diagramas_Procesos.md` a la documentación de sus módulos correspondientes para mejor mantenibilidad.
+-   **Diagrama de Ciclo Mensual:** Actualizado para incluir notificación al Superintendente de Servicio al inicio de la fase de recolección, días marcados como "(referencial)", y cambio de "resumen visual" a "formularios para Sucursal".
+-   **Terminología:** Renombrado "Cuenta Corriente de Publicadores" → "Movimientos de Publicadores" en reportes y documentación.
+
+---
+
+### Modificado
+
+**Archivos:** `docs/architecture/Guia_Documentacion.md`, `docs/modules/Admin_Registros.md`, `docs/modules/Administracion.md`
+
+**Descripción:** **Navegación con Nombre Corto y Título de Página**
+
+-   **Estructura de Navegación:** Agregados campos `menu` (nombre corto para barra lateral) y `titulo` (nombre largo para encabezado de página) a la especificación de navegación.
+-   **Pestaña Congregación:** Agregada nueva pestaña "Congregación" a la página de Informes de predicación, disponible solo para perfil secretary (admin), con funcionalidades para ver/cargar informes de todos los publicadores.
+-   **Terminología:** Renombrado "Cierres_Informes" → "Cierres_Mensuales" en toda la documentación.
+-   **Menús Actualizados:** Registros (antes Registros de publicador), Informes (antes Informes de predicación), Cierre (antes Cierre mensual), Asistencia (antes Asistencia).
+-   **Dos Pestañas en Cierre Mensual:** Agregadas pestañas "Estado" (dashboard de cumplimiento) y "Cierre" (generar cierre mensual).
+-   **Cuatro Pestañas en Registros:** Agregadas pestañas "Publicadores" (ver registros y descargar PDFs), "Resumen" (totales y promedios), "Movimientos" (gestión de altas/bajas, solo admin), y "Reuniones" (consulta visual de asistencia).
+
+---
+
 ## 2026-03-20
 
 ### Agregado

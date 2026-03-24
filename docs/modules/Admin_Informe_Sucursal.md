@@ -6,7 +6,7 @@ Este módulo centraliza la consolidación de la actividad mensual y la gestión 
 -   **ID:** `admin_informe_sucursal`
 -   **Sección:** `Administración`
 -   **Icono:** `analytics`
--   **Tablas Requeridas:** `Cierres_Informes`, `Novedades_Publicadores`.
+-   **Tablas Requeridas:** `Cierres_Mensuales`, `Novedades_Publicadores`.
 -   **Dependencias:** `admin_registros`, `personas`.
 
 ## 2. Estructura de Datos (Esquema)
@@ -41,7 +41,7 @@ El proceso de cierre se realiza entre el día 1 y 20 de cada mes:
 ### Paso 3: Generación y Cierre
 -   **Vista Previa:** Resumen en los tres grupos oficiales (A: Precursores, B: Auxiliares, C: Publicadores).
 -   **Acción "Cerrar Mes":** 
-    1. Crea el registro en `Cierres_Informes`.
+    1. Crea el registro en `Cierres_Mensuales`.
     2. Vincula todos los informes y novedades procesados a ese `cierreId`.
     3. Genera el reporte visual para copiar a la plataforma oficial.
 

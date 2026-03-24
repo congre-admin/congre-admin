@@ -189,6 +189,20 @@ Diseñado como un proceso guiado en tres fases:
 -   **Workflow de 3 Fases:** Proceso de trabajo fluido desde la estructura hasta la asignación.
 -   **Drawer de Candidatos:** Ficha enriquecida con visualización del historial de participación.
 
+### C. Flujo de Confección de Programa
+
+```mermaid
+graph LR
+    A[Elegir Semana] --> B[Editar Estructura]
+    B --> C[Llamar Motor Sugerencias]
+    C --> D{¿Hay filtros?}
+    D -- Sí --> E[Intersección de Etiquetas Virtuales]
+    E --> F[Ranking por Antigüedad/Carga]
+    F --> G[Presentar Candidatos Sugeridos]
+    G --> H[Confirmar Asignaciones]
+    H --> I[Publicar al GSheet Mirror]
+```
+
 ## 5. Motor de Sugerencias Inteligentes
 El sistema utiliza el motor JSONata para calcular el "Score de Idoneidad" de cada candidato.
 

@@ -66,7 +66,23 @@ registros_saltados | errores | query_jsonata | _v | _ts
 2.  **Marketplace de Plug-ins:** Instalación y vinculación de nuevos módulos mediante el Spreadsheet ID.
 3.  **Mantenimiento de Esquema:** Actualización de cabeceras en Google Sheets cuando el esquema cambia.
 
-### 3.2. Importación de Datos Asistida por IA
+### 3.2. Flujo de Instalación (Setup Wizard)
+
+```mermaid
+graph TD
+    A[Inicio: URL vacía] --> B{¿Hay API en LocalStorage?}
+    B -- No --> C[Paso 1: Ingresar URL de GAS]
+    C --> D[Paso 2: Acción createResource]
+    D --> E[GAS crea GSheet Core e inicializa tablas]
+    E --> F[Paso 3: Registro de Super-Admin]
+    F --> G[Cliente genera Master Key aleatoria]
+    G --> H[Cliente cifra MK con clave de Password]
+    H --> I[Acción register: Enviar wrapped_mk]
+    I --> J[Paso 4: Generar Enlace Mágico]
+    J --> K[Fin: Sistema Operativo]
+```
+
+### 3.3. Importación de Datos Asistida por IA
 
 **Propósito:** Permitir a los usuarios importar datos desde sistemas externos (CSV, Excel, JSON) utilizando **IA generativa** para transformar los datos al formato de Congre-Admin mediante queries **JSONata**.
 

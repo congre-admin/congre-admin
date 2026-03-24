@@ -24,6 +24,23 @@ Se basa en la tabla `Usuarios` definida en el [Backend](../architecture/Backend.
     -   Configuración de la semilla **TOTP** (QR).
 3.  **Gestión de Llaves:** Generación de un nuevo "Cofre" (`wrapped_mk`) para el usuario si es un editor nuevo.
 
+### 3.1. Autenticación Zero-Knowledge
+
+```mermaid
+sequenceDiagram
+    participant U as Usuario (Navegador)
+    participant B as Backend (GAS)
+    
+    U->>B: Petición login (username)
+    B->>B: Valida permisos
+    B-->>U: Entrega Salt y wrapped_mk
+    Note over U: Deriva Wrapping Key localmente (PBKDF2)
+    Note over U: Descifra la Master Key en memoria
+    U->>B: Petición batchGetData (sessionToken)
+    B-->>U: Entrega datos cifrados (iv:ciphertext)
+    Note over U: Descifra campos enc_ para visualización
+```
+
 ## 4. Especificación de Interfaces
 -   **Matriz de Permisos:** Interfaz visual de checkboxes para definir qué módulos puede ver o administrar cada usuario.
 -   **Gestor de Tokens:** Generador de enlaces de invitación (`?api=...&k=...`).

@@ -17,7 +17,13 @@ Definición técnica para el registro en el Core. El sistema utiliza una jerarqu
 - **Sección:** Nombre del grupo principal.
 - **Icono:** Identificador de **Material Icon** (ej: `house`) o **URL a un archivo SVG** (ej: `./assets/icon.svg`).
 - **Dependencias:** Array de IDs de otros plug-ins necesarios.
-- **Navegación:** Objeto que define las pestañas y su nivel de privacidad.
+- **Navegación:** Array de objetos con la siguiente estructura:
+    - `menu`: Nombre corto para mostrar en la barra lateral (máx 15 caracteres recomendado)
+    - `titulo`: Nombre largo para el encabezado de la página
+    - `icono`: Identificador de Material Icon
+    - `ruta`: Ruta/path de la vista
+    - `publico`: Boolean indicando visibilidad
+    - `pestañas` (opcional): Subpestañas con la misma estructura
 
 ### 2. Estructura de Datos
 Especificación detallada de los objetos JSON y las tablas.
