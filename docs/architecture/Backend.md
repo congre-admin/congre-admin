@@ -14,7 +14,7 @@ En la arquitectura modular de Congre-Admin, el Backend se define como un **Prove
 > **NO está completo.** Las siguientes características de la especificación **no están implementadas**:
 > - ❌ Autenticación (`challenge`, `login`, `register`)
 > - ❌ Validación de sesiones (`sessionToken`)
-> - ❌ Motor JSONata para validaciones
+
 > - ❌ Control de permisos RBAC
 > - ❌ Borrado lógico (`_deleted`) y versionado (`_v`, `_ts`)
 >
@@ -35,10 +35,9 @@ Cualquier implementación de backend debe cumplir con las siguientes normas estr
 ### Seguridad del Recurso
 El backend debe validar que el `ssId` solicitado sea un recurso autorizado por el Núcleo para evitar accesos a archivos externos no relacionados con el sistema.
 
-## 2. Requerimientos Funcionales (Motor JSONata)
-Para que el backend sea compatible con Congre-Admin, debe integrar un motor de **JSONata** para ejecutar:
--   **Validaciones:** Reglas de integridad definidas en el esquema evaluadas antes de persistir.
--   **Sanitización de Segmentos:** Filtrado dinámico de campos para el **GSheet Público**, asegurando que los datos de invitación nunca contengan trazas de datos sensibles.
+## 2. Validaciones
+Las validaciones de esquema se ejecutan en el **Frontend** mediante JSONata antes de enviar los datos al backend. El backend confiablemente recepta los datos y los persiste.
+- **Sanitización:** El backend aplica un filtro simple para el GSheet Público que elimina campos con prefijo `enc_`.
 
 ---
 

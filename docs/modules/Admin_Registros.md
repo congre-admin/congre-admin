@@ -128,8 +128,37 @@ La página "/cierre" contiene dos pestañas:
 
 ### D. Visita del Superintendente de Circuito (SC)
 1.  **Movimientos de Publicadores:** El reporte filtrará la tabla `Novedades` desde la fecha de la última visita.
-2.  **Resumen Contable:** Presentará el saldo inicial, el detalle cronológico de cada alta/baja con su comentario, y el saldo final.
-3.  **Documentación:** Exportación masiva de S-21 y S-88 del periodo.
+2.  **Resumen de Movimientos:** Presentará el saldo inicial, el detalle cronológico de cada alta/baja con su comentario, y el saldo final.
+3.  **Documentación:** Exportación de reporte de movimientos, lista de publicadores, S-21 y S-88 del periodo.
+
+```mermaid
+sequenceDiagram
+    participant Sec as Secretario
+    participant Core as Sistema
+    participant GS as GSheet
+
+    Note over Sec: Preparación de la Visita
+    Sec->>Core: Accede a pestaña "Visita SC"
+    Core->>GS: Obtiene fecha de última visita
+    Core-->>Sec: Muestra saldo inicial de publicadores
+
+    Note over Sec: Revisión de Movimientos
+    Sec->>Core: Consulta período de la visita
+    Core->>GS: Busca Novedades desde última visita
+    Core-->>Sec: Lista movimientos (altas/bajas) con detalles
+    Sec->>Core: Revisa y confirma movimientos
+
+    Note over Sec: Generación de Documentación
+    Sec->>Core: Solicita generar documentación
+    Core->>GS: Genera reporte de movimientos
+    Core->>GS: Genera lista de publicadores
+    Core->>GS: Genera/Consolida S-21
+    Core->>GS: Genera S-88
+
+    Note over Sec: Descarga
+    Core-->>Sec: Muestra opciones de descarga
+    Sec->>Core: Descarga individual o ZIP completo
+```
 
 ### E. Flujo de Trabajo - Ciclo Mensual
 

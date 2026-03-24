@@ -31,6 +31,13 @@ Toda la especificación técnica y de diseño se encuentra en la carpeta `/docs`
 - `/system`: AI agent specification (production-ready).
 - `/examples`: Ejemplos de uso del agente AI.
 
+## 📦 Repositorios
+
+| Tipo | URL |
+|------|-----|
+| Código Fuente | https://github.com/congre-admin/congre-admin |
+| Sitio Publicado | https://congre-admin.github.io |
+
 ## 🚀 Inicio Rápido
 
 1. `npm install`

@@ -33,7 +33,7 @@ Todas las peticiones deben enviarse vía `POST` (excepto lecturas públicas simp
 ## 3. Códigos de Error
 - `ERR_AUTH_INVALID`: Token de sesión expirado o inválido.
 - `ERR_PERMISSION_DENIED`: El usuario no tiene el rol necesario para el `ssId` solicitado.
-- `ERR_VALIDATION_FAILED`: Regla JSONata de backend rechazada.
+- `ERR_VALIDATION_FAILED`: Validación de esquema rechazada (ejecutada en frontend).
 - `ERR_RESOURCE_NOT_FOUND`: `ssId` o tabla no existe.
 
 ## 4. Handshake de Conocimiento Cero

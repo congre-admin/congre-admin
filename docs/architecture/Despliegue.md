@@ -4,6 +4,8 @@ Congre-Admin está diseñado para ser una aplicación web estática (SPA) que se
 
 ## 1. Estrategia de Despliegue (Front-end)
 - **Plataforma:** [GitHub Pages](https://pages.github.com/) es el host primario por defecto.
+- **Repositorio de Código Fuente:** https://github.com/congre-admin/congre-admin
+- **SitioPublicado:** https://github.com/congre-admin/congre-admin.github.io
 - **Empaquetado:** Generado mediante `vite build`, produciendo archivos HTML/JS/CSS optimizados y minificados.
 - **Service Workers:** Implementación de PWA para permitir:
     - Carga instantánea mediante caché local.
