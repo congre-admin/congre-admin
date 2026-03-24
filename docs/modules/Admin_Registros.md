@@ -19,7 +19,8 @@ Este módulo gestiona el historial de actividad de los publicadores, la recolecc
       ] }`
     -   `{ "menu": "Cierre", "titulo": "Cierre mensual", "icono": "analytics", "ruta": "/cierre", "publico": false, "pestañas": [
         { "menu": "Estado", "titulo": "Estado de Carga", "ruta": "/cierre/estado", "permisos": ["admin"] },
-        { "menu": "Cierre", "titulo": "Generar Cierre", "ruta": "/cierre/generar", "permisos": ["admin"] }
+        { "menu": "Cierre", "titulo": "Generar Cierre", "ruta": "/cierre/generar", "permisos": ["admin"] },
+        { "menu": "Visita SC", "titulo": "Visita del Superintendente", "ruta": "/cierre/visita-sc", "permisos": ["admin"] }
       ] }`
     -   `{ "menu": "Asistencia", "titulo": "Asistencia a reuniones", "icono": "shield_lock", "ruta": "/asistencia", "publico": false, "seccionPadre": "Reuniones" }`
 -   **Permisos:** `admin` (Secretario), `editor` (Superintendentes de Grupo).
@@ -183,6 +184,26 @@ sequenceDiagram
     - **Novedades Pendientes:** Lista de movimientos (altas/bajas) sin cerrar.
     - **Vista Previa del Resumen:** Muestra el cálculo: saldo anterior + novedades = saldo final.
     - **Botón "Generar Cierre":** Crea el registro en `Cierres_Mensuales` y vincula los informes y novedades seleccionados.
+
+#### A.3. Pestaña "Visita SC" (Visita del Superintendente de Circuito)
+- **Permiso requerido:** `admin`
+- **Funcionalidades:**
+    - **Selector de Período:** Rango de fechas para la visita (desde última visita registrada)
+    - **Resumen de Movimientos:** Tabla mostrando:
+        - Saldo inicial de publicadores
+        - Lista de movimientos (altas/bajas) con detalles: nombre, tipo, motivo, fecha
+        - Saldo final de publicadores
+    - **Documentación a generar:**
+        - **Reporte de Movimientos:** PDF/HTML con el resumen de movimientos del período
+        - **Lista de Publicadores:** Datos de contacto de los publicadores activos
+        - **Formularios S-21:** Registro de publicador (descarga individual o lote)
+        - **Formularios S-88:** Informe de servicio
+    - **Acciones:**
+        - Botón "Descargar Movimiento" (PDF del reporte)
+        - Botón "Descargar Contactos" (lista de publicadores)
+        - Botón "Descargar S-21" (individual o ZIP)
+        - Botón "Descargar S-88"
+        - Botón "Descargar Todo" (ZIP con toda la documentación)
 
 ### B. Informes de Predicación
 

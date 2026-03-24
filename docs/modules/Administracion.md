@@ -13,7 +13,7 @@ Administración del censo maestro de la congregación.
 Gestión de la actividad histórica, mensual y cierres a la sucursal.
 -   **Registros de publicador** (`shield_lock`): Gestión con cuatro pestañas - "Publicadores" para ver registros y descargar PDFs, "Resumen" para ver totales y promedios, "Movimientos" para gestionar altas/bajas (secretario), y "Reuniones" para consultar asistencia.
 -   **Informes de predicación** (`shield_lock`): Interfaz con dos pestañas - "Grupo" para superintendentes y "Congregación" para secretario.
--   **Cierre mensual** (`shield_lock`): Interfaz con dos pestañas - "Estado" para ver dashboard de cumplimiento y "Cierre" para generar el cierre mensual.
+-   **Cierre mensual** (`shield_lock`): Interfaz con tres pestañas - "Estado" para ver dashboard de cumplimiento, "Cierre" para generar el cierre mensual, y "Visita SC" para preparar la documentación para la visita del Superintendente de Circuito.
 -   [Ver Definición Detallada](./Admin_Registros.md)
 
 ### 3. Plug-in: Usuarios y Seguridad
