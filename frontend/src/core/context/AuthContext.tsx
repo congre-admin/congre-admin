@@ -21,7 +21,6 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const API_URL_KEY = 'congre_admin_api_url';
-const SS_ID_KEY = 'congre_admin_ss_id';
 const SESSION_TOKEN_KEY = 'congre_admin_session_token';
 const USER_DATA_KEY = 'congre_admin_user_data';
 

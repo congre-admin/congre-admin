@@ -17,7 +17,7 @@ La especificación del agente AI se encuentra en `/system` (raíz del proyecto):
 1.  [**Arquitectura del Sistema**](./architecture/Arquitectura.md): Definición del Núcleo, Plug-ins y Segmentación de Datos.
 2.  [**Especificación Tecnológica**](./architecture/Tecnologia.md): Stack React/GAS, JSONata y AES-GCM.
 3.  [**Interfaz y UX**](./architecture/Interfaz.md): Guía de diseño, Componentes M3 y Patrones de Interacción.
-4.  [**Especificación de API**](./architecture/API.md): Protocolo de comunicación y Handshake de seguridad.
+4.  [**Backend_API_Completa.md**](./architecture/Backend_API_Completa.md): Referencia completa del API
 5.  [**Estrategia de Localización (i18n)**](./architecture/Localizacion.md): Multi-idioma y personalización teocrática.
 6.  [**Matriz de Permisos**](./architecture/Permisos.md): Control de acceso RBAC y seguridad de campos.
 7.  [**Esquemas Comunes**](./architecture/Esquemas_Comunes.md): Estructuras de Logs, Sesión y GeoJSON.

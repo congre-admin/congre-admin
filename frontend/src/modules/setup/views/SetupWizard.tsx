@@ -11,16 +11,12 @@ import {
   Paper,
   Alert,
   CircularProgress,
-  Card,
-  CardContent,
   List,
   ListItem,
   ListItemIcon,
-  ListItemText,
-  CheckCircle
+  ListItemText
 } from '@mui/material';
-import { Security, Business, PersonAdd, CheckCircleOutline } from '@mui/icons-material';
-import { useAuth } from '../../core/context/AuthContext';
+import { Security, Business, PersonAdd, CheckCircleOutline, CheckCircle } from '@mui/icons-material';
 
 const API_URL_KEY = 'congre_admin_api_url';
 const SS_ID_KEY = 'congre_admin_ss_id';
@@ -46,7 +42,6 @@ const steps = [
 
 export default function SetupWizard() {
   const navigate = useNavigate();
-  const { login } = useAuth();
   
   const [activeStep, setActiveStep] = useState(0);
   const [loading, setLoading] = useState(false);

@@ -394,4 +394,64 @@ Todas las tareas de la Fase 1 (Backend) han sido completadas:
 
 ---
 
+### Fase 0: Frontend Core ✅ COMPLETADO
+**Fecha:** 2026-03-25
+
+**Estado:** ✅ Implementado
+
+#### Tareas completadas:
+- [x] Crear scaffold del proyecto (Vite + React 19 + TypeScript)
+- [x] Configurar Tailwind CSS v4 y MUI v6
+- [x] Implementar Setup Wizard (4 pasos de instalación)
+- [x] Implementar Auth Context (login, logout, sesión)
+- [x] Implementar Shell UI (Layout, Sidebar, Navbar)
+- [x] Implementar Routing con ProtectedRoute
+- [x] Implementar Dashboard básico
+- [x] Configurar GitHub Actions para despliegue automático
+
+#### Archivos creados:
+| Archivo | Propósito |
+|---------|-----------|
+| `frontend/package.json` | Dependencias y scripts |
+| `frontend/vite.config.ts` | Config Vite (base: '/') |
+| `frontend/tsconfig.json` | TypeScript strict |
+| `frontend/src/main.tsx` | Entry point |
+| `frontend/src/App.tsx` | Routing |
+| `frontend/src/core/context/AuthContext.tsx` | Auth provider |
+| `frontend/src/core/shell/Shell.tsx` | Layout principal |
+| `frontend/src/core/components/Layout/Sidebar.tsx` | Navegación |
+| `frontend/src/core/components/Layout/Navbar.tsx` | Header |
+| `frontend/src/core/theme/theme.ts` | Tema MUI |
+| `frontend/src/core/crypto/cryptoUtils.ts` | AES-GCM |
+| `frontend/src/modules/setup/views/SetupWizard.tsx` | Instalación |
+| `frontend/src/modules/setup/views/Login.tsx` | Login |
+| `frontend/src/modules/dashboard/views/Dashboard.tsx` | Dashboard |
+| `frontend/public/data/seed_perfiles.json` | Perfiles base |
+| `.github/workflows/deploy.yml` | CI/CD |
+
+#### Stack tecnológico:
+- React 19 + Vite 6
+- TypeScript 5.x (Strict Mode)
+- MUI v6 (Material Design 3)
+- Tailwind CSS v4
+- React Router v6
+- TanStack Query v5 (pendiente configurar)
+
+#### Configuración de despliegue:
+- Repositorio: `congre-admin/congre-admin.github.io`
+- URL: `https://congre-admin.github.io`
+- Workflow: GitHub Actions
+
+#### Documentación actualizada:
+- `docs/architecture/Estructura_Proyecto.md` - Estructura del frontend
+- `docs/README.md` - Referencia corregida
+
+#### Siguiente paso sugerido:
+- Ejecutar `npm install && npm run build` localmente
+- Verificar compilación
+- Push a GitHub para activar deployment
+- Fase 2: Módulo Admin_Personas
+
+---
+
 *Registro creado automáticamente durante el desarrollo*

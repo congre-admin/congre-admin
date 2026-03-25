@@ -12,7 +12,7 @@ import {
   IconButton
 } from '@mui/material';
 import { Visibility, VisibilityOff, Email, Lock } from '@mui/icons-material';
-import { useAuth } from '../../core/context/AuthContext';
+import { useAuth } from '../../../core/context/AuthContext';
 
 const API_URL_KEY = 'congre_admin_api_url';
 

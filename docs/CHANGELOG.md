@@ -30,6 +30,41 @@ Cada entrada debe incluir:
 
 ---
 
+## 2026-03-25
+
+### Nuevo
+- **Frontend Core (Fase 0):** Implementación del core del frontend usando Vite + React 19 + TypeScript.
+- **Setup Wizard:** Componente de instalación de 4 pasos para configuración inicial.
+- **Auth Context:** Provider de autenticación con login, logout y gestión de sesión.
+- **Shell UI:** Layout principal con Sidebar y Navbar.
+- **Dashboard:** Vista inicial con stat cards.
+- **Routing:** Sistema de rutas con ProtectedRoute.
+- **GitHub Actions:** Workflow de CI/CD para despliegue automático a GitHub Pages.
+
+### Archivos creados (Frontend)
+- `frontend/package.json` - Dependencias y scripts
+- `frontend/vite.config.ts` - Configuración Vite
+- `frontend/tsconfig.json` - TypeScript strict mode
+- `frontend/src/main.tsx` - Entry point
+- `frontend/src/App.tsx` - Routing principal
+- `frontend/src/core/context/AuthContext.tsx` - Autenticación
+- `frontend/src/core/shell/Shell.tsx` - Layout
+- `frontend/src/core/components/Layout/Sidebar.tsx` - Navegación
+- `frontend/src/core/components/Layout/Navbar.tsx` - Header
+- `frontend/src/core/theme/theme.ts` - Tema MUI
+- `frontend/src/core/crypto/cryptoUtils.ts` - AES-GCM utilities
+- `frontend/src/modules/setup/views/SetupWizard.tsx` - Instalación
+- `frontend/src/modules/setup/views/Login.tsx` - Login
+- `frontend/src/modules/dashboard/views/Dashboard.tsx` - Dashboard
+- `frontend/public/data/seed_perfiles.json` - Perfiles base
+- `.github/workflows/deploy.yml` - CI/CD
+
+### Documentación actualizada
+- `docs/architecture/Estructura_Proyecto.md` - Actualizada con estructura del frontend
+- `docs/README.md` - Corregida referencia a API.md (eliminado)
+
+---
+
 ## 2026-03-24
 
 ### Nuevo

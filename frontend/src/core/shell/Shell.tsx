@@ -1,7 +1,7 @@
 import { Outlet } from 'react-router-dom';
 import { Box } from '@mui/material';
-import Sidebar from '../components/Sidebar';
-import Navbar from '../components/Navbar';
+import Sidebar from '../components/Layout/Sidebar';
+import Navbar from '../components/Layout/Navbar';
 
 export default function Shell() {
   return (

@@ -58,6 +58,45 @@ El Backend debe cumplir con la especificación definida en `docs/architecture/Ba
 
 ---
 
+## FASE 0: Frontend Core (Completado)
+
+**Prioridad: ALTA** - Base del sistema de interfaz
+
+### 0.1 Scaffold del Proyecto
+- [x] Crear proyecto Vite + React 19 + TypeScript
+- [x] Configurar Tailwind CSS v4
+- [x] Configurar MUI v6 con tema M3
+- [x] Instalar dependencias principales
+
+### 0.2 Setup Wizard
+- [x] Componente de instalación de 4 pasos
+- [x] Validación de conexión con backend
+- [x] Instalación de base de datos
+- [x] Creación de usuario admin
+
+### 0.3 Autenticación
+- [x] AuthContext con login/logout
+- [x] Gestión de sesión en localStorage
+- [x] ProtectedRoute para rutas protegidas
+
+### 0.4 Shell UI
+- [x] Layout principal con Sidebar
+- [x] Navbar con menú de usuario
+- [x] Soporte tema claro/oscuro
+
+### 0.5 Dashboard
+- [x] Vista básica con stat cards
+- [x] Widgets de ejemplo
+
+### 0.6 Despliegue
+- [x] GitHub Actions workflow
+- [x] Configuración para GitHub Pages
+- [x] SPA fallback (404.html)
+
+**Entregable:** `frontend/` completo
+
+---
+
 ## FASE 2: Módulo de Administración
 
 **Prioridad: ALTA** - Primera interacción del usuario con el sistema
@@ -72,6 +111,7 @@ El Backend debe cumplir con la especificación definida en `docs/architecture/Ba
 
 **Dependencias:**
 - Backend (Fase 1)
+- Frontend Core (Fase 0)
 
 ### 2.2 Admin_Registros
 
