@@ -6,7 +6,8 @@
   "homepage": "https://congre-admin.github.io",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && cp dist/index.html dist/404.html",
+    "build": "vite build",
+    "postbuild": "node -e \"const fs=require('fs');fs.copyFileSync('dist/index.html','dist/404.html')\"",
     "lint": "eslint .",
     "preview": "vite preview"
   },
