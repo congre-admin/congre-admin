@@ -129,7 +129,7 @@ El proveedor de backend debe validar los factores de autenticación requeridos a
 
 ## 5. Control de Permisos RBAC
 
-El sistema implementa Control de Acceso Basado en Roles con perfiles predefinidos.
+El sistema implementa Control de Acceso Basado en Roles con perfiles. Los perfiles base se definen en el archivo `backend/data/seed_perfiles.json` y se injectan durante la instalación.
 
 ### Perfiles Soportados
 | Perfil ID | Nombre | Permisos |
@@ -141,10 +141,17 @@ El sistema implementa Control de Acceso Basado en Roles con perfiles predefinido
 | `p_siervo_territorios` | Siervo de Territorios | RW en predicación |
 | `p_publicador` | Publicador | R en reuniones, predicación |
 
-### Acciones de Permisos
+### Acciones de Permisos (LECTURA)
 - **`getPerfiles`**: Obtener todos los perfiles disponibles.
 - **`getPermisos`**: Obtener permisos de un usuario específico.
 - **`checkPermission`**: Verificar si un usuario tiene permiso para una acción.
+
+### Acciones de Perfiles (GESTIÓN - Requiere `core: RW`)
+- **`createProfile`**: Crear un nuevo perfil.
+- **`updateProfile`**: Actualizar un perfil existente.
+- **`deleteProfile`**: Eliminar un perfil (borrado lógico). No permite eliminar perfiles con usuarios asignados.
+
+> **Nota:** Los perfiles son dinámicos. El administrador puede crear, modificar y eliminar perfiles desde la aplicación (excepto los que tengan usuarios asignados).
 
 ---
 
@@ -180,10 +187,23 @@ El sistema implementa versionado automático y borrado lógico para todas las ta
 ## 8. Instalación
 
 ### Proceso de Instalación
-- **`install`**: Proceso completo de instalación.
+La instalación se realiza mediante la acción `install` que recibe los perfiles desde el frontend (cargados del archivo JSON).
+
+```javascript
+{
+  "action": "install",
+  "payload": {
+    "nombreCongregacion": "Nombre de la Congregación",
+    "perfiles": [ ... ]  // Del archivo backend/data/seed_perfiles.json
+  }
+}
+```
+
+### Acciones de Instalación
+- **`install`**: Proceso completo de instalación (crea SS, inicializa tablas, injecta perfiles y configuración).
 - **`createSpreadsheet`**: Crear nuevo Google Spreadsheet.
-- **`initCoreTables`**: Inicializar tablas del Core.
-- **`seedPerfiles`**: Inyectar perfiles base.
+- **`initCoreTables`**: Inicializar tablas del Core (`Usuarios`, `Perfiles`, `Registro_Plugins`, `Configuracion`, `Sistema_Migraciones`).
+- **`seedPerfiles`**: Inyectar perfiles (acepta array de perfiles como segundo parámetro).
 - **`seedConfiguracion`**: Inyectar configuración inicial.
 - **`register`**: Crear nuevo usuario.
 - **`login`**: Autenticar usuario y obtener sessionToken.
@@ -265,7 +285,7 @@ Para una referencia completa de la implementación, ver:
 
 | Archivo | Descripción |
 |--------|-------------|
-| `API.md` | Especificación del protocolo |
 | `Backend_API_Completa.md` | Documentación técnica completa |
 | `Arquitectura.md` | Arquitectura general del sistema |
-| `PLAN_DESARROLLO.md` | Plan de desarrollo |
+| `Instalacion.md` | Guía de instalación |
+| `PLAN_DESARROLLO.md` | Plan de desarrollo | |

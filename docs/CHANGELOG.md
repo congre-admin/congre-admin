@@ -17,6 +17,22 @@ Cada entrada debe incluir:
 ## 2026-03-24
 
 ### Nuevo
+- **Perfiles RBAC dinámicos:** Sistema ahora permite gestión dinámica de perfiles. Los perfiles base se cargan desde `backend/data/seed_perfiles.json` durante instalación (enviados desde el frontend).
+- **CRUD de perfiles:** Nuevos endpoints API `createProfile`, `updateProfile`, `deleteProfile`. Requiere sesión válida + permiso `core: RW`.
+- **Validación de dependencias:** `deleteProfile` verifica que no haya usuarios con ese perfil antes de eliminar.
+
+### Modificado
+- **`seedPerfiles()`:** Ahora acepta array de perfiles como segundo parámetro. Si se provee, usa esos perfiles; si no, requiere datos externos.
+- **`actionInstall()`:** Ahora recibe `perfiles` en el payload para inyectar durante instalación.
+
+### Documentación actualizada
+- `docs/architecture/Backend_API_Completa.md`: Agregada sección 5.3 con CRUD de perfiles. Actualizada sección 6.1 con payload de instalación.
+
+---
+
+## 2026-03-24
+
+### Nuevo
 - **Desarrollo iniciado:** Creado `docs/REGISTRO_EJECUCION.md` para documentar el progreso del desarrollo.
 - **Fase 1.1 completada:** Implementación de autenticación Zero-Knowledge en `backend/src/api.gs` (challenge, login, register, TOTP, OTP email, gestión de sesiones).
 - **Fase 1.2 completada:** Gestión de sesiones (renovación, validación, cierre).

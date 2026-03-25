@@ -477,11 +477,114 @@ Verifica si un usuario tiene permiso para una acción.
 }
 ```
 
+### 5.3 Gestión de Perfiles (CRUD)
+
+> **Requiere sesión válida** + permiso `core: RW`
+
+Los perfiles se cargan desde el archivo `backend/data/seed_perfiles.json` durante la instalación, pero también pueden gestionarse dinámicamente.
+
+#### `createProfile`
+Crea un nuevo perfil.
+
+```javascript
+{
+  "action": "createProfile",
+  "sessionToken": "TOKEN_DE_SESIÓN",
+  "payload": {
+    "id": "p_nuevo_perfil",
+    "nombre": "Nombre del Perfil",
+    "permisos": {
+      "personas": "RW",
+      "reuniones": "R"
+    },
+    "descripcion": "Descripción del perfil"
+  }
+}
+
+// Response
+{
+  "success": true,
+  "message": "Perfil creado",
+  "perfilId": "p_nuevo_perfil"
+}
+
+// Error
+{
+  "success": false,
+  "error": "ERR_PROFILE_EXISTS: El perfil ya existe"
+}
+```
+
+#### `updateProfile`
+Actualiza un perfil existente.
+
+```javascript
+{
+  "action": "updateProfile",
+  "sessionToken": "TOKEN_DE_SESIÓN",
+  "payload": {
+    "id": "p_admin",
+    "nombre": "Super-Admin Actualizado",
+    "permisos": {
+      "core": "RW",
+      "personas": "RW",
+      "registros": "RW"
+    }
+  }
+}
+
+// Response
+{
+  "success": true,
+  "message": "Perfil actualizado"
+}
+
+// Error
+{
+  "success": false,
+  "error": "ERR_PROFILE_NOT_FOUND"
+}
+```
+
+#### `deleteProfile`
+Elimina un perfil (borrado lógico). No permite eliminar perfiles que tengan usuarios asignados.
+
+```javascript
+{
+  "action": "deleteProfile",
+  "sessionToken": "TOKEN_DE_SESIÓN",
+  "payload": {
+    "id": "p_perfil_a_eliminar"
+  }
+}
+
+// Response
+{
+  "success": true,
+  "message": "Perfil eliminado"
+}
+
+// Error - Perfil en uso
+{
+  "success": false,
+  "error": "ERR_PROFILE_IN_USE: Hay usuarios con este perfil",
+  "usuarios": 3
+}
+
+// Error - Perfil no encontrado
+{
+  "success": false,
+  "error": "ERR_PROFILE_NOT_FOUND"
+}
+```
+
 ---
 
 ## 6. Instalación
 
 ### 6.1 Proceso de Instalación
+
+> **Nota:** Los perfiles base se cargan desde el archivo `backend/data/seed_perfiles.json` y se envían en el payload de instalación desde el frontend.
 
 #### `install`
 Inicializa el sistema completo creando el Core Spreadsheet.
@@ -491,7 +594,15 @@ Inicializa el sistema completo creando el Core Spreadsheet.
   "action": "install",
   "payload": {
     "nombreCongregacion": "Congregación Central",
-    "adminUsername": "admin@email.com"
+    "perfiles": [
+      {
+        "id": "p_admin",
+        "nombre": "Super-Admin",
+        "permisos": { "core": "RW", "personas": "RW", "registros": "RW" },
+        "descripcion": "Acceso total al sistema"
+      },
+      // ... más perfiles del archivo seed_perfiles.json
+    ]
   }
 }
 
@@ -772,9 +883,10 @@ CORE_SS_ID = "ID_DEL_SPREADSHEET_CORE"
 ## 16. Archivos Relacionados
 
 - `backend/src/api.gs` - Implementación fuente
+- `backend/data/seed_perfiles.json` - Perfiles base para instalación
 - `docs/architecture/Backend.md` - Especificación original
 - `docs/architecture/Arquitectura.md` - Arquitectura general
-- `docs/architecture/API.md` - Referencia de API
+- `docs/architecture/Instalacion.md` - Guía de instalación
 - `docs/PLAN_DESARROLLO.md` - Plan de desarrollo
 - `docs/CHANGELOG.md` - Historial de cambios
 

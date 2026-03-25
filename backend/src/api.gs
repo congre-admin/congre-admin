@@ -212,6 +212,32 @@ function doPost(e) {
       return createResponse(actionCheckPermission(postData.payload));
     }
     
+    // --- Gestión de Perfiles ---
+    
+    if (action === 'createProfile') {
+      const session = validateSession(postData.sessionToken);
+      if (!session.valid) return createResponse({ error: 'ERR_AUTH_INVALID' });
+      const perm = checkPermission(session, 'write', 'core');
+      if (!perm.allowed) return createResponse({ error: perm.error });
+      return createResponse(actionCreateProfile(postData.payload));
+    }
+    
+    if (action === 'updateProfile') {
+      const session = validateSession(postData.sessionToken);
+      if (!session.valid) return createResponse({ error: 'ERR_AUTH_INVALID' });
+      const perm = checkPermission(session, 'write', 'core');
+      if (!perm.allowed) return createResponse({ error: perm.error });
+      return createResponse(actionUpdateProfile(postData.payload));
+    }
+    
+    if (action === 'deleteProfile') {
+      const session = validateSession(postData.sessionToken);
+      if (!session.valid) return createResponse({ error: 'ERR_AUTH_INVALID' });
+      const perm = checkPermission(session, 'write', 'core');
+      if (!perm.allowed) return createResponse({ error: perm.error });
+      return createResponse(actionDeleteProfile(postData.payload));
+    }
+    
     // --- Instalación ---
     
     if (action === 'install') {
@@ -1329,6 +1355,127 @@ function actionCheckPermission(payload) {
 }
 
 /**
+ * Acción: createProfile - Crea un nuevo perfil
+ * @param {object} payload - Datos del perfil
+ * @return {object} Resultado
+ */
+function actionCreateProfile(payload) {
+  try {
+    const { id, nombre, permisos, descripcion } = payload;
+    
+    if (!id || !nombre) {
+      return { success: false, error: 'ERR_INVALID_INPUT: Se requiere id y nombre' };
+    }
+    
+    const existente = getPerfilById(id);
+    if (existente) {
+      return { success: false, error: 'ERR_PROFILE_EXISTS: El perfil ya existe' };
+    }
+    
+    const ss = getCoreSpreadsheet();
+    const sheet = ss.getSheetByName('Perfiles');
+    
+    const nuevoPerfil = {
+      id: id,
+      nombre: nombre,
+      permisos: typeof permisos === 'object' ? JSON.stringify(permisos) : permisos,
+      descripcion: descripcion || '',
+      _v: 1,
+      _ts: new Date().toISOString(),
+      _deleted: false
+    };
+    
+    updateOrInsert(sheet, nuevoPerfil, false);
+    invalidateCache('p:all');
+    
+    return { success: true, message: 'Perfil creado', perfilId: id };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Acción: updateProfile - Actualiza un perfil existente
+ * @param {object} payload - Datos del perfil a actualizar
+ * @return {object} Resultado
+ */
+function actionUpdateProfile(payload) {
+  try {
+    const { id, nombre, permisos, descripcion } = payload;
+    
+    if (!id) {
+      return { success: false, error: 'ERR_INVALID_INPUT: Se requiere id' };
+    }
+    
+    const existente = getPerfilById(id);
+    if (!existente) {
+      return { success: false, error: 'ERR_PROFILE_NOT_FOUND' };
+    }
+    
+    const ss = getCoreSpreadsheet();
+    const sheet = ss.getSheetByName('Perfiles');
+    
+    const perfilActualizado = {
+      ...existente,
+      nombre: nombre !== undefined ? nombre : existente.nombre,
+      permisos: permisos !== undefined 
+        ? (typeof permisos === 'object' ? JSON.stringify(permisos) : permisos)
+        : existente.permisos,
+      descripcion: descripcion !== undefined ? descripcion : existente.descripcion
+    };
+    
+    updateOrInsert(sheet, perfilActualizado, false);
+    invalidateCache('p:all');
+    invalidateCache('p:id:' + id);
+    
+    return { success: true, message: 'Perfil actualizado' };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Acción: deleteProfile - Elimina un perfil (borrado lógico)
+ * @param {object} payload - ID del perfil
+ * @return {object} Resultado
+ */
+function actionDeleteProfile(payload) {
+  try {
+    const { id } = payload;
+    
+    if (!id) {
+      return { success: false, error: 'ERR_INVALID_INPUT: Se requiere id' };
+    }
+    
+    const existente = getPerfilById(id);
+    if (!existente) {
+      return { success: false, error: 'ERR_PROFILE_NOT_FOUND' };
+    }
+    
+    const usuarios = getSheetData(getUsuariosSheet());
+    const usuariosConPerfil = usuarios.filter(u => u.perfilId === id && u._deleted !== true);
+    
+    if (usuariosConPerfil.length > 0) {
+      return { 
+        success: false, 
+        error: 'ERR_PROFILE_IN_USE: Hay usuarios con este perfil',
+        usuarios: usuariosConPerfil.length
+      };
+    }
+    
+    const ss = getCoreSpreadsheet();
+    const sheet = ss.getSheetByName('Perfiles');
+    softDeleteRow(sheet, id);
+    invalidateCache('p:all');
+    invalidateCache('p:id:' + id);
+    
+    return { success: true, message: 'Perfil eliminado' };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
  * Acción: logout - Cierra sesión
  * @param {object} payload - Token de sesión
  * @return {object} Respuesta
@@ -1420,11 +1567,12 @@ function createSheetIfNotExists(ss, name, headers) {
 }
 
 /**
- * Inyecta los perfiles base en la tabla Perfiles
+ * Inyecta los perfiles en la tabla Perfiles
  * @param {string} ssId - ID del spreadsheet Core
+ * @param {array} customPerfiles - Perfiles personalizados (opcional)
  * @return {object} Resultado
  */
-function seedPerfiles(ssId) {
+function seedPerfiles(ssId, customPerfiles) {
   try {
     const ss = SpreadsheetApp.openById(ssId);
     const sheet = ss.getSheetByName('Perfiles');
@@ -1432,60 +1580,11 @@ function seedPerfiles(ssId) {
       return { success: false, error: 'Hoja Perfiles no encontrada' };
     }
     
-    const perfilesBase = [
-      {
-        id: 'p_admin',
-        nombre: 'Super-Admin',
-        permisos: JSON.stringify({ 'core': 'RW', 'personas': 'RW', 'registros': 'RW', 'anuncios': 'RW', 'reuniones': 'RW', 'predicacion': 'RW' }),
-        descripcion: 'Acceso total al sistema',
-        _v: 1,
-        _ts: new Date().toISOString()
-      },
-      {
-        id: 'p_secretario',
-        nombre: 'Secretario',
-        permisos: JSON.stringify({ 'personas': 'RW', 'registros': 'RW', 'anuncios': 'RW', 'reuniones': 'R', 'predicacion': 'R' }),
-        descripcion: 'Gestión de personas y registros',
-        _v: 1,
-        _ts: new Date().toISOString()
-      },
-      {
-        id: 'p_comite',
-        nombre: 'Comité de Servicio',
-        permisos: JSON.stringify({ 'personas': 'R', 'registros': 'R', 'reuniones': 'R', 'predicacion': 'R' }),
-        descripcion: 'Supervisión general',
-        _v: 1,
-        _ts: new Date().toISOString()
-      },
-      {
-        id: 'p_super_grupo',
-        nombre: 'Superintendente de Grupo',
-        permisos: JSON.stringify({ 'personas': 'R', 'registros': 'RW', 'reuniones': 'R' }),
-        descripcion: 'Informes y atención de grupo',
-        _v: 1,
-        _ts: new Date().toISOString()
-      },
-      {
-        id: 'p_siervo_territorios',
-        nombre: 'Siervo de Territorios',
-        permisos: JSON.stringify({ 'predicacion': 'RW' }),
-        descripcion: 'Gestión de territorios y mapas',
-        _v: 1,
-        _ts: new Date().toISOString()
-      },
-      {
-        id: 'p_publicador',
-        nombre: 'Publicador',
-        permisos: JSON.stringify({ 'reuniones': 'R', 'predicacion': 'R' }),
-        descripcion: 'Acceso básico',
-        _v: 1,
-        _ts: new Date().toISOString()
-      }
-    ];
+    const perfiles = customPerfiles || [];
     
-    // Verificar si ya hay perfiles
+    // Verificar si ya hay perfiles (solo si no hay personalizados)
     const existingData = getSheetData(sheet, true);
-    if (existingData.length > 0) {
+    if (existingData.length > 0 && !customPerfiles) {
       return {
         success: false,
         error: 'Ya existen perfiles en la tabla',
@@ -1494,15 +1593,25 @@ function seedPerfiles(ssId) {
     }
     
     // Insertar perfiles
-    perfilesBase.forEach(perfil => {
-      const values = Object.values(perfil);
-      sheet.appendRow(values);
+    perfiles.forEach(perfil => {
+      const row = {
+        id: perfil.id,
+        nombre: perfil.nombre,
+        permisos: typeof perfil.permisos === 'object' ? JSON.stringify(perfil.permisos) : perfil.permisos,
+        descripcion: perfil.descripcion || '',
+        _v: 1,
+        _ts: new Date().toISOString(),
+        _deleted: false
+      };
+      updateOrInsert(sheet, row, false);
     });
+    
+    invalidateCache('p:all');
     
     return {
       success: true,
-      message: 'Perfiles base injectados',
-      count: perfilesBase.length
+      message: 'Perfiles injectados',
+      count: perfiles.length
     };
   } catch (err) {
     return { success: false, error: err.message };
@@ -1546,10 +1655,14 @@ function seedConfiguracion(ssId) {
 
 /**
  * Acción API: install - Proceso completo de instalación
+ * @param {object} payload - Datos de instalación
+ * @param {string} payload.nombreCongregacion - Nombre de la congregación
+ * @param {array} payload.perfiles - Array de perfiles (del JSON seed)
+ * @return {object} Resultado
  */
 function actionInstall(payload) {
   try {
-    const { nombreCongregacion, adminUsername } = payload;
+    const { nombreCongregacion, perfiles } = payload;
     
     // 1. Crear Spreadsheet Core
     const ssName = nombreCongregacion || 'CongreAdmin_Core';
@@ -1566,13 +1679,13 @@ function actionInstall(payload) {
       return { success: false, error: 'Error inicializando tablas: ' + initResult.error };
     }
     
-    // 3. Inyectar perfiles
-    const seedResult = seedPerfiles(ssId);
-    // No fallar si ya existen
+    // 3. Inyectar perfiles (desde el payload del frontend)
+    if (perfiles && Array.isArray(perfiles)) {
+      seedPerfiles(ssId, perfiles);
+    }
     
     // 4. Inyectar configuración
-    const configResult = seedConfiguracion(ssId);
-    // No fallar si ya existe
+    seedConfiguracion(ssId);
     
     // 5. Guardar configuración en propiedades del script
     PropertiesService.getScriptProperties().setProperty('CORE_SS_ID', ssId);

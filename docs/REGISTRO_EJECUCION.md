@@ -343,4 +343,55 @@ Todas las tareas de la Fase 1 (Backend) han sido completadas:
 
 ---
 
+### Gestión Dinámica de Perfiles RBAC ✅ COMPLETADO
+**Fecha:** 2026-03-24
+
+**Estado:** ✅ Implementado
+
+#### Tareas completadas:
+- [x] Crear archivo JSON de seed con perfiles base (`backend/data/seed_perfiles.json`)
+- [x] Modificar `seedPerfiles()` para aceptar perfiles personalizados
+- [x] Modificar `actionInstall()` para recibir perfiles del payload
+- [x] Agregar endpoint `createProfile` - Crear nuevo perfil
+- [x] Agregar endpoint `updateProfile` - Actualizar perfil existente
+- [x] Agregar endpoint `deleteProfile` - Eliminar perfil (con validación de dependencias)
+- [x] Invalidación de caché en operaciones CRUD de perfiles
+
+#### Funciones implementadas:
+| Función | Descripción |
+|---------|-------------|
+| `seedPerfiles(ssId, customPerfiles)` | Acepta perfiles personalizados o usa fallback |
+| `actionCreateProfile(payload)` | Crea nuevo perfil |
+| `actionUpdateProfile(payload)` | Actualiza perfil existente |
+| `actionDeleteProfile(payload)` | Elimina perfil (verifica usuarios asignados) |
+
+#### Endpoints API agregados:
+```javascript
+// Crear perfil
+{ "action": "createProfile", "sessionToken": "...", "payload": { "id": "...", "nombre": "...", "permisos": {...}, "descripcion": "..." } }
+
+// Actualizar perfil
+{ "action": "updateProfile", "sessionToken": "...", "payload": { "id": "...", "nombre": "...", "permisos": {...} } }
+
+// Eliminar perfil
+{ "action": "deleteProfile", "sessionToken": "...", "payload": { "id": "..." } }
+```
+
+#### Archivos modificados:
+- `backend/data/seed_perfiles.json` - **NUEVO** - JSON con 6 perfiles base
+- `backend/src/api.gs` - Modificaciones en seedPerfiles, actionInstall, nuevos endpoints CRUD
+- `docs/architecture/Backend_API_Completa.md` - Documentación actualizada
+- `docs/CHANGELOG.md` - Registro de cambios
+
+#### Notas:
+- Los perfiles ahora se cargan desde `seed_perfiles.json` durante instalación
+- El frontend debe enviar los perfiles en el payload de `actionInstall`
+- `deleteProfile` verifica que no haya usuarios con ese perfil antes de eliminar
+- Requiere permiso `core: RW` para gestionar perfiles
+
+#### Siguiente paso sugerido:
+- Fase 2: Módulo de Administración (Admin_Personas)
+
+---
+
 *Registro creado automáticamente durante el desarrollo*
