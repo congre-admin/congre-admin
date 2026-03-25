@@ -289,6 +289,55 @@ Todas las tareas de la Fase 1 (Backend) han sido completadas:
 - `docs/CHANGELOG.md` - Agregada entrada de corrección
 - `docs/REGISTRO_EJECUCION.md` - Actualizado registro
 
+---
+
+### Optimización de Quota GAS ✅ COMPLETADO
+**Fecha:** 2026-03-24
+
+**Estado:** ✅ Completado
+
+#### Tareas completadas:
+- [x] **Fase 1 - Lectura duplicada:** Modificada `updateOrInsert()` para aceptar `existingRows`, evitando doble `getDataRange().getValues()` en `saveData`.
+- [x] **Fase 2 - Índice de sesiones:** Implementado índice híbrido (`_sessionIndex`) con caché en memoria + PropertiesService. Optimizado `validateSession()`, `generateSessionToken()`, `invalidateSession()`, `refreshSessionToken()`.
+- [x] **Fase 3 - Cache getAllPerfiles():** Agregado caché usando `getCached()`.
+- [x] **Fase 4 - Cache Spreadsheet:** Implementadas funciones `getCoreSpreadsheet()`, `invalidateCoreSpreadsheetCache()`. Ahora el Spreadsheet se cachea en memoria en lugar de abrirse en cada llamada.
+- [x] **Fase 5 - CACHE_TTL duplicado:** Corregido conflicto de常量. Ahora: `CACHE_TTL_DATA` = 600s (10 min), `CACHE_TTL_LOOKUP` = 300s (5 min).
+
+#### Ahorro estimado de quota:
+| Optimización | Ahorro |
+|--------------|--------|
+| Lectura duplicada en saveData | 30-40% |
+| Índice de sesiones | 20-30% |
+| Cache getAllPerfiles | 10-15% |
+| Cache Spreadsheet | 10-15% |
+
+#### Archivos modificados:
+- `backend/src/api.gs` - Múltiples optimizaciones de quota
+
+#### Siguiente paso sugerido:
+- Fase 2: Módulo de Administración (Admin_Personas)
+
+---
+
+### Análisis Final y Correcciones Adicionales ✅ COMPLETADO
+**Fecha:** 2026-03-24
+
+**Estado:** ✅ Completado
+
+#### Correcciones realizadas:
+- [x] **Bug Fix:** Corregida redefinición de `getSheetData()` - ahora usa parámetro default `includeDeleted = false`
+- [x] **Bug Fix:** Agregada invalidación de caché en `createUser()` y `updateUser()`
+- [x] **Bug Fix:** Agregada invalidación de caché en `softDeleteRow()`, `restoreRow()`, `deleteRowById()`
+- [x] **Bug Fix:** Agregada limpieza de `_sessionIndex` en `invalidateAllSessions()`
+- [x] **Bug Fix:** Agregada verificación de permisos en `getHistory` - requiere `sessionToken` y valida permiso de lectura
+- [x] **Optimization:** `logAccess()` ahora usa `getCoreSpreadsheet()` cacheado
+- [x] **Cleanup:** Eliminada variable `tsIndex` sin usar en `updateOrInsert()`
+- [x] **Documentation:** Creada documentación completa del Backend API (`docs/architecture/Backend_API_Completa.md`)
+
+#### Archivos modificados:
+- `backend/src/api.gs` - Múltiples correcciones de bugs y optimizaciones
+- `docs/architecture/Backend_API_Completa.md` - Nueva documentación completa
+
 #### Siguiente paso sugerido:
 - Fase 2: Módulo de Administración (Admin_Personas)
 

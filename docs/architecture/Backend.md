@@ -2,6 +2,8 @@
 
 En la arquitectura modular de Congre-Admin, el Backend se define como un **Proveedor de Servicios** (Data Provider) que debe cumplir con un protocolo de comunicación estándar. Actúa como el motor de ejecución para un sistema modular con segmentación física de datos.
 
+> **Nota:** Para una referencia técnica completa de la implementación actual en Google Apps Script, incluyendo todas las acciones API, códigos de error, ejemplos de uso y detalles de optimización, ver **[Backend_API_Completa.md](./Backend_API_Completa.md)**.
+
 ---
 
 ## 1. El Protocolo Backend (API Multi-ID)
@@ -9,10 +11,16 @@ Cualquier implementación de backend debe cumplir con las siguientes normas estr
 
 - **Convención de Nombres de ID:** Todas las tablas de datos **DEBEN** tener una columna de clave primaria denominada exactamente `id` (en minúsculas). Esto permite que la acción `saveData` realice operaciones *upsert* de forma universal e independiente del módulo.
 - **Acciones Estándar:**
+    - **`getData`**: Recuperación de datos de una hoja.
     - **`batchGetData`**: Recuperación de múltiples tablas.
--   **`saveData`**: Operación *upsert* (insertar o actualizar) en un recurso específico.
--   **`deleteData`**: Borrado físico o lógico de registros.
--   **`initSheet/initTable`**: Preparación estructural del recurso basado en el esquema.
+    - **`saveData`**: Operación *upsert* (insertar o actualizar) en un recurso específico.
+    - **`deleteData`**: Borrado lógico de registros.
+    - **`hardDelete`**: Borrado físico de registros.
+    - **`restoreData`**: Restaurar registro borrado lógicamente.
+    - **`getHistory`**: Obtener historial de versiones de un registro.
+    - **`initSheet`**: Preparación estructural del recurso basado en el esquema.
+    - **`clearSheet`**: Limpiar contenido de una hoja manteniendo cabeceras.
+    - **`deleteSheet`**: Eliminar una hoja del spreadsheet.
 
 ### Seguridad del Recurso
 El backend debe validar que el `ssId` solicitado sea un recurso autorizado por el Núcleo para evitar accesos a archivos externos no relacionados con el sistema.
@@ -33,11 +41,21 @@ Para inicializar el sistema, el archivo GSheet maestro debe contener las siguien
 - `perfilId`: ID del perfil asignado.
 - `personaId`: (Opcional) ID de la entidad en la base de datos de Personas.
 - `auth_factor`: `passkey`, `totp`, `email`.
+- `totp_secret`: (Opcional) Secreto para Google Authenticator.
+- `public_key`: (Opcional) Clave pública para Passkeys.
+- `created_at`: Fecha de creación (ISO 8601).
+- `_v`: Número de versión del registro.
+- `_ts`: Timestamp de última modificación.
+- `_deleted`: Booleano para borrado lógico.
 
 ### Tabla: `Perfiles` (NUEVA)
 - `id`: ID del perfil (ej: `p_secretario`, `p_siervo_territorios`).
 - `nombre`: Nombre descriptivo (ej: "Secretario", "Siervo de Territorios").
 - `permisos`: Objeto JSON con el mapa de accesos (ej: `{"personas": "RW", "territorios": "R"}`).
+- `descripcion`: Descripción del perfil.
+- `_v`: Número de versión del registro.
+- `_ts`: Timestamp de última modificación.
+- `_deleted`: Booleano para borrado lógico.
 
 ### Tabla: `Etiquetas` (NUEVA)
 - `id`: UUID único del registro.
@@ -52,12 +70,29 @@ Para inicializar el sistema, el archivo GSheet maestro debe contener las siguien
 - `plugin_id`: Identificador (ej: `reuniones_programa`).
 - `ssId`: ID del GSheet físico donde reside el plugin.
 - `status`: `active`, `suspended`.
+- `config`: Configuración JSON del plugin.
+- `_v`: Número de versión del registro.
+- `_ts`: Timestamp de última modificación.
+- `_deleted`: Booleano para borrado lógico.
 
 ### Tabla: `Configuracion`
 - `clave`: Identificador de ajuste.
     - Ejemplos: `nombre_congregacion`, `año_servicio_actual`, `idioma_predeterminado`.
 - `valor`: Valor del ajuste (ej: `2026`).
 - `is_public`: Booleano (si es accesible sin login).
+- `_v`: Número de versión del registro.
+- `_ts`: Timestamp de última modificación.
+- `_deleted`: Booleano para borrado lógico.
+
+### Tabla: `Sistema_Migraciones`
+- `id`: UUID de la migración.
+- `nombre`: Nombre de la migración.
+- `version`: Versión del esquema.
+- `ejecutada_en`: Fecha de ejecución.
+- `estado`: Estado (`success`, `failed`, `pending`).
+- `error`: Mensaje de error (si aplica).
+- `_v`: Número de versión del registro.
+- `_ts`: Timestamp de última modificación.
 
 ---
 
@@ -78,6 +113,87 @@ El proveedor de backend debe validar los factores de autenticación requeridos a
 1.  **Autenticación Biométrica (Passkeys/WebAuthn):** Método primario para administradores. Requiere almacenamiento de la `Public Key` para validación de firmas.
 2.  **TOTP (Time-based OTP):** Sincronización basada en tiempo (Google Authenticator).
 3.  **OTP via Email:** Envío de códigos de respaldo vía Gmail (`MailApp`).
+
+### Acciones de Autenticación y Sesión
+- **`register`**: Crear nuevo usuario.
+- **`login`**: Autenticar usuario y obtener sessionToken.
+- **`challenge`**: Generar desafío para Passkey/WebAuthn.
+- **`requestOTP`**: Enviar código OTP por email.
+- **`logout`**: Cerrar sesión.
+- **`validateSession`**: Validar token de sesión.
+- **`refreshSession`**: Renovar token de sesión.
+- **`getActiveSessions`**: Obtener sesiones activas de un usuario.
+- **`invalidateAllSessions`**: Cerrar todas las sesiones de un usuario.
+
+---
+
+## 5. Control de Permisos RBAC
+
+El sistema implementa Control de Acceso Basado en Roles con perfiles predefinidos.
+
+### Perfiles Soportados
+| Perfil ID | Nombre | Permisos |
+|-----------|--------|----------|
+| `p_admin` | Super-Admin | RW en todos los módulos |
+| `p_secretario` | Secretario | RW en personas, registros, anuncios; R en reuniones, predicación |
+| `p_comite` | Comité de Servicio | R en personas, registros, reuniones, predicación |
+| `p_super_grupo` | Superintendente de Grupo | R en personas; RW en registros; R en reuniones |
+| `p_siervo_territorios` | Siervo de Territorios | RW en predicación |
+| `p_publicador` | Publicador | R en reuniones, predicación |
+
+### Acciones de Permisos
+- **`getPerfiles`**: Obtener todos los perfiles disponibles.
+- **`getPermisos`**: Obtener permisos de un usuario específico.
+- **`checkPermission`**: Verificar si un usuario tiene permiso para una acción.
+
+---
+
+## 6. Versionado y Borrado Lógico
+
+El sistema implementa versionado automático y borrado lógico para todas las tablas.
+
+### Campos de Sistema
+- **`_v`**: Número de versión incremental.
+- **`_ts`**: Timestamp ISO 8601 de última modificación.
+- **`_deleted`**: Booleano para borrado lógico (soft delete).
+
+### Resolución de Conflictos (Last Write Wins)
+- El cliente envía `expectedVersion` con el payload.
+- Si la versión del servidor es mayor, retorna error `ERR_VERSION_CONFLICT`.
+- El cliente debe reintentar con datos actualizados.
+
+---
+
+## 7. Sistema de Caché y Rate Limiting
+
+### Caché
+- **TTL de datos**: 10 minutos (600 segundos).
+- **TTL de búsquedas**: 5 minutos (300 segundos).
+- Implementado mediante `CacheService` de GAS.
+
+### Rate Limiting
+- Máximo 5 intentos por minuto por username en acciones de autenticación.
+- Retorna `retryAfter` con el tiempo restante.
+
+---
+
+## 8. Instalación
+
+### Proceso de Instalación
+- **`install`**: Proceso completo de instalación.
+- **`createSpreadsheet`**: Crear nuevo Google Spreadsheet.
+- **`initCoreTables`**: Inicializar tablas del Core.
+- **`seedPerfiles`**: Inyectar perfiles base.
+- **`seedConfiguracion`**: Inyectar configuración inicial.
+- **`register`**: Crear nuevo usuario.
+- **`login`**: Autenticar usuario y obtener sessionToken.
+- **`challenge`**: Generar desafío para Passkey/WebAuthn.
+- **`requestOTP`**: Enviar código OTP por email.
+- **`logout`**: Cerrar sesión.
+- **`validateSession`**: Validar token de sesión.
+- **`refreshSession`**: Renovar token de sesión.
+- **`getActiveSessions`**: Obtener sesiones activas de un usuario.
+- **`invalidateAllSessions`**: Cerrar todas las sesiones de un usuario.
 
 ---
 
@@ -129,3 +245,27 @@ Para mantener el rendimiento óptimo y no alcanzar el límite de 10M de celdas d
 
 ### C. Optimización de Lectura
 - El backend (`api.gs`) utiliza `CacheService` para las tablas de configuración y esquemas, reduciendo las llamadas a la API de GSheets.
+
+---
+
+## 10. Documentación Técnica
+
+Para una referencia completa de la implementación, ver:
+
+- **[Backend_API_Completa.md](./Backend_API_Completa.md)** - Documentación técnica detallada con:
+  - Todas las acciones API documentadas
+  - Estructuras de datos completas
+  - Flujos de autenticación
+  - Sistema de permisos RBAC
+  - Códigos de error
+  - Ejemplos de uso
+  - Notas de optimización de quota GAS
+
+### Archivos Relacionados
+
+| Archivo | Descripción |
+|--------|-------------|
+| `API.md` | Especificación del protocolo |
+| `Backend_API_Completa.md` | Documentación técnica completa |
+| `Arquitectura.md` | Arquitectura general del sistema |
+| `PLAN_DESARROLLO.md` | Plan de desarrollo |

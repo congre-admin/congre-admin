@@ -33,6 +33,14 @@ Cada entrada debe incluir:
 - **Code Quality:** Estandarizado campo `permisos` con función helper `normalizePermisos()`. Actualizadas funciones `getPermiso()` y `getUserPermisos()` para usar la nueva función.
 - **Code Quality:** Implementado rate limiting para login (5 intentos/minuto) usando CacheService.
 - **Code Quality:** Optimizado búsquedas O(n) con caché. Agregadas funciones `getCached()`, `invalidateCache()`. Actualizadas funciones `getUserByUsername()`, `getUserById()`, `getPerfilById()` para usar caché con TTL de 5 minutos.
+- **Quota Optimization:** Optimizado consumo de quota GAS. Eliminada lectura duplicada en `saveData` (pasa rows a `updateOrInsert`). Implementado índice híbrido para sesiones (`_sessionIndex` con caché + PropertiesService). Agregado caché para `getAllPerfiles()` y `getCoreSpreadsheet()`. Corregido conflicto de `CACHE_TTL` duplicado (ahora: `CACHE_TTL_DATA` = 10 min, `CACHE_TTL_LOOKUP` = 5 min).
+- **Bug Fix:** Corregida redefinición de función `getSheetData()`. Ahora usa parámetro default en lugar de sobrecarga.
+- **Bug Fix:** Agregada invalidación de caché en `createUser()`, `updateUser()`, `softDeleteRow()`, `restoreRow()`, `deleteRowById()`.
+- **Bug Fix:** Agregada limpieza de `_sessionIndex` en `invalidateAllSessions()`.
+- **Bug Fix:** Agregada verificación de permisos en `getHistory`. Ahora requiere `sessionToken` y valida permiso de lectura antes de retornar historial.
+- **Documentation:** Creada documentación completa del Backend API en `docs/architecture/Backend_API_Completa.md`. Incluye referencia detallada de todas las acciones, estructuras de datos, autenticación, permisos RBAC, sistema de caché, versionado y códigos de error.
+- **Optimization:** `logAccess()` ahora usa `getCoreSpreadsheet()` cacheado en lugar de `openById()`.
+- **Cleanup:** Eliminada variable `tsIndex` sin usar en `updateOrInsert()`.
 
 ## 2026-03-24
 

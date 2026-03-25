@@ -31,6 +31,7 @@ La especificación del agente AI se encuentra en `/system` (raíz del proyecto):
 
 ## 📦 Especificación del Backend
 - [**Protocolo del Backend**](./architecture/Backend.md): Implementación en GAS y GSheets.
+- [**Documentación Técnica API**](./architecture/Backend_API_Completa.md): Referencia completa con todas las acciones, ejemplos y optimización de quota GAS.
 - [**Estándar de Documentación**](./architecture/Guia_Documentacion.md): Cómo definir nuevos plug-ins.
 
 ## 📋 Mantenimiento

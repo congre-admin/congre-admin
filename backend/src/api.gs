@@ -99,9 +99,22 @@ function doPost(e) {
     }
     
     if (action === 'getHistory') {
-      // Obtener historial de versiones
+      if (!postData.sessionToken) {
+        return createResponse({ error: 'ERR_AUTH_REQUIRED' });
+      }
+      const session = validateSession(postData.sessionToken);
+      if (!session.valid) {
+        return createResponse({ error: 'ERR_AUTH_INVALID' });
+      }
+      
       const sheet = ss.getSheetByName(sheetName);
       if (!sheet) return createResponse({ error: 'Hoja no encontrada' });
+      
+      const permCheck = checkPermission(session, 'read', sheetName);
+      if (!permCheck.allowed) {
+        return createResponse({ error: permCheck.error });
+      }
+      
       const history = getVersionHistory(sheet, postData.id);
       return createResponse({ success: true, history: history });
     }
@@ -111,16 +124,17 @@ function doPost(e) {
       const sheet = ss.getSheetByName(sheetName);
       if (!sheet) return createResponse({ error: 'Hoja no encontrada: ' + sheetName });
       
-      // Verificar versión si se proporciona
+      let existingRows = null;
+      
       if (postData.expectedVersion !== undefined) {
-        const rows = sheet.getDataRange().getValues();
-        const headers = rows[0];
+        existingRows = sheet.getDataRange().getValues();
+        const headers = existingRows[0];
         const idIndex = headers.indexOf('id');
         const vIndex = headers.indexOf('_v');
         
-        for (let i = 1; i < rows.length; i++) {
-          if (rows[i][idIndex] == postData.payload.id) {
-            const currentV = vIndex >= 0 ? (parseInt(rows[i][vIndex]) || 0) : 0;
+        for (let i = 1; i < existingRows.length; i++) {
+          if (existingRows[i][idIndex] == postData.payload.id) {
+            const currentV = vIndex >= 0 ? (parseInt(existingRows[i][vIndex]) || 0) : 0;
             if (currentV > postData.expectedVersion) {
               return createResponse({ 
                 success: false, 
@@ -134,7 +148,7 @@ function doPost(e) {
         }
       }
       
-      updateOrInsert(sheet, postData.payload, postData.onlyIfNew);
+      updateOrInsert(sheet, postData.payload, postData.onlyIfNew, { existingRows });
       clearCache(ss.getId(), sheetName);
       return createResponse({ success: true });
     }
@@ -227,7 +241,8 @@ function doPost(e) {
 }
 
 // --- Sistema de Caché ---
-const CACHE_TTL = 600; // 10 minutos
+const CACHE_TTL_DATA = 600; // 10 minutos para datos de hojas
+const CACHE_TTL_LOOKUP = 300; // 5 minutos para búsquedas
 
 function getCachedSheetData(ss, sheetName) {
   const cache = CacheService.getScriptCache();
@@ -247,7 +262,7 @@ function getCachedSheetData(ss, sheetName) {
   
   const data = getSheetData(sheet);
   try {
-    cache.put(cacheKey, JSON.stringify(data), CACHE_TTL);
+    cache.put(cacheKey, JSON.stringify(data), CACHE_TTL_DATA);
   } catch (e) {
     // Si los datos son demasiado grandes para la caché, no fallar
   }
@@ -267,10 +282,10 @@ function clearCache(ssId, sheetName) {
 /**
  * Obtiene datos de una hoja filtrando registros borrados
  * @param {Sheet} sheet - Hoja de cálculo
- * @param {boolean} includeDeleted - Si true, incluye registros borrados
+ * @param {boolean} includeDeleted - Si true, incluye registros borrados (default: false)
  * @return {array} Datos de la hoja
  */
-function getSheetData(sheet, includeDeleted) {
+function getSheetData(sheet, includeDeleted = false) {
   if (!sheet) return [];
   const rows = sheet.getDataRange().getValues();
   if (rows.length < 1) return [];
@@ -281,7 +296,6 @@ function getSheetData(sheet, includeDeleted) {
     let obj = {};
     headers.forEach((h, i) => {
       let val = row[i];
-      // Intentar parsear JSON si parece una lista o objeto
       if (typeof val === 'string' && (val.startsWith('[') || val.startsWith('{'))) {
         try {
           obj[h] = JSON.parse(val);
@@ -294,17 +308,9 @@ function getSheetData(sheet, includeDeleted) {
     });
     return obj;
   }).filter(row => {
-    // Filtrar registros borrados por defecto
     if (includeDeleted) return true;
     return row._deleted !== true && row._deleted !== 'true';
   });
-}
-
-/**
- * Versión compatibility: llamada sin includeDeleted
- */
-function getSheetData(sheet) {
-  return getSheetData(sheet, false);
 }
 
 /**
@@ -312,19 +318,18 @@ function getSheetData(sheet) {
  * @param {Sheet} sheet - Hoja de cálculo
  * @param {object} item - Datos del registro
  * @param {boolean} onlyIfNew - Si true, solo inserta si no existe
+ * @param {object} options - Opciones adicionales: { existingRows }
  */
-function updateOrInsert(sheet, item, onlyIfNew) {
+function updateOrInsert(sheet, item, onlyIfNew, options) {
   if (!sheet) return;
-  const rows = sheet.getDataRange().getValues();
+  const rows = options?.existingRows || sheet.getDataRange().getValues();
   const headers = rows[0];
   const idIndex = headers.indexOf('id');
   const vIndex = headers.indexOf('_v');
-  const tsIndex = headers.indexOf('_ts');
   
   let rowIndex = -1;
   let currentV = 0;
   
-  // Buscar registro existente (incluyendo borrados)
   for (let i = 1; i < rows.length; i++) {
     if (rows[i][idIndex] == item.id) {
       rowIndex = i + 1;
@@ -335,7 +340,6 @@ function updateOrInsert(sheet, item, onlyIfNew) {
   
   if (rowIndex > 0 && onlyIfNew) return;
   
-  // Agregar versionado
   const timestamp = new Date().toISOString();
   const newItem = {
     ...item,
@@ -360,7 +364,9 @@ function updateOrInsert(sheet, item, onlyIfNew) {
     invalidateCache('u:');
   } else if (sheetName === 'Perfiles' && item.id) {
     invalidateCache('p:');
+    invalidateCache('p:all');
   }
+  invalidateCoreSpreadsheetCache();
 }
 
 /**
@@ -400,6 +406,12 @@ function softDeleteRow(sheet, id) {
         sheet.getRange(rowNum, tsIndex + 1).setValue(new Date().toISOString());
       }
       
+      const ssId = getCoreSpreadsheetId();
+      const sheetName = sheet.getName();
+      clearCache(ssId, sheetName);
+      if (sheetName === 'Usuarios') invalidateCache('u:');
+      if (sheetName === 'Perfiles') { invalidateCache('p:'); invalidateCache('p:all'); }
+      
       return true;
     }
   }
@@ -428,6 +440,12 @@ function restoreRow(sheet, id) {
       if (deletedIndex >= 0) {
         sheet.getRange(rowNum, deletedIndex + 1).setValue(false);
       }
+      
+      const ssId = getCoreSpreadsheetId();
+      const sheetName = sheet.getName();
+      clearCache(ssId, sheetName);
+      if (sheetName === 'Usuarios') invalidateCache('u:');
+      if (sheetName === 'Perfiles') { invalidateCache('p:'); invalidateCache('p:all'); }
       
       return true;
     }
@@ -458,6 +476,12 @@ function deleteRowById(sheet, id) {
   for (let i = 1; i < rows.length; i++) {
     if (rows[i][idIndex] == id) {
       sheet.deleteRow(i + 1);
+      
+      const ssId = getCoreSpreadsheetId();
+      const sheetName = sheet.getName();
+      clearCache(ssId, sheetName);
+      if (sheetName === 'Usuarios') invalidateCache('u:');
+      if (sheetName === 'Perfiles') { invalidateCache('p:'); invalidateCache('p:all'); }
       break;
     }
   }
@@ -484,12 +508,34 @@ function getCoreSpreadsheetId() {
 }
 
 /**
+ * Obtiene el Spreadsheet Core (con caché)
+ */
+let _cachedSpreadsheet = null;
+let _cachedSpreadsheetId = null;
+
+function getCoreSpreadsheet() {
+  const ssId = getCoreSpreadsheetId();
+  if (!ssId) throw new Error('CORE_SS_ID no configurado');
+  
+  if (_cachedSpreadsheetId === ssId && _cachedSpreadsheet) {
+    return _cachedSpreadsheet;
+  }
+  
+  _cachedSpreadsheet = SpreadsheetApp.openById(ssId);
+  _cachedSpreadsheetId = ssId;
+  return _cachedSpreadsheet;
+}
+
+function invalidateCoreSpreadsheetCache() {
+  _cachedSpreadsheet = null;
+  _cachedSpreadsheetId = null;
+}
+
+/**
  * Obtiene la hoja de Usuarios del GSheet Core
  */
 function getUsuariosSheet() {
-  const ssId = getCoreSpreadsheetId();
-  if (!ssId) throw new Error('CORE_SS_ID no configurado');
-  const ss = SpreadsheetApp.openById(ssId);
+  const ss = getCoreSpreadsheet();
   return ss.getSheetByName('Usuarios');
 }
 
@@ -551,6 +597,7 @@ function createUser(userData) {
   
   updateOrInsert(sheet, user, false);
   clearCache(getCoreSpreadsheetId(), 'Usuarios');
+  invalidateCache('u:');
   
   return { success: true, user: { id: user.id, username: user.username } };
 }
@@ -578,6 +625,7 @@ function updateUser(id, updates) {
   
   updateOrInsert(sheet, updatedUser, false);
   clearCache(getCoreSpreadsheetId(), 'Usuarios');
+  invalidateCache('u:');
   
   return { success: true, user: { id: updatedUser.id, username: updatedUser.username } };
 }
@@ -611,6 +659,8 @@ function generateSessionToken(userId) {
     JSON.stringify(userSessions)
   );
   
+  _addToSessionIndex(token, userId, expiresAt);
+  
   return {
     sessionToken: token,
     expiresAt: expiresAt,
@@ -627,32 +677,63 @@ function getUserSessions(userId) {
 }
 
 /**
- * Valida un token de sesión
+ * Índice híbrido de sesiones (memoria + PropertiesService)
+ */
+let _sessionIndex = null;
+
+function _loadSessionIndex() {
+  if (_sessionIndex) return _sessionIndex;
+  
+  const stored = PropertiesService.getScriptCache().get('session_index');
+  if (stored) {
+    _sessionIndex = JSON.parse(stored);
+    return _sessionIndex;
+  }
+  
+  _sessionIndex = {};
+  return _sessionIndex;
+}
+
+function _saveSessionIndex() {
+  if (!_sessionIndex) return;
+  try {
+    PropertiesService.getScriptCache().put('session_index', JSON.stringify(_sessionIndex), 300);
+  } catch (e) {}
+}
+
+function _addToSessionIndex(token, userId, expiresAt) {
+  const idx = _loadSessionIndex();
+  idx[token] = { userId, expiresAt };
+  _saveSessionIndex();
+}
+
+function _removeFromSessionIndex(token) {
+  const idx = _loadSessionIndex();
+  delete idx[token];
+  _saveSessionIndex();
+}
+
+/**
+ * Valida un token de sesión (usa índice híbrido)
  * @param {string} token - Token de sesión
  * @return {object|null} Datos de sesión o null si es inválido
  */
 function validateSession(token) {
-  const allProperties = PropertiesService.getUserProperties();
-  const keys = allProperties.getKeys();
+  const idx = _loadSessionIndex();
+  const session = idx[token];
   
-  for (const key of keys) {
-    if (!key.startsWith('sessions_')) continue;
-    
-    const sessions = JSON.parse(allProperties.getProperty(key) || '[]');
-    const session = sessions.find(s => s.token === token);
-    
-    if (session) {
-      // Verificar si no ha expirado
-      if (new Date(session.expiresAt) > new Date()) {
-        const user = getUserById(session.userId);
-        return {
-          valid: true,
-          userId: session.userId,
-          username: user?.username,
-          expiresAt: session.expiresAt
-        };
-      }
+  if (session) {
+    if (new Date(session.expiresAt) > new Date()) {
+      const user = getUserById(session.userId);
+      return {
+        valid: true,
+        userId: session.userId,
+        username: user?.username,
+        expiresAt: session.expiresAt
+      };
     }
+    delete idx[token];
+    _saveSessionIndex();
   }
   
   return { valid: false };
@@ -663,6 +744,8 @@ function validateSession(token) {
  * @param {string} token - Token de sesión a cerrar
  */
 function invalidateSession(token) {
+  _removeFromSessionIndex(token);
+  
   const allProperties = PropertiesService.getUserProperties();
   const keys = allProperties.getKeys();
   
@@ -723,6 +806,8 @@ function refreshSessionToken(token) {
       
       allProperties.setProperty(key, JSON.stringify(sessions));
       
+      _addToSessionIndex(token, session.userId, newExpiresAt);
+      
       return { 
         success: true, 
         expiresAt: newExpiresAt,
@@ -758,6 +843,12 @@ function getActiveSessions(userId) {
  */
 function invalidateAllSessions(userId) {
   PropertiesService.getUserProperties().deleteProperty('sessions_' + userId);
+  
+  const idx = _loadSessionIndex();
+  const keysToRemove = Object.keys(idx).filter(k => idx[k].userId === userId);
+  keysToRemove.forEach(k => delete idx[k]);
+  _saveSessionIndex();
+  
   return { success: true, message: 'Todas las sesiones cerradas' };
 }
 
@@ -1007,7 +1098,7 @@ function logAccess(username, success, details) {
     const ssId = getCoreSpreadsheetId();
     if (!ssId) return;
     
-    const ss = SpreadsheetApp.openById(ssId);
+    const ss = getCoreSpreadsheet();
     let sheet = ss.getSheetByName('Logs_Accesos');
     
     if (!sheet) {
@@ -1036,9 +1127,7 @@ function logAccess(username, success, details) {
  * Obtiene la hoja de Perfiles del GSheet Core
  */
 function getPerfilesSheet() {
-  const ssId = getCoreSpreadsheetId();
-  if (!ssId) throw new Error('CORE_SS_ID no configurado');
-  const ss = SpreadsheetApp.openById(ssId);
+  const ss = getCoreSpreadsheet();
   return ss.getSheetByName('Perfiles');
 }
 
@@ -1057,13 +1146,15 @@ function getPerfilById(perfilId) {
 }
 
 /**
- * Obtiene todos los perfiles
+ * Obtiene todos los perfiles (con caché)
  * @return {array} Lista de perfiles
  */
 function getAllPerfiles() {
-  const sheet = getPerfilesSheet();
-  if (!sheet) return [];
-  return getSheetData(sheet);
+  return getCached('p:all', () => {
+    const sheet = getPerfilesSheet();
+    if (!sheet) return [];
+    return getSheetData(sheet);
+  });
 }
 
 /**
@@ -1101,15 +1192,13 @@ function checkRateLimit(identifier, maxRequests, windowSeconds) {
   return { allowed: true, remaining: maxRequests - current - 1, resetIn: windowSeconds };
 }
 
-const CACHE_TTL = 300;
-
 function getCached(key, fetchFn) {
   const cache = CacheService.getScriptCache();
   const cached = cache.get(key);
   if (cached) return JSON.parse(cached);
   
   const data = fetchFn();
-  if (data) cache.put(key, JSON.stringify(data), CACHE_TTL);
+  if (data) cache.put(key, JSON.stringify(data), CACHE_TTL_LOOKUP);
   return data;
 }
 
