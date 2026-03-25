@@ -1,3 +1,42 @@
+# Dependencias
+node_modules/
 
-# Instrucciones Privadas Operativas
+# Build output
+frontend/dist/
+dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Entornos
+.env
+.env.local
+.env.*.local
+
+# Build info
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+
+# Testing
+coverage/
+
+# Docs build
+docs/_build/
+
+# Instrucciones privadas
 private_instructions/
+
+# Temporal
+*.tmp
+.cache/
