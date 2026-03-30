@@ -1,0 +1,40 @@
+name: Deploy to Google Apps Script
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/src/**'
+  workflow_dispatch:
+
+jobs:
+  deploy-gas:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install clasp
+        run: npm install -g @google/clasp
+
+      - name: Authorize clasp
+        run: |
+          echo "${{ secrets.GOOGLE_CLASP_CREDS }}" > /tmp/creds.json
+          clasp login --creds /tmp/creds.json
+        env:
+          GOOGLE_CLASP_CREDS: ${{ secrets.GOOGLE_CLASP_CREDS }}
+
+      - name: Push to GAS
+        run: |
+          cd backend
+          clasp push
+
+      - name: Deploy version
+        run: |
+          cd backend
+          clasp deploy -d "Production deployment"

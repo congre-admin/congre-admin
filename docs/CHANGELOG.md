@@ -14,6 +14,155 @@ Cada entrada debe incluir:
 
 ---
 
+## 2026-03-27
+
+### Nuevo
+
+- **TOTP como único factor de autenticación:** Sistema ahora usa username + password + TOTP (Google Authenticator). Se eliminó OTP por email.
+- **Contraseña con hash SHA-256:** Las contraseñas se almacenan hasheadas usando SHA-256 con sal.
+- **Validación de complejidad de contraseña:** Se requiere 8+ caracteres, mayúsculas, minúsculas, número y carácter especial.
+- **Setup TOTP con QR Code:** Nueva pantalla de configuración que genera código QR para escanear con Google Authenticator.
+- **Implementación TOTP nativa GAS:** Sin librerías externas. Usa `Utilities.computeHmacSignature()` de Google Apps Script.
+
+### Modificado
+
+- **actionLogin (backend):** Flujo de 2 pasos: primero verifica contraseña, luego requiere código TOTP.
+- **Frontend Login:** Interfaz de 2 pasos: credenciales → código TOTP.
+- **Credenciales en sessionStorage:** Username y password se almacenan en sessionStorage (no en URL) durante el flujo de setup de TOTP.
+- **actionSetupTOTP:** Acepta username + password en lugar de sessionToken para permitir configuración sin sesión activa.
+- **actionConfirmTOTP:** Verifica código TOTP antes de guardar el secreto.
+
+### Fixes
+
+- **Cache invalidation:** Se limpian las entradas de caché del usuario (`u:un:username`, `u:id:userId`) tras guardar el TOTP secreto.
+- **Base32 decoding:** Implementación corregida (`base32tohex`) que convierte correctamente a bytes para HMAC-SHA1.
+- **HMAC-SHA1:** Uso de `Uint8Array` directamente en `Utilities.computeHmacSignature()` (no strings).
+
+### Archivos modificados (Backend)
+
+```javascript
+// Nuevas funciones TOTP en backend/src/api.gs
+
+/**
+ * Convierte base32 a hex - implementación probada
+ */
+function base32tohex(base32) {
+  const base32chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  const hexChars = "0123456789abcdef";
+  let bits = "";
+  let hex = "";
+
+  for (let i = 0; i < base32.length; i++) {
+    const val = base32chars.indexOf(base32[i].toUpperCase());
+    if (val === -1) continue;
+    bits += val.toString(2).padStart(5, "0");
+  }
+
+  for (let i = 0; i < bits.length; i += 4) {
+    const chunk = bits.substr(i, 4);
+    const decimal = parseInt(chunk, 2);
+    hex += hexChars[decimal];
+  }
+  return hex;
+}
+
+/**
+ * Genera código TOTP - implementación nativa GAS
+ */
+function generateTOTP(secret, timeStepSeconds, digits) {
+  const timestamp = Math.floor(new Date().getTime() / 1000);
+  const str = base32tohex(secret);
+  const bytes = new Uint8Array(str.length / 2);
+  for (let i = 0; i < str.length; i += 2) {
+    bytes[i / 2] = parseInt(str.substr(i, 2), 16);
+  }
+
+  const counter = Math.floor(timestamp / timeStepSeconds);
+  const counterBytes = new Uint8Array(8);
+  let c = counter;
+  for (let i = 7; i >= 0; i--) {
+    counterBytes[i] = c & 0xff;
+    c = c >>> 8;
+  }
+
+  const hmacDigest = Utilities.computeHmacSignature(
+    Utilities.MacAlgorithm.HMAC_SHA_1,
+    counterBytes,
+    bytes
+  );
+
+  const offset = hmacDigest[hmacDigest.length - 1] & 0xf;
+  const truncatedHash = (
+    ((hmacDigest[offset] & 0x7f) << 24) |
+    ((hmacDigest[offset + 1] & 0xff) << 16) |
+    ((hmacDigest[offset + 2] & 0xff) << 8) |
+    (hmacDigest[offset + 3] & 0xff)
+  ) % Math.pow(10, digits);
+
+  return truncatedHash.toString().padStart(digits, '0');
+}
+
+/**
+ * Verifica código TOTP
+ */
+function verifyTOTP(secret, code) {
+  if (!secret || !code) return false;
+  if (code.length !== 6 || !/^\d+$/.test(code)) return false;
+  
+  const timestamp = Math.floor(new Date().getTime() / 1000);
+  const windowSize = 1;
+  
+  for (let i = -windowSize; i <= windowSize; i++) {
+    const testTimestamp = timestamp + (i * 30);
+    const expectedTOTP = generateTOTPAtTime(secret, testTimestamp, 30, 6);
+    if (expectedTOTP === code) {
+      return true;
+    }
+  }
+  return false;
+}
+```
+
+### Flujo de autenticación
+
+```
+┌──────────┐     username + password      ┌─────────────┐
+│  Login   │ ────────────────────────────→│   Backend   │
+│ (Step 1) │                               │             │
+└──────────┘                               │ 1. Verificar │
+       │                                   │    password  │
+       │  { step: 'totp' }                │              │
+       │←──────────────────────────────────│ 2. Si TOTP  │
+       │                                   │    no config:│
+       │                                   │    requires  │
+       │                                   │    Setup     │
+       │                                   └─────────────┘
+       │                                            │
+       │  Click "Configurar TOTP"                  │
+       ↓                                            │
+┌──────────────┐                                    │
+│ SetupTOTP    │                                    │
+│ (sessionSto- │                                    │
+│  rage)       │                                    │
+└──────────────┘                                    │
+       │                                            │
+       │ Generar QR → Escanear → Ingresar código   │
+       ↓                                            │
+┌──────────────┐     username + password + code    │
+│ ConfirmTOTP  │ ─────────────────────────────────→│
+│              │                                    │
+└──────────────┘                                    │
+       │                                            │
+       │ Secret guardado + Cache limpio              │
+       ↓                                            │
+┌──────────┐     username + password + TOTP        │
+│  Login   │ ──────────────────────────────────────→│
+│ (Step 2) │     → SessionToken + wrapped_mk        │
+└──────────┘                                        │
+```
+
+---
+
 ## 2026-03-24
 
 ### Nuevo
@@ -500,6 +649,7 @@ Se aplicaron parches quirúrgicos para corregir inconsistencias críticas encont
 
 | Fecha | Versión | Descripción |
 |-------|---------|-------------|
+| 2026-03-27 | 4.2.0 | Autenticación TOTP completa + Password SHA-256 |
 | 2026-03-20 | 4.1.2 | Importación IA integrada en Admin_Sistema |
 | 2026-03-20 | 4.1.1 | System Patches Round 1 & 2 + Version Consistency |
 | 2026-03-20 | 4.1.0 | Operational Optimizations (cost-awareness, convergence, determinism) |
@@ -511,4 +661,4 @@ Se aplicaron parches quirúrgicos para corregir inconsistencias críticas encont
 
 ---
 
-*Última actualización: 2026-03-20*
+*Última actualización: 2026-03-27*

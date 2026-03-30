@@ -11,11 +11,14 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (username: string, code: string, authType: string) => Promise<void>;
+  login: (username: string, totpCode?: string, authType?: string, password?: string) => Promise<void>;
   logout: () => void;
   validateSession: () => Promise<void>;
   setMasterKey: (mk: string) => void;
   masterKey: string | null;
+  wrapped_mk: string | null;
+  sessionToken: string | null;
+  apiUrl: string | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -24,10 +27,18 @@ const API_URL_KEY = 'congre_admin_api_url';
 const SESSION_TOKEN_KEY = 'congre_admin_session_token';
 const USER_DATA_KEY = 'congre_admin_user_data';
 
+async function fetchApi(url: string, options?: RequestInit) {
+  const response = await fetch(url, options);
+  return response.json();
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [masterKey, setMasterKeyState] = useState<string | null>(null);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
+  const [apiUrl, setApiUrl] = useState<string | null>(null);
+  const [wrapped_mk, setWrappedMk] = useState<string | null>(null);
 
   useEffect(() => {
     const storedUser = localStorage.getItem(USER_DATA_KEY);
@@ -43,22 +54,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setMasterKeyState(mk);
   };
 
-  const login = async (username: string, code: string, authType: string) => {
+  const login = async (username: string, totpCode?: string, authType?: string, password?: string) => {
     const apiUrl = localStorage.getItem(API_URL_KEY);
     if (!apiUrl) {
       throw new Error('API URL no configurada');
     }
 
-    const response = await fetch(`${apiUrl}`, {
+    const payload: Record<string, string> = { username };
+    if (password) payload.password = password;
+    if (totpCode) payload.code = totpCode;
+    if (authType) payload.authType = authType;
+
+    const data = await fetchApi(apiUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         action: 'login',
-        payload: { username, code, authType }
+        payload
       })
     });
-
-    const data = await response.json();
     
     if (!data.success) {
       throw new Error(data.error || 'Error en el login');
@@ -67,9 +80,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(SESSION_TOKEN_KEY, data.sessionToken);
     localStorage.setItem(USER_DATA_KEY, JSON.stringify(data.user));
     setUser(data.user);
+    setSessionToken(data.sessionToken);
+    setApiUrl(apiUrl);
     
     if (data.wrapped_mk) {
       setMasterKeyState(data.wrapped_mk);
+      setWrappedMk(data.wrapped_mk);
     }
   };
 
@@ -78,6 +94,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem(USER_DATA_KEY);
     setUser(null);
     setMasterKeyState(null);
+    setSessionToken(null);
+    setWrappedMk(null);
   };
 
   const validateSession = async () => {
@@ -87,26 +105,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const apiUrl = localStorage.getItem(API_URL_KEY);
-    if (!apiUrl) {
+    const storedApiUrl = localStorage.getItem(API_URL_KEY);
+    if (!storedApiUrl) {
       logout();
       return;
     }
 
     try {
-      const response = await fetch(`${apiUrl}`, {
+      const data = await fetchApi(storedApiUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'validateSession',
           sessionToken: token
         })
       });
-
-      const data = await response.json();
       
       if (!data.valid) {
         logout();
+      } else {
+        const userData = localStorage.getItem(USER_DATA_KEY);
+        if (userData) {
+          const parsed = JSON.parse(userData);
+          setUser(parsed);
+          setSessionToken(token);
+          setApiUrl(storedApiUrl);
+          if (parsed.wrapped_mk) {
+            setMasterKeyState(parsed.wrapped_mk);
+            setWrappedMk(parsed.wrapped_mk);
+          }
+        }
       }
     } catch {
       logout();
@@ -122,7 +149,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout,
       validateSession,
       setMasterKey,
-      masterKey
+      masterKey,
+      wrapped_mk,
+      sessionToken,
+      apiUrl
     }}>
       {children}
     </AuthContext.Provider>

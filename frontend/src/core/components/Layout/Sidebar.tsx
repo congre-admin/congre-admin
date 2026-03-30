@@ -21,7 +21,9 @@ import {
   Map as MapIcon,
   Settings as SettingsIcon,
   ChevronLeft as ChevronLeftIcon,
-  Menu as MenuIcon
+  Menu as MenuIcon,
+  AdminPanelSettings as AdminIcon,
+  Backup as BackupIcon
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
 
@@ -98,11 +100,11 @@ export default function Sidebar() {
       
       <List sx={{ px: 1 }}>
         <ListItem disablePadding>
-          <ListItemButton onClick={() => navigate('/admin')} sx={{ borderRadius: 1 }}>
+          <ListItemButton onClick={() => navigate('/backup')} sx={{ borderRadius: 1 }}>
             <ListItemIcon sx={{ minWidth: 40 }}>
-              <SettingsIcon />
+              <BackupIcon />
             </ListItemIcon>
-            <ListItemText primary="Administración" />
+            <ListItemText primary="Respaldo" />
           </ListItemButton>
         </ListItem>
         <ListItem disablePadding>

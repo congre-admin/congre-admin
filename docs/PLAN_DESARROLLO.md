@@ -78,6 +78,11 @@ El Backend debe cumplir con la especificación definida en `docs/architecture/Ba
 - [x] AuthContext con login/logout
 - [x] Gestión de sesión en localStorage
 - [x] ProtectedRoute para rutas protegidas
+- [x] Login multi-step (password → TOTP/email_otp/passkey)
+- [x] Configuración de TOTP (SetupTOTP) — QR + verificación
+- [x] Configuración de Passkey (SetupPasskey) — WebAuthn nativo
+- [x] Gestión de métodos auth (AuthSettings) — passkeys, TOTP, password, delete account
+- [x] Backup/Restore de Master Key (BackupExport)
 
 ### 0.4 Shell UI
 - [x] Layout principal con Sidebar

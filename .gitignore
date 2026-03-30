@@ -40,3 +40,7 @@ private_instructions/
 # Temporal
 *.tmp
 .cache/
+
+# Google Apps Script (clasp)
+backend/token.json
+backend/creds.json
