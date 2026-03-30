@@ -1709,9 +1709,9 @@ function actionChallenge(payload) {
       authConfig = parseAuthConfig(user.auth_config);
     } catch (e) {}
     
-    // Generate challenge - proper random base64
+    // Generate challenge - proper random base64 (standard, not URL-safe)
     const randomBytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid() + new Date().getTime());
-    const challenge = Utilities.base64EncodeWebSafe(randomBytes);
+    const challenge = Utilities.base64Encode(randomBytes);
     
     // Guardar desafío temporalmente
     PropertiesService.getUserProperties().setProperty(
@@ -1788,13 +1788,13 @@ function actionSetupPasskey(payload) {
       authConfig = parseAuthConfig(user.auth_config);
     } catch (e) {}
     
-    // Generate challenge for registration - proper random base64
+    // Generate challenge for registration - proper random base64 (standard, not URL-safe)
     const randomBytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid() + new Date().getTime());
-    const challenge = Utilities.base64EncodeWebSafe(randomBytes);
+    const challenge = Utilities.base64Encode(randomBytes);
     
-    // Generate user ID for WebAuthn - proper base64 encoding
+    // Generate user ID for WebAuthn - proper base64 encoding (standard, not URL-safe)
     const userIdBytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, username + new Date().getTime());
-    const userId = Utilities.base64EncodeWebSafe(userIdBytes);
+    const userId = Utilities.base64Encode(userIdBytes);
     
     // Store pending passkey setup
     const pendingData = {
