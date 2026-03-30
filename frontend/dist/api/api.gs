@@ -1729,10 +1729,24 @@ function actionChallenge(payload) {
       type: 'public-key'
     }));
     
+    // Derive rpId from origin (use hostname, default to localhost)
+    let rpId = 'localhost';
+    if (payload.origin) {
+      try {
+        const url = Utilities.newBlob(payload.origin).getDataAsString();
+        const match = url.match(/^https?:\/\/([^:\/]+)/);
+        if (match && match[1]) {
+          rpId = match[1];
+        }
+      } catch (e) {
+        rpId = 'localhost';
+      }
+    }
+    
     return {
       success: true,
       challenge: challenge,
-      rpId: 'localhost',
+      rpId: rpId,
       timeout: 60000,
       allowCredentials: existingCredentials,
       userVerification: 'preferred'
@@ -1810,10 +1824,24 @@ function actionSetupPasskey(payload) {
       JSON.stringify(pendingData)
     );
 
+    // Derive rpId from origin (use hostname, default to localhost)
+    let rpId = 'localhost';
+    if (payload.origin) {
+      try {
+        const url = Utilities.newBlob(payload.origin).getDataAsString();
+        const match = url.match(/^https?:\/\/([^:\/]+)/);
+        if (match && match[1]) {
+          rpId = match[1];
+        }
+      } catch (e) {
+        rpId = 'localhost';
+      }
+    }
+
     return {
       success: true,
       challenge: challenge,
-      rpId: 'localhost',
+      rpId: rpId,
       timeout: 60000,
       user: {
         id: userId,
