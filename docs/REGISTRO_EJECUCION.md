@@ -65,6 +65,68 @@ Este Documento registra la ejecución de cada fase del desarrollo del sistema.
 
 ---
 
+### 1.x Autenticación TOTP Completa ✅ COMPLETADO
+**Fecha:** 2026-03-27
+
+**Estado:** ✅ Implementado
+
+#### Tareas completadas:
+- [x] Implementar TOTP nativo en GAS (sin librerías externas)
+- [x] Generar QR code para Google Authenticator
+- [x] Setup TOTP con flujo de 2 pasos (password → TOTP)
+- [x] Hash de contraseña con SHA-256
+- [x] Validación de complejidad de contraseña
+- [x] Cache invalidation tras guardar TOTP
+- [x] Credenciales en sessionStorage (no URL)
+
+#### Funciones implementadas:
+| Función | Descripción |
+|---------|-------------|
+| `base32tohex()` | Convierte base32 a hex para TOTP |
+| `generateTOTP()` | Genera código TOTP |
+| `generateTOTPAtTime()` | Genera código TOTP en timestamp específico |
+| `verifyTOTP()` | Verifica código TOTP con ventana de tiempo |
+| `generateBase32Secret()` | Genera secreto aleatorio en base32 |
+| `hashPassword()` | Hashea contraseña con SHA-256 |
+| `verifyPassword()` | Verifica contraseña hasheada |
+| `actionSetupTOTP()` | Genera QR para configuración |
+| `actionConfirmTOTP()` | Confirma y guarda TOTP |
+| `actionDisableTOTP()` | Desactiva TOTP para usuario |
+
+#### Funciones modificadas:
+| Función | Cambio |
+|---------|--------|
+| `actionLogin()` | Flujo de 2 pasos: password → TOTP |
+| `actionRegister()` | Guardar password_hash |
+| `actionConfirmTOTP()` | Agregar cache invalidation |
+
+#### Archivos modificados:
+- `backend/src/api.gs` - Implementación TOTP nativa
+- `frontend/src/modules/setup/views/Login.tsx` - 2-step UI
+- `frontend/src/modules/setup/views/SetupTOTP.tsx` - Nueva pantalla
+- `frontend/src/core/context/AuthContext.tsx` - Actualizado login()
+
+#### Notas:
+- Implementación nativa usa `Utilities.computeHmacSignature()` de GAS
+- No requiere librerías externas (resuelve problemas de CORS)
+- Credenciales en sessionStorage durante setup (seguro)
+- Cache invalidation esencial para login post-setup
+
+#### Código clave:
+```javascript
+// HMAC-SHA1 nativo en GAS
+const hmacDigest = Utilities.computeHmacSignature(
+  Utilities.MacAlgorithm.HMAC_SHA_1,
+  counterBytes,  // Uint8Array
+  bytes          // Uint8Array
+);
+```
+
+#### Siguiente paso sugerido:
+- Fase 2: Frontend Modules (Admin_Personas, etc.)
+
+---
+
 ### 1.2 Gestión de Sesiones ✅ COMPLETADO
 **Fecha:** 2026-03-24
 

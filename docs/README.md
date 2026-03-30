@@ -15,23 +15,27 @@ La especificación del agente AI se encuentra en `/system` (raíz del proyecto):
 
 ## 🏗️ Arquitectura y Core
 1.  [**Arquitectura del Sistema**](./architecture/Arquitectura.md): Definición del Núcleo, Plug-ins y Segmentación de Datos.
-2.  [**Especificación Tecnológica**](./architecture/Tecnologia.md): Stack React/GAS, JSONata y AES-GCM.
-3.  [**Interfaz y UX**](./architecture/Interfaz.md): Guía de diseño, Componentes M3 y Patrones de Interacción.
-4.  [**Backend_API_Completa.md**](./architecture/Backend_API_Completa.md): Referencia completa del API
-5.  [**Estrategia de Localización (i18n)**](./architecture/Localizacion.md): Multi-idioma y personalización teocrática.
-6.  [**Matriz de Permisos**](./architecture/Permisos.md): Control de acceso RBAC y seguridad de campos.
-7.  [**Esquemas Comunes**](./architecture/Esquemas_Comunes.md): Estructuras de Logs, Sesión y GeoJSON.
-8.  [**Estrategia de Pruebas**](./architecture/Testing.md): Validación de seguridad y Zero-Knowledge.
-9.  [**Especificación de Reportes**](./architecture/Reportes.md): Definición de PDFs y Formularios Oficiales.
-10. [**Notificaciones Locales**](./architecture/Notificaciones.md): Estrategia de Background Sync y Privacidad.
-11. [**Guía de Instalación (Setup)**](./architecture/Instalacion.md): Manual para el "Día 0" y despliegue.
-12. [**Acceso y Despliegue**](./architecture/Despliegue.md): Estrategia de hosting y parámetros de URL.
-13. [**Estructura del Proyecto**](./architecture/Estructura_Proyecto.md): Organización de carpetas `/src` y reglas de acoplamiento.
-14. [**Diagramas de Procesos**](./architecture/Diagramas_Procesos.md): Workflows visuales (Setup, Cierre, Handshake) en Mermaid.
+2.  [**Arquitectura del Núcleo**](./architecture/Core.md): Componentes del Core, datos y flujos de orquestación.
+3.  [**Sistema de Autenticación**](./architecture/Autenticacion.md): Passkeys, TOTP, Email OTP y flujos de login.
+4.  [**Especificación Tecnológica**](./architecture/Tecnologia.md): Stack React/GAS, JSONata y AES-GCM.
+5.  [**Interfaz y UX**](./architecture/Interfaz.md): Guía de diseño, Componentes M3 y Patrones de Interacción.
+6.  [**Backend_API_Completa.md**](./architecture/Backend_API_Completa.md): Referencia completa del API
+7.  [**Estrategia de Localización (i18n)**](./architecture/Localizacion.md): Multi-idioma y personalización teocrática.
+8.  [**Matriz de Permisos**](./architecture/Permisos.md): Control de acceso RBAC y seguridad de campos.
+9.  [**Esquemas Comunes**](./architecture/Esquemas_Comunes.md): Estructuras de Logs, Sesión y GeoJSON.
+10. [**Estrategia de Pruebas**](./architecture/Testing.md): Validación de seguridad y Zero-Knowledge.
+11. [**Especificación de Reportes**](./architecture/Reportes.md): Definición de PDFs y Formularios Oficiales.
+12. [**Notificaciones Locales**](./architecture/Notificaciones.md): Estrategia de Background Sync y Privacidad.
+13. [**Guía de Instalación (Setup)**](./architecture/Instalacion.md): Manual para el "Día 0" y despliegue.
+14. [**Acceso y Despliegue**](./architecture/Despliegue.md): Estrategia de hosting y parámetros de URL.
+15. [**Estructura del Proyecto**](./architecture/Estructura_Proyecto.md): Organización de carpetas `/src` y reglas de acoplamiento.
+16. [**Diagramas de Procesos**](./architecture/Diagramas_Procesos.md): Workflows visuales (Setup, Cierre, Handshake) en Mermaid.
 
 ## 📦 Especificación del Backend
 - [**Protocolo del Backend**](./architecture/Backend.md): Implementación en GAS y GSheets.
 - [**Documentación Técnica API**](./architecture/Backend_API_Completa.md): Referencia completa con todas las acciones, ejemplos y optimización de quota GAS.
+- [**Arquitectura del Núcleo**](./architecture/Core.md): Core del sistema y orquestación de datos.
+- [**Sistema de Autenticación**](./architecture/Autenticacion.md): Passkeys, TOTP, Email OTP y flujos de login.
 - [**Estándar de Documentación**](./architecture/Guia_Documentacion.md): Cómo definir nuevos plug-ins.
 
 ## 📋 Mantenimiento

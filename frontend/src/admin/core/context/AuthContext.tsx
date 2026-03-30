@@ -15,6 +15,7 @@ interface AuthContextType {
   logout: () => void;
   validateSession: () => Promise<void>;
   setMasterKey: (mk: string) => void;
+  setSession: (sessionToken: string, user: User, wrapped_mk?: string) => void;
   masterKey: string | null;
   wrapped_mk: string | null;
   sessionToken: string | null;
@@ -26,6 +27,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const API_URL_KEY = 'congre_admin_api_url';
 const SESSION_TOKEN_KEY = 'congre_admin_session_token';
 const USER_DATA_KEY = 'congre_admin_user_data';
+const ADMIN_SS_ID_KEY = 'congre_admin_ss_id';
 
 async function fetchApi(url: string, options?: RequestInit) {
   const response = await fetch(url, options);
@@ -46,12 +48,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     
     if (storedUser && token) {
       setUser(JSON.parse(storedUser));
+      setSessionToken(token);
     }
     setIsLoading(false);
   }, []);
 
   const setMasterKey = (mk: string) => {
     setMasterKeyState(mk);
+  };
+
+  const setSession = (sessionToken: string, user: User, wrapped_mk?: string) => {
+    localStorage.setItem(SESSION_TOKEN_KEY, sessionToken);
+    localStorage.setItem(USER_DATA_KEY, JSON.stringify(user));
+    setUser(user);
+    setSessionToken(sessionToken);
+    if (wrapped_mk) {
+      setMasterKeyState(wrapped_mk);
+      setWrappedMk(wrapped_mk);
+    }
   };
 
   const login = async (username: string, totpCode?: string, authType?: string, password?: string) => {
@@ -149,6 +163,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout,
       validateSession,
       setMasterKey,
+      setSession,
       masterKey,
       wrapped_mk,
       sessionToken,

@@ -1,7 +1,7 @@
 # Congre-Admin: Documentación Técnica del Backend API
 
-> **Versión:** 1.0.0
-> **Última actualización:** 2026-03-24
+> **Versión:** 1.1.0
+> **Última actualización:** 2026-03-27
 > **Archivo fuente:** `backend/src/api.gs`
 > **Plataforma:** Google Apps Script (GAS)
 
@@ -15,13 +15,14 @@ El Backend de Congre-Admin es un proveedor de servicios implementado como Google
 
 | Característica | Implementación |
 |----------------|----------------|
-| **Autenticación** | Zero-Knowledge con soporte para Passkeys, TOTP y OTP por Email |
+| **Autenticación** | Username + Password (SHA-256) + TOTP (Google Authenticator) |
 | **Gestión de Sesiones** | Token JWT con índice híbrido (memoria + caché) |
 | **Permisos** | RBAC basado en perfiles con permisos por módulo |
 | **Versionado** | Last Write Wins con detección de conflictos |
 | **Borrado** | Soft Delete (borrado lógico) |
 | **Caché** | CacheService con TTL configurable |
 | **Rate Limiting** | Por usuario/IP en acciones de autenticación |
+| **TOTP** | Implementación nativa GAS (sin librerías externas) |
 
 ---
 
@@ -37,17 +38,62 @@ Almacena las credenciales y configuración de usuarios.
 | Campo | Tipo | Descripción |
 |-------|------|-------------|
 | `id` | UUID | Identificador único del usuario |
-| `username` | string | Correo electrónico (único) |
-| `wrapped_mk` | string | Master Key cifrada con TOTP |
+| `username` | string | Nombre de usuario (único) |
+| `wrapped_mk` | string | Master Key cifrada con la contraseña |
 | `perfilId` | string | ID del perfil asignado (ej: `p_admin`) |
-| `personaId` | UUID | (Opcional) ID de la persona asociada |
-| `auth_factor` | string | Factor de autenticación: `passkey`, `totp`, `email` |
-| `totp_secret` | string | Secreto para Google Authenticator |
-| `public_key` | string | Clave pública para Passkeys |
+| `auth_config` | JSON | Objeto con configuración de autenticación |
+| `metadata` | JSON | Objeto con metadatos del usuario |
 | `created_at` | ISO 8601 | Fecha de creación |
 | `_v` | número | Versión del registro |
 | `_ts` | ISO 8601 | Timestamp de última modificación |
 | `_deleted` | boolean | Borrado lógico |
+
+> **Nota:** La contraseña se verifica comparando el hash SHA-256 del input con `password_hash` dentro de `auth_config`. El TOTP se verifica usando HMAC-SHA1 nativo de GAS. Los passkeys se almacenan en el array `passkeys` dentro de `auth_config`.
+
+##### Estructura del campo `auth_config`
+
+```json
+{
+  "default_method": "passkey",
+  "password_hash": "sha256_hash_de_la_contraseña",
+  "recovery_enabled": true,
+  "email_otp": {
+    "enabled": true,
+    "created_at": "2026-03-29T10:56:40.158Z"
+  },
+  "totp": {
+    "enabled": true,
+    "secret": "REBZZYCVNCYWVNUBRENZ",
+    "created_at": "2026-03-29T23:45:40.210Z"
+  },
+  "passkeys": [
+    {
+      "id": "base64url_encoded_credential_id",
+      "public_key": "",
+      "device_name": "Windows PC",
+      "created_at": "2026-03-30T02:25:43.497Z"
+    }
+  ]
+}
+```
+
+##### Estructura del campo `metadata`
+
+```json
+{
+  "last_login": "2026-03-30T10:00:00Z",
+  "last_password_change": "2026-03-01T08:30:00Z",
+  "failed_login_attempts": 0,
+  "created_from_ip": "192.168.1.1"
+}
+```
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `last_login` | ISO 8601 | Fecha y hora del último inicio de sesión |
+| `last_password_change` | ISO 8601 | Fecha y hora del último cambio de contraseña |
+| `failed_login_attempts` | número | Contador de intentos de inicio de sesión fallidos |
+| `created_from_ip` | string | Dirección IP desde donde se creó la cuenta |
 
 #### Tabla: `Perfiles`
 Define los perfiles de usuario y sus permisos.
@@ -305,61 +351,388 @@ Elimina una hoja del spreadsheet.
 ### 4.2 Acciones de Autenticación
 
 #### `register`
-Crea un nuevo usuario.
+Crea un nuevo usuario (requiere configuración de contraseña + TOTP posterior).
 
 ```javascript
 {
   "action": "register",
   "payload": {
-    "username": "usuario@email.com",
+    "username": "admin",
+    "password": "MiContraseña123!",
     "wrapped_mk": "MASTER_KEY_CIFRADA",
-    "perfilId": "p_publicador",
-    "auth_factor": "email",
-    "totp_secret": "SECRETO_TOTP",
-    "public_key": "CLAVE_PUBLICA_PASSKEY"
+    "perfilId": "p_admin"
   }
 }
 ```
 
 #### `login`
-Autentica al usuario.
+Autentica al usuario. Soporta múltiples métodos de autenticación:
+- **Password + Email OTP** (flujo por defecto)
+- **Password + TOTP**
+- **Passkey** (WebAuthn)
+
+##### Flujo 1: Password + Email OTP
 
 ```javascript
+// Paso 1: Solo password
 {
   "action": "login",
   "payload": {
-    "username": "usuario@email.com",
-    "code": "123456",  // Código OTP
-    "authType": "email"  // o "totp"
+    "username": "admin",
+    "password": "MiContraseña123!"
+  }
+}
+
+// Response: requiere verificar email OTP
+{
+  "success": false,
+  "step": "email_otp",
+  "availableMethods": ["passkey", "totp", "email_otp"],
+  "message": "Se envió código al email"
+}
+
+// Paso 2: Con código OTP
+{
+  "action": "login",
+  "payload": {
+    "username": "admin",
+    "password": "MiContraseña123!",
+    "method": "email_otp",
+    "code": "123456"
+  }
+}
+```
+
+##### Flujo 2: Passkey (WebAuthn)
+
+```javascript
+// Paso 1: Solicitar desafío
+{
+  "action": "login",
+  "payload": {
+    "username": "admin",
+    "method": "passkey"
+  }
+}
+
+// Response: retorna desafío del backend
+// El frontend usa navigator.credentials.get() para completar la autenticación
+{
+  "success": false,
+  "step": "passkey",
+  "challenge": "base64_challenge",
+  "rpId": "dominio.com"
+}
+
+// Paso 2: Enviar aserción del passkey
+{
+  "action": "login",
+  "payload": {
+    "username": "admin",
+    "method": "passkey",
+    "passkeyAssertion": {
+      "credentialId": "credential_id",
+      "clientDataJSON": "base64_data",
+      "signature": "base64_signature",
+      "authenticatorData": "base64_data"
+    }
+  }
+}
+```
+
+##### Response (login exitoso)
+
+```javascript
+{
+  "success": true,
+  "sessionToken": "uuid_token",
+  "wrapped_mk": "MASTER_KEY_CIFRADA",
+  "expiresAt": "2026-03-27T10:00:00Z",
+  "user": {
+    "id": "uuid-usuario",
+    "username": "admin",
+    "perfilId": "p_admin"
+  }
+}
+```
+
+#### `setupTOTP`
+Genera código QR para configurar Google Authenticator (sin sesión activa).
+
+```javascript
+{
+  "action": "setupTOTP",
+  "payload": {
+    "username": "admin",
+    "password": "MiContraseña123!"
   }
 }
 
 // Response
 {
   "success": true,
-  "sessionToken": "uuid_token",
-  "wrapped_mk": "MASTER_KEY_CIFRADA",
-  "expiresAt": "2026-03-25T10:00:00Z",
-  "user": {
-    "id": "uuid-usuario",
-    "username": "usuario@email.com",
-    "perfilId": "p_admin"
+  "secret": "JBSWY3DPEHPK3PXP",
+  "otpURI": "otpauth://totp/CongreAdmin:admin?secret=JBSWY3DPEHPK3PXP&issuer=CongreAdmin&algorithm=SHA1&digits=6&period=30"
+}
+```
+
+#### `confirmTOTP`
+Confirma la configuración de TOTP y guarda el secreto.
+
+```javascript
+{
+  "action": "confirmTOTP",
+  "payload": {
+    "username": "admin",
+    "password": "MiContraseña123!",
+    "code": "123456"  // Código de Google Authenticator
   }
+}
+
+// Response
+{
+  "success": true,
+  "message": "TOTP configurado correctamente"
+}
+```
+
+#### `disableTOTP`
+Desactiva TOTP para un usuario (requiere sesión activa).
+
+```javascript
+{
+  "action": "disableTOTP",
+  "payload": {}
+}
+
+// Headers
+{
+  "sessionToken": "TOKEN_SESION"
+}
+
+// Response
+{
+  "success": true,
+  "message": "TOTP desactivado"
 }
 ```
 
 #### `challenge`
-Genera un desafío para Passkey/WebAuthn.
-
-#### `requestOTP`
-Envía un código OTP por email.
+Genera un desafío para Passkey/WebAuthn durante el login. El frontend envía el origen para calcular el `rpId` correcto.
 
 ```javascript
 {
-  "action": "requestOTP",
+  "action": "challenge",
   "payload": {
-    "username": "usuario@email.com"
+    "username": "admin",
+    "origin": "https://congre-admin.github.io"
   }
+}
+
+// Response
+{
+  "success": true,
+  "challenge": "base64_encoded_challenge",
+  "rpId": "congre-admin.github.io",
+  "timeout": 60000,
+  "allowCredentials": [
+    { "id": "base64url_credential_id", "type": "public-key" }
+  ],
+  "userVerification": "preferred"
+}
+```
+
+#### `setupPasskey`
+Genera un desafío para registrar un nuevo passkey. Puede usar sessionToken (si está autenticado) o username/password.
+
+```javascript
+// Con sesión activa
+{
+  "action": "setupPasskey",
+  "payload": {
+    "username": "admin",
+    "deviceName": "Windows PC",
+    "sessionToken": "TOKEN_SESION",
+    "origin": "https://congre-admin.github.io"
+  }
+}
+
+// Sin sesión (desde login)
+{
+  "action": "setupPasskey",
+  "payload": {
+    "username": "admin",
+    "password": "MiContraseña123!",
+    "deviceName": "iPhone",
+    "origin": "https://congre-admin.github.io"
+  }
+}
+
+// Response
+{
+  "success": true,
+  "challenge": "base64_encoded_challenge",
+  "rpId": "congre-admin.github.io",
+  "timeout": 60000,
+  "user": {
+    "id": "base64_encoded_user_id",
+    "name": "admin",
+    "displayName": "admin"
+  },
+  "pubKeyCredParams": [
+    { "type": "public-key", "alg": -7 },
+    { "type": "public-key", "alg": -257 }
+  ],
+  "attestation": "preferred",
+  "excludeCredentials": []
+}
+```
+
+#### `confirmPasskey`
+Confirma el registro de un passkey. Guarda la credencial en `auth_config.passkeys`.
+
+```javascript
+{
+  "action": "confirmPasskey",
+  "payload": {
+    "username": "admin",
+    "sessionToken": "TOKEN_SESION",
+    "attestation": {
+      "id": "credential_id_from_browser",
+      "type": "public-key",
+      "response": {
+        "clientDataJSON": "base64_client_data",
+        "attestationObject": "base64_attestation"
+      }
+    }
+  }
+}
+
+// Response
+{
+  "success": true,
+  "message": "Passkey configurado correctamente"
+}
+```
+
+#### `deletePasskey`
+Elimina un passkey registrado (requiere sesión activa).
+
+```javascript
+{
+  "action": "deletePasskey",
+  "payload": {
+    "passkeyId": "id_del_passkey_a_eliminar"
+  }
+}
+
+// Headers
+{
+  "sessionToken": "TOKEN_SESION"
+}
+
+// Response
+{
+  "success": true,
+  "message": "Passkey eliminado"
+}
+```
+
+#### `getAuthMethods`
+Obtiene los métodos de autenticación habilitados para el usuario.
+
+```javascript
+{
+  "action": "getAuthMethods",
+  "payload": {}
+}
+
+// Headers
+{
+  "sessionToken": "TOKEN_SESION"
+}
+
+// Response
+{
+  "success": true,
+  "methods": ["passkey", "totp", "email_otp"],
+  "defaultMethod": "passkey",
+  "passkeys": [
+    { "id": "credential_id", "deviceName": "Windows PC", "createdAt": "2026-03-30T..." }
+  ],
+  "totp": { "enabled": true },
+  "email_otp": { "enabled": true },
+  "recovery_enabled": true
+}
+```
+
+#### `updateAuthConfig`
+Actualiza la configuración de autenticación.
+
+```javascript
+{
+  "action": "updateAuthConfig",
+  "payload": {
+    "default_method": "passkey",
+    "recovery_enabled": false
+  }
+}
+
+// Headers
+{
+  "sessionToken": "TOKEN_SESION"
+}
+
+// Response
+{
+  "success": true
+}
+```
+
+#### `changePassword`
+Cambia la contraseña del usuario.
+
+```javascript
+{
+  "action": "changePassword",
+  "payload": {
+    "old_password": "contraseña_actual",
+    "new_password": "nueva_contraseña"
+  }
+}
+
+// Headers
+{
+  "sessionToken": "TOKEN_SESION"
+}
+
+// Response
+{
+  "success": true,
+  "message": "Contraseña cambiada correctamente"
+}
+```
+
+#### `deleteAccount`
+Elimina la cuenta del usuario.
+
+```javascript
+{
+  "action": "deleteAccount",
+  "payload": {
+    "password": "contraseña_del_usuario"
+  }
+}
+
+// Headers
+{
+  "sessionToken": "TOKEN_SESION"
+}
+
+// Response
+{
+  "success": true,
+  "message": "Cuenta eliminada"
 }
 ```
 
@@ -653,6 +1026,37 @@ invalidateCache('p:')    // Todos los perfiles
 invalidateCache('p:all') // Cache de perfiles completo
 ```
 
+### 7.3 Funciones TOTP (Implementación Nativa GAS)
+
+El sistema implementa TOTP sin librerías externas usando `Utilities.computeHmacSignature()`.
+
+```javascript
+// Convierte base32 a hex
+base32tohex(base32)
+
+// Genera código TOTP
+generateTOTP(secret, timeStepSeconds, digits)
+
+// Genera código TOTP en timestamp específico
+generateTOTPAtTime(secret, timestamp, timeStepSeconds, digits)
+
+// Verifica código TOTP (con ventana de ±1 periodo)
+verifyTOTP(secret, code)
+
+// Hashea contraseña con SHA-256
+hashPassword(password)
+
+// Verifica contraseña hasheada
+verifyPassword(password, hash)
+```
+
+**Detalles técnicos:**
+- Algoritmo: HMAC-SHA1 (RFC 6238)
+- Dígitos: 6
+- Periodo: 30 segundos
+- Ventana de verificación: ±1 periodo (tolerancia de 60 segundos)
+- Secret: Base32, 20 bytes (160 bits)
+
 ---
 
 ## 8. Versionado y Conflictos
@@ -720,12 +1124,17 @@ checkRateLimit('login:usuario@email.com', 5, 60)
 | `ERR_RATE_LIMITED` | Demasiados intentos |
 | `ERR_USER_EXISTS` | Usuario ya existe |
 | `ERR_USER_NOT_FOUND` | Usuario no encontrado |
-| `ERR_EMAIL_SEND` | Error al enviar email |
 | `ERR_SESSION_EXPIRED` | Sesión expirada |
 | `ERR_SESSION_NOT_FOUND` | Sesión no encontrada |
 | `ERR_RESOURCE_NOT_FOUND` | Hoja o recurso no encontrado |
-| `ERR_OTP_REQUIRED` | Se requiere código OTP |
-| `ERR_OTP_INVALID` | Código OTP inválido |
+| `ERR_TOTP_REQUIRED` | Se requiere código TOTP |
+| `ERR_TOTP_INVALID` | Código TOTP inválido |
+| `ERR_TOTP_NOT_CONFIGURED` | TOTP no configurado para el usuario |
+| `ERR_TOTP_EXPIRED` | Configuración TOTP expirada |
+| `ERR_NO_PENDING_TOTP` | No hay configuración TOTP pendiente |
+| `ERR_INVALID_CREDENTIALS` | Usuario o contraseña incorrectos |
+| `ERR_PASSWORD_REQUIRED` | Se requiere contraseña |
+| `ERR_PASSWORD_WEAK` | Contraseña no cumple requisitos de complejidad |
 
 ---
 
@@ -885,7 +1294,10 @@ CORE_SS_ID = "ID_DEL_SPREADSHEET_CORE"
 - `backend/src/api.gs` - Implementación fuente
 - `backend/data/seed_perfiles.json` - Perfiles base para instalación
 - `docs/architecture/Backend.md` - Especificación original
+- `docs/architecture/Core.md` - Arquitectura del núcleo del sistema
+- `docs/architecture/Autenticacion.md` - Sistema de autenticación y flujos
 - `docs/architecture/Arquitectura.md` - Arquitectura general
+- `docs/architecture/Tecnologia.md` - Especificación tecnológica
 - `docs/architecture/Instalacion.md` - Guía de instalación
 - `docs/PLAN_DESARROLLO.md` - Plan de desarrollo
 - `docs/CHANGELOG.md` - Historial de cambios

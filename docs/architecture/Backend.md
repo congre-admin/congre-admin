@@ -39,14 +39,77 @@ Para inicializar el sistema, el archivo GSheet maestro debe contener las siguien
 - `username`: Correo electrónico.
 - `wrapped_mk`: Master Key cifrada.
 - `perfilId`: ID del perfil asignado.
-- `personaId`: (Opcional) ID de la entidad en la base de datos de Personas.
-- `auth_factor`: `passkey`, `totp`, `email`.
-- `totp_secret`: (Opcional) Secreto para Google Authenticator.
-- `public_key`: (Opcional) Clave pública para Passkeys.
+- `auth_config`: Objeto JSON con configuración de autenticación (ver abajo).
+- `metadata`: Objeto JSON con metadatos del usuario (ver abajo).
 - `created_at`: Fecha de creación (ISO 8601).
 - `_v`: Número de versión del registro.
 - `_ts`: Timestamp de última modificación.
 - `_deleted`: Booleano para borrado lógico.
+
+#### Estructura del campo `metadata`
+El campo `metadata` es un objeto JSON que almacena información adicional del usuario:
+
+```json
+{
+  "last_login": "2026-03-30T10:00:00Z",
+  "last_password_change": "2026-03-01T08:30:00Z",
+  "failed_login_attempts": 0,
+  "created_from_ip": "192.168.1.1"
+}
+```
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `last_login` | ISO 8601 | Fecha y hora del último inicio de sesión |
+| `last_password_change` | ISO 8601 | Fecha y hora del último cambio de contraseña |
+| `failed_login_attempts` | número | Contador de intentos de inicio de sesión fallidos |
+| `created_from_ip` | string | Dirección IP desde donde se creó la cuenta |
+
+#### Estructura del campo `auth_config`
+El campo `auth_config` es un objeto JSON que almacena toda la configuración de autenticación del usuario:
+
+```json
+{
+  "default_method": "passkey",
+  "password_hash": "sha256_hash_de_la_contraseña",
+  "recovery_enabled": true,
+  "email_otp": {
+    "enabled": true,
+    "created_at": "2026-03-29T10:56:40.158Z"
+  },
+  "totp": {
+    "enabled": true,
+    "secret": "REBZZYCVNCYWVNUBRENZ",
+    "created_at": "2026-03-29T23:45:40.210Z"
+  },
+  "passkeys": [
+    {
+      "id": "base64url_encoded_credential_id",
+      "public_key": "",
+      "device_name": "Windows PC",
+      "created_at": "2026-03-30T02:25:43.497Z"
+    }
+  ]
+}
+```
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `default_method` | string | Método de autenticación preferido: `passkey`, `totp`, `email_otp` |
+| `password_hash` | string | Hash SHA-256 de la contraseña del usuario |
+| `recovery_enabled` | boolean | Si el método de recuperación está habilitado |
+| `email_otp` | object | Configuración del código por email |
+| `email_otp.enabled` | boolean | Si el email OTP está habilitado |
+| `email_otp.created_at` | ISO 8601 | Fecha de habilitación del email OTP |
+| `totp` | object | Configuración de TOTP |
+| `totp.enabled` | boolean | Si TOTP está configurado |
+| `totp.secret` | string | Secreto TOTP en Base32 |
+| `totp.created_at` | ISO 8601 | Fecha de configuración de TOTP |
+| `passkeys` | array | Array de passkeys registrados |
+| `passkeys[].id` | string | ID de la credencial (formato base64url) |
+| `passkeys[].public_key` | string | Clave pública del passkey |
+| `passkeys[].device_name` | string | Nombre descriptivo del dispositivo |
+| `passkeys[].created_at` | ISO 8601 | Fecha de registro del passkey |
 
 ### Tabla: `Perfiles` (NUEVA)
 - `id`: ID del perfil (ej: `p_secretario`, `p_siervo_territorios`).
@@ -57,7 +120,9 @@ Para inicializar el sistema, el archivo GSheet maestro debe contener las siguien
 - `_ts`: Timestamp de última modificación.
 - `_deleted`: Booleano para borrado lógico.
 
-### Tabla: `Etiquetas` (NUEVA)
+### Tabla: `Etiquetas` (FUTURA — No implementada en api.gs)
+> **Estado:** Definida en schema pero no se crea en `initCoreTables()` ni hay funciones CRUD para ella. Se implementará en una fase futura.
+
 - `id`: UUID único del registro.
 - `nombre`: Nombre visible (ej: `Hermanos Varones`).
 - `alias_variable`: Nombre técnico para JSONata (ej: `Varones`). **Debe ser único.**
@@ -104,8 +169,9 @@ El script `api.gs` es el plug-in de backend primario y utiliza Google Sheets com
 -   **Aislamiento:** El GAS gestiona el acceso a diferentes archivos de Google Sheets basándose en los IDs proporcionados por el Núcleo para el GSheet Core, el Público, el de Personas y los Operativos.
 
 ### Modelo de Seguridad (Zero-Knowledge)
--   **Cofre Criptográfico:** El backend almacena la **Master Key (MK)** cifrada con el **TOTP Secret** de cada usuario (`wrapped_mk`).
+-   **Cofre Criptográfico:** El backend almacena la **Master Key (MK)** cifrada con la contraseña del usuario (`wrapped_mk`). La clave de envolver (Wrapping Key) se deriva de la contraseña mediante PBKDF2-HMAC-SHA256.
 -   **Cifrado en Reposo:** El backend almacena y entrega bloques de texto cifrados con AES-GCM (incluyendo su IV) sin conocer su contenido original.
+-   **Configuración de Auth:** Toda la configuración de autenticación se almacena en el campo `auth_config` de la tabla Usuarios, incluyendo passkeys, TOTP y email OTP.
 
 ## 4. Niveles de Autenticación
 El proveedor de backend debe validar los factores de autenticación requeridos antes de emitir un `session_token`. El sistema soporta:
@@ -116,9 +182,19 @@ El proveedor de backend debe validar los factores de autenticación requeridos a
 
 ### Acciones de Autenticación y Sesión
 - **`register`**: Crear nuevo usuario.
-- **`login`**: Autenticar usuario y obtener sessionToken.
-- **`challenge`**: Generar desafío para Passkey/WebAuthn.
+- **`login`**: Autenticar usuario y obtener sessionToken (soporta password, TOTP, email OTP, Passkey).
+- **`challenge`**: Generar desafío para Passkey/WebAuthn (login).
+- **`setupPasskey`**: Generar desafío para registrar nuevo passkey.
+- **`confirmPasskey`**: Confirmar registro de passkey.
+- **`deletePasskey`**: Eliminar un passkey registrado.
+- **`setupTOTP`**: Generar código QR para configurar Google Authenticator.
+- **`confirmTOTP`**: Confirmar configuración de TOTP.
+- **`disableTOTP`**: Desactivar TOTP para el usuario.
 - **`requestOTP`**: Enviar código OTP por email.
+- **`getAuthMethods`**: Obtener métodos de autenticación habilitados del usuario.
+- **`updateAuthConfig`**: Actualizar configuración de autenticación.
+- **`changePassword`**: Cambiar contraseña del usuario.
+- **`deleteAccount`**: Eliminar la cuenta del usuario.
 - **`logout`**: Cerrar sesión.
 - **`validateSession`**: Validar token de sesión.
 - **`refreshSession`**: Renovar token de sesión.
@@ -202,7 +278,7 @@ La instalación se realiza mediante la acción `install` que recibe los perfiles
 ### Acciones de Instalación
 - **`install`**: Proceso completo de instalación (crea SS, inicializa tablas, injecta perfiles y configuración).
 - **`createSpreadsheet`**: Crear nuevo Google Spreadsheet.
-- **`initCoreTables`**: Inicializar tablas del Core (`Usuarios`, `Perfiles`, `Registro_Plugins`, `Configuracion`, `Sistema_Migraciones`).
+- **`initCoreTables`**: Inicializar tablas del Core (`Usuarios`, `Perfiles`, `Registro_Plugins`, `Configuracion`, `Sistema_Migraciones`). La tabla `Etiquetas` está definida en schema pero no se crea aún.
 - **`seedPerfiles`**: Inyectar perfiles (acepta array de perfiles como segundo parámetro).
 - **`seedConfiguracion`**: Inyectar configuración inicial.
 - **`register`**: Crear nuevo usuario.
@@ -287,5 +363,8 @@ Para una referencia completa de la implementación, ver:
 |--------|-------------|
 | `Backend_API_Completa.md` | Documentación técnica completa |
 | `Arquitectura.md` | Arquitectura general del sistema |
+| `Core.md` | Arquitectura del núcleo del sistema |
+| `Autenticacion.md` | Sistema de autenticación y flujos |
+| `Tecnologia.md` | Especificación tecnológica |
 | `Instalacion.md` | Guía de instalación |
 | `PLAN_DESARROLLO.md` | Plan de desarrollo | |

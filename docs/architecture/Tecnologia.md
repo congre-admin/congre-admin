@@ -31,8 +31,43 @@ Congre-Admin utiliza un stack moderno, descentralizado y de alto rendimiento, op
     - **Key Wrapping:** La MK se cifra con la Wrapping Key antes de guardarse en el backend (`wrapped_mk`).
     - **IV (Vector de Inicialización):** Cada campo cifrado genera un IV único de 12 bytes, almacenado junto al ciphertext (formato: `iv:ciphertext`).
 - **Autenticación:**
-    - **Passkeys (WebAuthn):** Acceso biométrico seguro sin contraseñas.
-    - **TOTP:** Generación de códigos temporales (Google Authenticator).
+    - **Passkeys (WebAuthn/FIDO2):** Acceso biométrico seguro sin contraseñas. Implementado mediante la Web Authentication API nativa del navegador.
+    - **TOTP:** Generación de códigos temporales (Google Authenticator). Implementación nativa usando HMAC-SHA1.
+    - **Email OTP:** Códigos de un solo uso enviados por email mediante MailApp de GAS.
+
+### 3.1 Autenticación Passkeys (WebAuthn/FIDO2)
+
+El sistema soporta autenticación mediante passkeys utilizando el estándar WebAuthn:
+
+| Característica | Implementación |
+|----------------|----------------|
+| **Algoritmo** | ES256 (ECDSA over P-256) |
+| **Formato de ID** | Base64URL |
+| **Almacenamiento** | `auth_config.passkeys` en tabla Usuarios |
+| **rpId** | Dominio del sitio (extraído del origen) |
+
+#### Flujo de Registro (Registration)
+1. Frontend solicita desafío al backend (`action: setupPasskey`)
+2. Backend genera desafío + user ID (ambos en base64)
+3. Frontend usa `navigator.credentials.create()` para crear credencial
+4. Browser genera par de claves público/privada
+5. Credencial se guarda en el dispositivo (Windows Hello, Touch ID, etc.)
+6. Frontend envía attestación al backend (`action: confirmPasskey`)
+7. Backend guarda credential ID en `auth_config.passkeys`
+
+#### Flujo de Autenticación (Login)
+1. Frontend solicita desafío al backend (`action: challenge`)
+2. Backend retorna desafío + lista de credential IDs registrados
+3. Frontend usa `navigator.credentials.get()` para firmar desafío
+4. Dispositivo verifica biométrica y firma el desafío
+5. Frontend envía aserción al backend (`action: login` con `passkeyAssertion`)
+6. Backend verifica firma (implementación simplificada) y emite sesión
+
+#### Detalles Técnicos
+- **Challenge:** 32 bytes aleatorios codificados en base64 estándar
+- **user.id:** Hash SHA-256 del username codificado en base64
+- **rpId:** Nombre de dominio extraído del origen (ej: `congre-admin.github.io`)
+- **excludeCredentials:** Evita registrar el mismo dispositivo dos veces
 
 ## 4. Protocolo de Cifrado de Archivos (Vault de Drive)
 Para adjuntos sensibles (Cartas, PDFs privados), se sigue este flujo técnico obligatorio:
@@ -87,6 +122,8 @@ Para garantizar la compatibilidad, el proyecto debe utilizar las siguientes libr
 - **pdf-lib**: Manipulación y generación de reportes PDF (Overlay).
 - **lucide-react**: Set de iconos complementarios.
 - **PBKDF2**: Implementado mediante la Web Crypto API nativa.
+
+> **⚠️ Estado de integración:** Las siguientes dependencias están instaladas en `package.json` pero **aún no tienen imports activos** en el código: `@tanstack/react-query`, `@tanstack/react-table`, `jsonata`, `zod`, `jose`, `idb-keyval`, `pdf-lib`, `framer-motion`, `lucide-react`, `otpauth`. Se integrarán en Phase 2 con DataService y los módulos de administración.
 
 ## 7. Catálogo de Validaciones JSONata (Ejemplos Reales)
 El sistema utiliza estas expresiones tanto en el frontend (feedback inmediato) como en el backend (integridad).
@@ -144,3 +181,15 @@ Para evitar conflictos técnicos y colisiones de nombres:
 El Core registra funciones personalizadas dentro del motor:
 - **`$isRole('admin')`**: Valida si el usuario actual pertenece a un perfil.
 - **`$decrypt(campo)`**: Función interna para manejar campos `enc_` de forma transparente.
+
+---
+
+## Archivos Relacionados
+
+| Archivo | Descripción |
+|--------|-------------|
+| `Core.md` | Arquitectura del núcleo del sistema |
+| `Autenticacion.md` | Sistema de autenticación y flujos |
+| `Backend.md` | Especificación del backend |
+| `Backend_API_Completa.md` | API completa del backend |
+| `Arquitectura.md` | Arquitectura general del sistema |

@@ -22,14 +22,19 @@ Toda la especificación técnica y de diseño se encuentra en la carpeta `/docs`
 - [Índice General de Documentación](./docs/README.md)
 - [Guía de Arquitectura y Tecnología](./docs/architecture/Arquitectura.md)
 - [Protocolo del Backend](./docs/architecture/Backend.md)
+- [Arquitectura del Núcleo](./docs/architecture/Core.md)
+- [Sistema de Autenticación](./docs/architecture/Autenticacion.md)
 
 ## 🛠️ Estructura del Repositorio
 
-- `/src`: Código fuente de la aplicación React (Iniciando desde cero).
-- `/backend`: Implementación de referencia para Google Apps Script.
-- `/docs`: Blueprint completo del sistema.
-- `/system`: AI agent specification (production-ready).
-- `/examples`: Ejemplos de uso del agente AI.
+- `/frontend`: Aplicación React (Vite + TypeScript + MUI)
+  - `/frontend/src/admin/`: App de administración (Shell, Core, Módulos)
+  - `/frontend/src/public/`: App pública (guest access via `/gviz/tq`)
+- `/backend`: Implementación de referencia para Google Apps Script (`api.gs`)
+- `/docs`: Blueprint completo del sistema
+- `/system`: AI agent specification (production-ready)
+- `/examples`: Ejemplos de uso del agente AI
+- `/scripts`: Scripts de migración y utilidades
 
 ## 📦 Repositorios
 
@@ -40,14 +45,19 @@ Toda la especificación técnica y de diseño se encuentra en la carpeta `/docs`
 
 ## 🚀 Inicio Rápido
 
-1. `npm install`
-2. `npm run dev`
+1. `cd frontend`
+2. `npm install --legacy-peer-deps`
+3. `npm run dev`
 
 ## 📋 Estado del Proyecto
 
 | Componente | Estado | Notas |
 |------------|--------|-------|
 | Especificación AI | ✅ Completa | Sistema production-ready |
-| Documentación Técnica | ✅ 95% | Ver `/docs/CHANGELOG.md` |
-| Frontend | 🟡 En desarrollo | Estructura base definida |
+| Documentación Técnica | ✅ ~95% | Ver `/docs/CHANGELOG.md` |
+| Backend (`api.gs`) | ✅ Completo | Auth, Sessions, RBAC, CRUD, Versioning (3293 líneas) |
+| Frontend Core | ✅ Completo | Shell, Auth, Setup Wizard, Dashboard, AuthSettings, BackupExport |
+| Frontend Módulos | 🟡 Pendiente | Admin_Personas, Admin_Registros, Admin_Usuarios, etc. |
+| Services Layer | ❌ Vacío | `frontend/src/services/` — DataService no implementado |
+| Types Layer | ❌ Vacío | `frontend/src/types/` — Interfaces no definidas |
 | Backend | 🟡 Referencia | `api.gs` requiere evolución (ver `Backend.md`) |

@@ -20,9 +20,9 @@ import {
   Campaign as CampaignIcon,
   Map as MapIcon,
   Settings as SettingsIcon,
+  Security as SecurityIcon,
   ChevronLeft as ChevronLeftIcon,
   Menu as MenuIcon,
-  AdminPanelSettings as AdminIcon,
   Backup as BackupIcon
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
@@ -30,11 +30,11 @@ import { useAuth } from '../../context/AuthContext';
 const DRAWER_WIDTH = 240;
 
 const menuItems = [
-  { label: 'Dashboard', icon: DashboardIcon, path: '/' },
-  { label: 'Personas', icon: PeopleIcon, path: '/personas' },
-  { label: 'Reuniones', icon: EventNoteIcon, path: '/reuniones' },
-  { label: 'Anuncios', icon: CampaignIcon, path: '/anuncios' },
-  { label: 'Predicación', icon: MapIcon, path: '/predicacion' },
+  { label: 'Dashboard', icon: DashboardIcon, path: '/admin' },
+  { label: 'Personas', icon: PeopleIcon, path: '/admin/personas' },
+  { label: 'Reuniones', icon: EventNoteIcon, path: '/admin/reuniones' },
+  { label: 'Anuncios', icon: CampaignIcon, path: '/admin/anuncios' },
+  { label: 'Predicación', icon: MapIcon, path: '/admin/predicacion' },
 ];
 
 export default function Sidebar() {
@@ -54,7 +54,7 @@ export default function Sidebar() {
 
   const handleLogout = () => {
     logout();
-    navigate('/login');
+    navigate('/admin/login');
   };
 
   const drawerContent = (
@@ -100,7 +100,15 @@ export default function Sidebar() {
       
       <List sx={{ px: 1 }}>
         <ListItem disablePadding>
-          <ListItemButton onClick={() => navigate('/backup')} sx={{ borderRadius: 1 }}>
+          <ListItemButton onClick={() => navigate('settings/auth')} sx={{ borderRadius: 1 }}>
+            <ListItemIcon sx={{ minWidth: 40 }}>
+              <SecurityIcon />
+            </ListItemIcon>
+            <ListItemText primary="Autenticación" />
+          </ListItemButton>
+        </ListItem>
+        <ListItem disablePadding>
+          <ListItemButton onClick={() => navigate('backup')} sx={{ borderRadius: 1 }}>
             <ListItemIcon sx={{ minWidth: 40 }}>
               <BackupIcon />
             </ListItemIcon>
