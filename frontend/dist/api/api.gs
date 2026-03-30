@@ -1709,8 +1709,9 @@ function actionChallenge(payload) {
       authConfig = parseAuthConfig(user.auth_config);
     } catch (e) {}
     
-    // Generate challenge (proper base64)
-    const challenge = Utilities.base64Encode(Utilities.newBlob(Utilities.getUuid()).getBytes());
+    // Generate challenge - proper random base64
+    const randomBytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid() + new Date().getTime());
+    const challenge = Utilities.base64EncodeWebSafe(randomBytes);
     
     // Guardar desafío temporalmente
     PropertiesService.getUserProperties().setProperty(
@@ -1787,8 +1788,13 @@ function actionSetupPasskey(payload) {
       authConfig = parseAuthConfig(user.auth_config);
     } catch (e) {}
     
-    // Generate challenge for registration (proper base64)
-    const challenge = Utilities.base64Encode(Utilities.newBlob(Utilities.getUuid()).getBytes());
+    // Generate challenge for registration - proper random base64
+    const randomBytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid() + new Date().getTime());
+    const challenge = Utilities.base64EncodeWebSafe(randomBytes);
+    
+    // Generate user ID for WebAuthn - proper base64 encoding
+    const userIdBytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, username + new Date().getTime());
+    const userId = Utilities.base64EncodeWebSafe(userIdBytes);
     
     // Store pending passkey setup
     const pendingData = {
@@ -1798,19 +1804,19 @@ function actionSetupPasskey(payload) {
       createdAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString()
     };
-    
+
     PropertiesService.getUserProperties().setProperty(
       'passkey_setup_' + username,
       JSON.stringify(pendingData)
     );
-    
+
     return {
       success: true,
       challenge: challenge,
       rpId: 'localhost',
       timeout: 60000,
       user: {
-        id: Utilities.getUuid(),
+        id: userId,
         name: username,
         displayName: username
       },
