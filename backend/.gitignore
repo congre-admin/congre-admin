@@ -1,0 +1,9 @@
+# Google Apps Script local config (each developer configures their own)
+.clasp.json
+
+# Credentials (never commit)
+token.json
+creds.json
+
+# Logs
+*.log

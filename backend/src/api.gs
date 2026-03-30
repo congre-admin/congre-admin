@@ -177,6 +177,64 @@ function doPost(e) {
       return createResponse(actionRequestOTP(postData.payload));
     }
     
+    if (action === 'setupTOTP') {
+      return createResponse(actionSetupTOTP(postData.payload));
+    }
+    
+    if (action === 'confirmTOTP') {
+      return createResponse(actionConfirmTOTP(postData.payload));
+    }
+    
+    if (action === 'disableTOTP') {
+      return createResponse(actionDisableTOTP(postData.payload));
+    }
+    
+    if (action === 'setupPasskey') {
+      return createResponse(actionSetupPasskey(postData.payload));
+    }
+    
+    if (action === 'confirmPasskey') {
+      return createResponse(actionConfirmPasskey(postData.payload));
+    }
+    
+    if (action === 'deletePasskey') {
+      const session = validateSession(postData.sessionToken);
+      if (!session.valid) return createResponse({ error: 'ERR_AUTH_INVALID' });
+      return createResponse(actionDeletePasskey(session, postData.payload));
+    }
+    
+    if (action === 'getAuthMethods') {
+      const session = validateSession(postData.sessionToken);
+      if (!session.valid) return createResponse({ error: 'ERR_AUTH_INVALID' });
+      return createResponse(actionGetAuthMethods(session));
+    }
+    
+    if (action === 'updateAuthConfig') {
+      const session = validateSession(postData.sessionToken);
+      if (!session.valid) return createResponse({ error: 'ERR_AUTH_INVALID' });
+      return createResponse(actionUpdateAuthConfig(session, postData.payload));
+    }
+    
+    if (action === 'changePassword') {
+      const session = validateSession(postData.sessionToken);
+      if (!session.valid) return createResponse({ error: 'ERR_AUTH_INVALID' });
+      return createResponse(actionChangePassword(session, postData.payload));
+    }
+    
+    if (action === 'deleteAccount') {
+      const session = validateSession(postData.sessionToken);
+      if (!session.valid) return createResponse({ error: 'ERR_AUTH_INVALID' });
+      return createResponse(actionDeleteAccount(session, postData.payload));
+    }
+    
+    if (action === 'requestPasswordReset') {
+      return createResponse(actionRequestPasswordReset(postData.payload));
+    }
+    
+    if (action === 'resetPassword') {
+      return createResponse(actionResetPassword(postData.payload));
+    }
+    
     if (action === 'logout') {
       return createResponse(actionLogout(postData.payload));
     }
@@ -202,6 +260,10 @@ function doPost(e) {
     
     if (action === 'getPerfiles') {
       return createResponse(actionGetPerfiles());
+    }
+    
+    if (action === 'getCongregacion') {
+      return createResponse(actionGetCongregacion());
     }
     
     if (action === 'getPermisos') {
@@ -236,6 +298,12 @@ function doPost(e) {
       const perm = checkPermission(session, 'write', 'core');
       if (!perm.allowed) return createResponse({ error: perm.error });
       return createResponse(actionDeleteProfile(postData.payload));
+    }
+    
+    if (action === 'updateUser') {
+      const session = validateSession(postData.sessionToken);
+      if (!session.valid) return createResponse({ error: 'ERR_AUTH_INVALID' });
+      return createResponse(actionUpdateUser(session, postData.payload));
     }
     
     // --- Instalación ---
@@ -375,7 +443,7 @@ function updateOrInsert(sheet, item, onlyIfNew, options) {
   
   const values = headers.map(h => {
     const val = newItem[h];
-    if (val === undefined) return '';
+    if (val === undefined || val === null) return '';
     return (typeof val === 'object') ? JSON.stringify(val) : val;
   });
   
@@ -594,6 +662,103 @@ function getUserById(id) {
 }
 
 /**
+ * Hashea una contraseña usando SHA-256
+ * @param {string} password - Contraseña en texto plano
+ * @return {string} Hash de la contraseña
+ */
+function hashPassword(password) {
+  if (!password) return '';
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, password);
+  return digest.map(function(b) {
+    return ('00' + (b < 0 ? b + 256 : b).toString(16)).slice(-2);
+  }).join('');
+}
+
+/**
+ * Parsea auth_config del usuario (maneja tanto string como objeto ya parseado)
+ * @param {string|object} authConfig - auth_config del usuario
+ * @return {object} auth_config parseado
+ */
+function parseAuthConfig(authConfig) {
+  const defaults = { default_method: 'passkey', password_hash: '', recovery_enabled: true, email_otp: { enabled: false }, totp: { enabled: false }, passkeys: [] };
+  if (!authConfig) return defaults;
+  try {
+    return typeof authConfig === 'string' ? JSON.parse(authConfig) : authConfig;
+  } catch (e) {
+    return defaults;
+  }
+}
+
+/**
+ * Parsea metadata del usuario (maneja tanto string como objeto ya parseado)
+ * @param {string|object} metadata - metadata del usuario
+ * @return {object} metadata parseado
+ */
+function parseUserMetadata(metadata) {
+  const defaults = { last_login: null, last_password_change: null, failed_login_attempts: 0, created_from_ip: null };
+  if (!metadata) return defaults;
+  try {
+    return typeof metadata === 'string' ? JSON.parse(metadata) : metadata;
+  } catch (e) {
+    return defaults;
+  }
+}
+
+/**
+ * Verifica una contraseña contra un hash
+ * @param {string} password - Contraseña en texto plano
+ * @param {string} hash - Hash almacenado
+ * @return {boolean} true si coincide
+ */
+function verifyPassword(password, hash) {
+  if (!password || !hash) return false;
+  return hashPassword(password) === hash;
+}
+
+/**
+ * Valida requisitos de complejidad de contraseña
+ * @param {string} password - Contraseña a validar
+ * @return {object} { valid: boolean, errors: string[] }
+ */
+function validatePasswordComplexity(password) {
+  const errors = [];
+  
+  if (!password) {
+    errors.push('La contraseña es requerida');
+    return { valid: false, errors };
+  }
+  
+  if (password.length < 8) {
+    errors.push('Mínimo 8 caracteres');
+  }
+  
+  if (password.length > 128) {
+    errors.push('Máximo 128 caracteres');
+  }
+  
+  if (!/[a-z]/.test(password)) {
+    errors.push('Al menos una letra minúscula');
+  }
+  
+  if (!/[A-Z]/.test(password)) {
+    errors.push('Al menos una letra mayúscula');
+  }
+  
+  if (!/[0-9]/.test(password)) {
+    errors.push('Al menos un número');
+  }
+  
+  if (!/[^a-zA-Z0-9]/.test(password)) {
+    errors.push('Al menos un carácter especial');
+  }
+  
+  return {
+    valid: errors.length === 0,
+    errors
+  };
+}
+
+/**
  * Crea un nuevo usuario
  * @param {object} userData - Datos del usuario
  * @return {object} Usuario creado
@@ -608,17 +773,42 @@ function createUser(userData) {
     throw new Error('ERR_USER_EXISTS: El usuario ya existe');
   }
   
+  // Validar contraseña (requerida)
+  if (!userData.password) {
+    throw new Error('ERR_PASSWORD_REQUIRED: La contraseña es requerida');
+  }
+  const pwValidation = validatePasswordComplexity(userData.password);
+  if (!pwValidation.valid) {
+    throw new Error('ERR_PASSWORD_WEAK: ' + pwValidation.errors.join(', '));
+  }
+  
+  const now = new Date().toISOString();
+  const authConfig = {
+    default_method: userData.default_method || 'passkey',
+    password_hash: userData.password ? hashPassword(userData.password) : '',
+    recovery_enabled: true,
+    email_otp: { enabled: true, created_at: now },
+    totp: { enabled: false, secret: null, created_at: null },
+    passkeys: []
+  };
+  
+  const metadata = {
+    last_login: null,
+    last_password_change: userData.password ? now : null,
+    failed_login_attempts: 0,
+    created_from_ip: userData.ip || null
+  };
+  
   const user = {
     id: Utilities.getUuid(),
     username: userData.username,
+    email: userData.email || '',
     wrapped_mk: userData.wrapped_mk || '',
     perfilId: userData.perfilId || 'p_publicador',
-    personaId: userData.personaId || null,
-    auth_factor: userData.auth_factor || 'email',
-    totp_secret: userData.totp_secret || null,
-    public_key: userData.public_key || null,
-    created_at: new Date().toISOString(),
-    _ts: new Date().toISOString()
+    auth_config: JSON.stringify(authConfig),
+    metadata: JSON.stringify(metadata),
+    created_at: now,
+    _ts: now
   };
   
   updateOrInsert(sheet, user, false);
@@ -643,9 +833,18 @@ function updateUser(id, updates) {
     throw new Error('ERR_USER_NOT_FOUND: Usuario no encontrado');
   }
   
+  // Handle auth_config and metadata as JSON strings
+  let processedUpdates = { ...updates };
+  if (updates.auth_config && typeof updates.auth_config === 'object') {
+    processedUpdates.auth_config = JSON.stringify(updates.auth_config);
+  }
+  if (updates.metadata && typeof updates.metadata === 'object') {
+    processedUpdates.metadata = JSON.stringify(updates.metadata);
+  }
+  
   const updatedUser = {
     ...user,
-    ...updates,
+    ...processedUpdates,
     _ts: new Date().toISOString()
   };
   
@@ -654,6 +853,147 @@ function updateUser(id, updates) {
   invalidateCache('u:');
   
   return { success: true, user: { id: updatedUser.id, username: updatedUser.username } };
+}
+
+/**
+ * Actualiza la contraseña de un usuario
+ * @param {string} userId - ID del usuario
+ * @param {string} newPassword - Nueva contraseña
+ * @return {object} Resultado
+ */
+function updateUserPassword(userId, newPassword) {
+  const sheet = getUsuariosSheet();
+  if (!sheet) throw new Error('Hoja Usuarios no encontrada');
+  
+  const user = getUserById(userId);
+  if (!user) {
+    throw new Error('ERR_USER_NOT_FOUND: Usuario no encontrado');
+  }
+  
+  const password_hash = hashPassword(newPassword);
+  const now = new Date().toISOString();
+  
+  // Parse existing auth_config and update password_hash inside
+  let authConfig = { default_method: 'passkey', password_hash: '', recovery_enabled: true, email_otp: { enabled: false }, totp: { enabled: false }, passkeys: [] };
+  try {
+    if (user.auth_config) {
+      authConfig = parseAuthConfig(user.auth_config);
+    }
+  } catch (e) {
+    // Use default if parse fails
+  }
+  
+  authConfig.password_hash = password_hash;
+  
+  // Update metadata for password change tracking
+  let metadata = parseUserMetadata(user.metadata);
+  metadata.last_password_change = now;
+  
+  const updatedUser = {
+    ...user,
+    auth_config: JSON.stringify(authConfig),
+    metadata: JSON.stringify(metadata),
+    _ts: now
+  };
+  
+  updateOrInsert(sheet, updatedUser, false);
+  clearCache(getCoreSpreadsheetId(), 'Usuarios');
+  invalidateCache('u:');
+  
+  return { success: true };
+}
+
+/**
+ * Actualiza el metadata de un usuario
+ * @param {string} userId - ID del usuario
+ * @param {object} updates - Campos a actualizar en metadata
+ * @return {object} Resultado
+ */
+function updateUserMetadata(userId, updates) {
+  const user = getUserById(userId);
+  if (!user) {
+    throw new Error('ERR_USER_NOT_FOUND: Usuario no encontrado');
+  }
+  
+  let metadata = { last_login: null, last_password_change: null, failed_login_attempts: 0, created_from_ip: null };
+  try {
+    metadata = parseUserMetadata(user.metadata);
+  } catch (e) {
+    // Use default
+  }
+  
+  metadata = { ...metadata, ...updates };
+  
+  return updateUser(userId, { metadata: JSON.stringify(metadata) });
+}
+
+/**
+ * Incrementa los intentos de login fallidos
+ * @param {string} userId - ID del usuario
+ */
+function incrementFailedLoginAttempts(userId) {
+  const user = getUserById(userId);
+  if (!user) return;
+  
+  let metadata = { last_login: null, last_password_change: null, failed_login_attempts: 0, created_from_ip: null };
+  try {
+    metadata = parseUserMetadata(user.metadata);
+  } catch (e) {}
+  
+  metadata.failed_login_attempts = (metadata.failed_login_attempts || 0) + 1;
+  updateUser(userId, { metadata: JSON.stringify(metadata) });
+}
+
+/**
+ * Reinicia los intentos de login fallidos
+ * @param {string} userId - ID del usuario
+ */
+function resetFailedLoginAttempts(userId) {
+  const user = getUserById(userId);
+  if (!user) return;
+  
+  let metadata = { last_login: null, last_password_change: null, failed_login_attempts: 0, created_from_ip: null };
+  try {
+    metadata = parseUserMetadata(user.metadata);
+  } catch (e) {}
+  
+  metadata.failed_login_attempts = 0;
+  updateUser(userId, { metadata: JSON.stringify(metadata) });
+}
+
+/**
+ * Obtiene un valor específico del metadata de un usuario
+ * @param {string} userId - ID del usuario
+ * @param {string} key - Clave del metadata
+ * @return {any} Valor de la clave
+ */
+function getUserMetadataValue(userId, key) {
+  const user = getUserById(userId);
+  if (!user) return null;
+  
+  let metadata = { last_login: null, last_password_change: null, failed_login_attempts: 0, created_from_ip: null };
+  try {
+    metadata = parseUserMetadata(user.metadata);
+  } catch (e) {}
+  
+  return metadata[key] || null;
+}
+
+/**
+ * Invalida todas las sesiones de un usuario
+ * @param {string} userId - ID del usuario
+ */
+function invalidateAllUserSessions(userId) {
+  const sessions = getUserSessions(userId);
+  if (sessions && sessions.length > 0) {
+    sessions.forEach(session => {
+      try {
+        invalidateSession(session.token);
+      } catch (e) {
+        Logger.log('Error invalidating session: ' + e.message);
+      }
+    });
+  }
 }
 
 /**
@@ -710,7 +1050,7 @@ let _sessionIndex = null;
 function _loadSessionIndex() {
   if (_sessionIndex) return _sessionIndex;
   
-  const stored = PropertiesService.getScriptCache().get('session_index');
+  const stored = CacheService.getScriptCache().get('session_index');
   if (stored) {
     _sessionIndex = JSON.parse(stored);
     return _sessionIndex;
@@ -723,30 +1063,58 @@ function _loadSessionIndex() {
 function _saveSessionIndex() {
   if (!_sessionIndex) return;
   try {
-    PropertiesService.getScriptCache().put('session_index', JSON.stringify(_sessionIndex), 300);
+    CacheService.getScriptCache().put('session_index', JSON.stringify(_sessionIndex), SESSION_TTL);
   } catch (e) {}
 }
 
 function _addToSessionIndex(token, userId, expiresAt) {
-  const idx = _loadSessionIndex();
+  let idx = _loadSessionIndex();
   idx[token] = { userId, expiresAt };
   _saveSessionIndex();
 }
 
 function _removeFromSessionIndex(token) {
-  const idx = _loadSessionIndex();
+  let idx = _loadSessionIndex();
   delete idx[token];
   _saveSessionIndex();
 }
 
+function _findSessionInProperties(token) {
+  const allProperties = PropertiesService.getUserProperties();
+  const keys = allProperties.getKeys();
+  
+  for (const key of keys) {
+    if (!key.startsWith('sessions_')) continue;
+    
+    const sessions = JSON.parse(allProperties.getProperty(key) || '[]');
+    for (const session of sessions) {
+      if (session.token === token) {
+        if (new Date(session.expiresAt) > new Date()) {
+          return session;
+        }
+      }
+    }
+  }
+  
+  return null;
+}
+
 /**
- * Valida un token de sesión (usa índice híbrido)
+ * Valida un token de sesión (usa índice híbrido con fallback a PropertiesService)
  * @param {string} token - Token de sesión
  * @return {object|null} Datos de sesión o null si es inválido
  */
 function validateSession(token) {
-  const idx = _loadSessionIndex();
-  const session = idx[token];
+  let idx = _loadSessionIndex();
+  let session = idx[token];
+  
+  if (!session) {
+    session = _findSessionInProperties(token);
+    if (session) {
+      idx[token] = session;
+      _saveSessionIndex();
+    }
+  }
   
   if (session) {
     if (new Date(session.expiresAt) > new Date()) {
@@ -870,7 +1238,7 @@ function getActiveSessions(userId) {
 function invalidateAllSessions(userId) {
   PropertiesService.getUserProperties().deleteProperty('sessions_' + userId);
   
-  const idx = _loadSessionIndex();
+  let idx = _loadSessionIndex();
   const keysToRemove = Object.keys(idx).filter(k => idx[k].userId === userId);
   keysToRemove.forEach(k => delete idx[k]);
   _saveSessionIndex();
@@ -885,14 +1253,68 @@ function invalidateAllSessions(userId) {
  */
 function actionRegister(payload) {
   try {
+    // Validate email is provided
+    if (!payload.email || !payload.email.trim()) {
+      return { success: false, error: 'ERR_EMAIL_REQUIRED: El email es requerido' };
+    }
+    
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(payload.email.trim())) {
+      return { success: false, error: 'ERR_EMAIL_INVALID: Formato de email inválido' };
+    }
+    
     const result = createUser({
       username: payload.username,
+      email: payload.email.trim(),
+      password: payload.password,
       wrapped_mk: payload.wrapped_mk,
       perfilId: payload.perfilId,
-      personaId: payload.personaId,
-      auth_factor: payload.auth_factor || 'email',
-      totp_secret: payload.totp_secret,
-      public_key: payload.public_key
+      ip: payload.ip
+    });
+    
+    // Send welcome email
+    try {
+      sendWelcomeEmail(payload.email, payload.username);
+    } catch (emailErr) {
+      Logger.log('Error sending welcome email: ' + emailErr.message);
+    }
+    
+    // Send OTP email for verification (also verifies email exists)
+    try {
+      const otpResult = actionRequestOTP({
+        username: payload.username,
+        verifyOnly: true
+      });
+      if (!otpResult.success) {
+        Logger.log('Warning: Could not send initial OTP: ' + otpResult.error);
+      }
+    } catch (otpErr) {
+      Logger.log('Warning: Error sending initial OTP: ' + otpErr.message);
+    }
+    
+    return {
+      success: true,
+      user: result.user
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: err.message
+    };
+  }
+}
+
+/**
+ * Acción: updateUser - Actualiza un usuario
+ * @param {object} session - Sesión validada
+ * @param {object} payload - Datos a actualizar
+ * @return {object} Respuesta
+ */
+function actionUpdateUser(session, payload) {
+  try {
+    const result = updateUser(session.userId, {
+      wrapped_mk: payload.wrapped_mk
     });
     
     return {
@@ -908,13 +1330,220 @@ function actionRegister(payload) {
 }
 
 /**
+ * Acción: setupTOTP - Genera secreto TOTP para un usuario
+ * @param {object} payload - Datos del usuario
+ * @return {object} Respuesta con secreto y URI para QR
+ */
+function actionSetupTOTP(payload) {
+  try {
+    let { username, password, sessionToken } = payload;
+    
+    let user = null;
+    
+    // If sessionToken provided, validate session and get user
+    if (sessionToken) {
+      const session = validateSession(sessionToken);
+      if (!session.valid) {
+        return { success: false, error: 'ERR_AUTH_INVALID: Sesión inválida o expirada' };
+      }
+      user = getUserById(session.userId);
+    } else {
+      // Fall back to password verification
+      if (!username || !password) {
+        return { success: false, error: 'ERR_INVALID_CREDENTIALS: Usuario y contraseña requeridos' };
+      }
+      
+      user = getUserByUsername(username);
+      if (!user) {
+        return { success: false, error: 'ERR_USER_NOT_FOUND' };
+      }
+      
+      // Parse auth_config to get password_hash
+      let authConfig = { password_hash: '', totp: { enabled: false } };
+      try {
+        authConfig = parseAuthConfig(user.auth_config);
+      } catch (e) {}
+      
+      // Verificar contraseña using auth_config.password_hash
+      if (!verifyPassword(password, authConfig.password_hash)) {
+        return { success: false, error: 'ERR_INVALID_CREDENTIALS: Contraseña incorrecta' };
+      }
+    }
+    
+    if (!user) {
+      return { success: false, error: 'ERR_USER_NOT_FOUND' };
+    }
+    
+    username = user.username;
+    
+    // Generar secreto TOTP
+    const totpResult = generateTOTPSecret(username);
+    if (!totpResult.success) {
+      return { success: false, error: totpResult.error };
+    }
+    
+    // Guardar secreto temporalmente (no confirmado aún)
+    PropertiesService.getUserProperties().setProperty(
+      'totp_pending_' + username,
+      JSON.stringify({
+        secret: totpResult.secret,
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString()
+      })
+    );
+    
+    return {
+      success: true,
+      secret: totpResult.secret,
+      otpURI: totpResult.otpURI
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Acción: confirmTOTP - Confirma la configuración de TOTP
+ * @param {object} payload - Datos con código de verificación
+ * @return {object} Resultado
+ */
+function actionConfirmTOTP(payload) {
+  try {
+    const { username, password, code, sessionToken } = payload;
+    
+    let user = null;
+    let resolvedUsername = username;
+    
+    // If sessionToken provided, validate session and get user
+    if (sessionToken) {
+      const session = validateSession(sessionToken);
+      if (!session.valid) {
+        return { success: false, error: 'ERR_AUTH_INVALID: Sesión inválida o expirada' };
+      }
+      user = getUserById(session.userId);
+      resolvedUsername = user?.username || username;
+    } else {
+      // Fall back to password verification
+      if (!username || !password) {
+        return { success: false, error: 'ERR_INVALID_CREDENTIALS: Usuario y contraseña requeridos' };
+      }
+      
+      user = getUserByUsername(username);
+      if (!user) {
+        return { success: false, error: 'ERR_USER_NOT_FOUND' };
+      }
+      
+      // Parse auth_config to get password_hash
+      let authConfig = { password_hash: '', totp: { enabled: false, secret: null } };
+      try {
+        authConfig = parseAuthConfig(user.auth_config);
+      } catch (e) {}
+      
+      // Verificar contraseña using auth_config.password_hash
+      if (!verifyPassword(password, authConfig.password_hash)) {
+        return { success: false, error: 'ERR_INVALID_CREDENTIALS: Contraseña incorrecta' };
+      }
+    }
+    
+    if (!user) {
+      return { success: false, error: 'ERR_USER_NOT_FOUND' };
+    }
+    
+    // Obtener secreto pendiente
+    const pendingData = PropertiesService.getUserProperties().getProperty('totp_pending_' + resolvedUsername);
+    if (!pendingData) {
+      return { success: false, error: 'ERR_NO_PENDING_TOTP: No hay configuración TOTP pendiente' };
+    }
+    
+    const pending = JSON.parse(pendingData);
+    
+    // Verificar si no ha expirado
+    if (new Date(pending.expiresAt) < new Date()) {
+      PropertiesService.getUserProperties().deleteProperty('totp_pending_' + resolvedUsername);
+      return { success: false, error: 'ERR_TOTP_EXPIRED: La configuración ha expirado' };
+    }
+    
+    // Verificar código TOTP
+    const isValid = verifyTOTP(pending.secret, code);
+    if (!isValid) {
+      return { success: false, error: 'ERR_INVALID_CODE: Código inválido' };
+    }
+    
+    // Parse auth_config again to get fresh data
+    let authConfig = { password_hash: '', totp: { enabled: false, secret: null }, passkeys: [] };
+    try {
+      authConfig = parseAuthConfig(user.auth_config);
+    } catch (e) {}
+    
+    // Update auth_config with TOTP
+    authConfig.totp = {
+      enabled: true,
+      secret: pending.secret,
+      created_at: new Date().toISOString()
+    };
+    
+    updateUser(user.id, { auth_config: JSON.stringify(authConfig) });
+    
+    // Limpiar cache de usuarios para que el login use datos frescos
+    clearCache(getCoreSpreadsheetId(), 'Usuarios');
+    CacheService.getScriptCache().remove('u:un:' + resolvedUsername);
+    CacheService.getScriptCache().remove('u:id:' + user.id);
+    
+    
+    // Limpiar secreto pendiente
+    PropertiesService.getUserProperties().deleteProperty('totp_pending_' + resolvedUsername);
+    
+    return { success: true, message: 'TOTP configurado correctamente' };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Acción: disableTOTP - Desactiva TOTP para un usuario
+ * @param {object} payload - Datos del usuario
+ * @return {object} Resultado
+ */
+function actionDisableTOTP(payload) {
+  try {
+    const { sessionToken } = payload;
+    
+    // Validar sesión
+    const session = validateSession(sessionToken);
+    if (!session.valid) {
+      return { success: false, error: 'ERR_AUTH_INVALID' };
+    }
+    
+    // Get user to parse auth_config
+    const user = getUserById(session.userId);
+    if (!user) {
+      return { success: false, error: 'ERR_USER_NOT_FOUND' };
+    }
+    
+    let authConfig = { totp: { enabled: false, secret: null } };
+    try {
+      authConfig = parseAuthConfig(user.auth_config);
+    } catch (e) {}
+    
+    // Disable TOTP in auth_config
+    authConfig.totp = { enabled: false, secret: null, created_at: null };
+    
+    updateUser(session.userId, { auth_config: JSON.stringify(authConfig) });
+    
+    return { success: true, message: 'TOTP desactivado' };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
  * Acción: login - Autentica usuario y devuelve token
  * @param {object} payload - Credenciales
  * @return {object} Respuesta con token
  */
 function actionLogin(payload) {
   try {
-    const { username, code, authType } = payload;
+    const { username, password, method, code, passkeyAssertion } = payload;
     
     // Rate limiting: max 5 intentos por minuto por username
     const rateLimit = checkRateLimit('login:' + username, 5, 60);
@@ -922,38 +1551,123 @@ function actionLogin(payload) {
       return { 
         success: false, 
         error: 'ERR_RATE_LIMITED: Demasiados intentos. Intenta más tarde.',
-        retryAfter: rateLimit.resetIn
+        retryAfter: rateLimit.resetIn,
+        step: 'password'
       };
     }
     
     // Buscar usuario
     const user = getUserByUsername(username);
     if (!user) {
-      return { success: false, error: 'ERR_AUTH_INVALID: Usuario no encontrado' };
+      return { success: false, error: 'ERR_AUTH_INVALID: Usuario no encontrado', step: 'password' };
     }
     
-    // Verificar factor de autenticación
-    if (authType === 'totp' || user.auth_factor === 'totp') {
-      if (!code) {
-        return { success: false, error: 'ERR_OTP_REQUIRED: Se requiere código TOTP' };
+    // Parse auth_config
+    let authConfig = parseAuthConfig(user.auth_config);
+    
+    // STEP 1: Verificar contraseña (always required as first step)
+    if (!password) {
+      return { success: false, error: 'ERR_PASSWORD_REQUIRED: Ingrese su contraseña', step: 'password' };
+    }
+    
+    // Verificar contraseña using auth_config.password_hash
+    if (!verifyPassword(password, authConfig.password_hash)) {
+      incrementFailedLoginAttempts(user.id);
+      logAccess(username, false, 'Contraseña inválida');
+      return { success: false, error: 'ERR_AUTH_INVALID: Contraseña incorrecta', step: 'password' };
+    }
+    
+    // Reset failed attempts on successful password verify
+    resetFailedLoginAttempts(user.id);
+    
+    // STEP 2: Detect enabled auth methods and handle based on method parameter
+    const enabledMethods = [];
+    if (authConfig.passkeys && authConfig.passkeys.length > 0) enabledMethods.push('passkey');
+    if (authConfig.totp && authConfig.totp.enabled) enabledMethods.push('totp');
+    if (authConfig.email_otp && authConfig.email_otp.enabled) enabledMethods.push('email_otp');
+    
+    // If no method specified
+    if (!method) {
+      // Auto-proceed if only one method is enabled
+      if (enabledMethods.length === 1) {
+        const singleMethod = enabledMethods[0];
+        
+        // For email_otp, automatically send the code
+        if (singleMethod === 'email_otp') {
+          const otpResult = actionRequestOTP({ username: username });
+          if (!otpResult.success) {
+            return otpResult;
+          }
+          return {
+            success: false,
+            step: singleMethod,
+            availableMethods: enabledMethods,
+            message: 'Código enviado automáticamente'
+          };
+        }
+        
+        // For totp or passkey, ask for the code/credential
+        return {
+          success: false,
+          step: singleMethod,
+          availableMethods: enabledMethods,
+          message: 'Ingrese su código'
+        };
       }
-      // Verificar TOTP (en implementación real, usar библиотека)
-      const isValid = verifyTOTP(user.totp_secret, code);
+      
+      // Multiple methods - let user choose
+      return {
+        success: false,
+        step: 'method',
+        availableMethods: enabledMethods,
+        defaultMethod: authConfig.default_method || 'passkey',
+        message: 'Seleccione método de autenticación'
+      };
+    }
+    
+    // STEP 3: Verify the selected auth method
+    if (method === 'totp') {
+      if (!authConfig.totp || !authConfig.totp.enabled || !authConfig.totp.secret) {
+        return { success: false, error: 'ERR_TOTP_NOT_CONFIGURED: TOTP no configurado', step: 'method' };
+      }
+      if (!code) {
+        return { success: false, error: 'ERR_CODE_REQUIRED: Ingrese código TOTP', step: 'totp' };
+      }
+      const isValid = verifyTOTP(authConfig.totp.secret, code);
       if (!isValid) {
         logAccess(username, false, 'TOTP inválido');
-        return { success: false, error: 'ERR_AUTH_INVALID: Código TOTP inválido' };
+        return { success: false, error: 'ERR_AUTH_INVALID: Código TOTP inválido', step: 'totp' };
       }
-    } else if (authType === 'email' || user.auth_factor === 'email') {
+    } else if (method === 'email_otp') {
+      if (!authConfig.email_otp || !authConfig.email_otp.enabled) {
+        return { success: false, error: 'ERR_EMAIL_OTP_NOT_CONFIGURED: Email OTP no configurado', step: 'method' };
+      }
       if (!code) {
-        return { success: false, error: 'ERR_OTP_REQUIRED: Se requiere código de verificación' };
+        return { success: false, error: 'ERR_CODE_REQUIRED: Ingrese código del email', step: 'email_otp' };
       }
-      // Verificar código OTP de email
       const isValid = verifyEmailOTP(username, code);
       if (!isValid) {
-        logAccess(username, false, 'OTP email inválido');
-        return { success: false, error: 'ERR_AUTH_INVALID: Código inválido' };
+        logAccess(username, false, 'Email OTP inválido');
+        return { success: false, error: 'ERR_AUTH_INVALID: Código inválido', step: 'email_otp' };
+      }
+    } else if (method === 'passkey') {
+      if (!authConfig.passkeys || authConfig.passkeys.length === 0) {
+        return { success: false, error: 'ERR_PASSKEY_NOT_CONFIGURED: Passkey no configurado', step: 'method' };
+      }
+      if (!passkeyAssertion) {
+        return { success: false, error: 'ERR_PASSKEY_REQUIRED: Autenticación con passkey requerida', step: 'passkey' };
+      }
+      // Passkey verification done on frontend, we just validate the result
+      // The frontend sends the verified credential ID
+      const validCredential = authConfig.passkeys.find(pk => pk.id === passkeyAssertion.credentialId);
+      if (!validCredential) {
+        logAccess(username, false, 'Passkey inválido');
+        return { success: false, error: 'ERR_AUTH_INVALID: Passkey no reconocido', step: 'passkey' };
       }
     }
+    
+    // Update last login metadata
+    updateUserMetadata(user.id, { last_login: new Date().toISOString() });
     
     // Generar token de sesión
     const session = generateSessionToken(user.id);
@@ -989,24 +1703,490 @@ function actionChallenge(payload) {
       return { success: false, error: 'ERR_USER_NOT_FOUND' };
     }
     
-    // Generar desafío (en implementación real, usar WebAuthn)
-    const challenge = Utilities.getUuid();
+    // Parse auth_config to get passkeys
+    let authConfig = { passkeys: [] };
+    try {
+      authConfig = parseAuthConfig(user.auth_config);
+    } catch (e) {}
+    
+    // Generate challenge - proper random base64 (standard, not URL-safe)
+    const randomBytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid() + new Date().getTime());
+    const challenge = Utilities.base64Encode(randomBytes);
     
     // Guardar desafío temporalmente
     PropertiesService.getUserProperties().setProperty(
-      'challenge_' + payload.username,
+      'passkey_challenge_' + payload.username,
       JSON.stringify({
         challenge: challenge,
         createdAt: new Date().toISOString(),
-        expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString() // 5 min
+        expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString()
       })
     );
+    
+    // Get existing passkeys for allowCredentials (IDs are already base64 from browser)
+    const existingCredentials = authConfig.passkeys.map(pk => ({
+      id: pk.id,
+      type: 'public-key'
+    }));
+    
+    // Derive rpId from origin (use hostname, default to localhost)
+    let rpId = 'localhost';
+    if (payload.origin) {
+      try {
+        const url = Utilities.newBlob(payload.origin).getDataAsString();
+        const match = url.match(/^https?:\/\/([^:\/]+)/);
+        if (match && match[1]) {
+          rpId = match[1];
+        }
+      } catch (e) {
+        rpId = 'localhost';
+      }
+    }
     
     return {
       success: true,
       challenge: challenge,
-      publicKey: user.public_key
+      rpId: rpId,
+      timeout: 60000,
+      allowCredentials: existingCredentials,
+      userVerification: 'preferred'
     };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Acción: setupPasskey - Prepara registro de nuevo passkey
+ * @param {object} payload - { username, password, deviceName }
+ * @return {object} Respuesta con desafío para registro
+ */
+function actionSetupPasskey(payload) {
+  try {
+    let { username, password, deviceName, sessionToken } = payload;
+    
+    let user = null;
+    
+    // If sessionToken provided, validate session and get user
+    if (sessionToken) {
+      const session = validateSession(sessionToken);
+      if (!session.valid) {
+        return { success: false, error: 'ERR_AUTH_INVALID: Sesión inválida o expirada' };
+      }
+      user = getUserById(session.userId);
+    } else {
+      // Fall back to password verification
+      user = getUserByUsername(username);
+      if (!user) {
+        return { success: false, error: 'ERR_USER_NOT_FOUND' };
+      }
+      
+      let authConfigVerify = { password_hash: '', passkeys: [] };
+      try {
+        authConfigVerify = parseAuthConfig(user.auth_config);
+      } catch (e) {}
+      
+      if (!verifyPassword(password, authConfigVerify.password_hash)) {
+        return { success: false, error: 'ERR_AUTH_INVALID: Contraseña incorrecta' };
+      }
+    }
+    
+    if (!user) {
+      return { success: false, error: 'ERR_USER_NOT_FOUND' };
+    }
+    
+    username = user.username;
+    
+    let authConfig = { password_hash: '', passkeys: [] };
+    try {
+      authConfig = parseAuthConfig(user.auth_config);
+    } catch (e) {}
+    
+    // Generate challenge for registration - proper random base64 (standard, not URL-safe)
+    const randomBytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid() + new Date().getTime());
+    const challenge = Utilities.base64Encode(randomBytes);
+    
+    // Generate user ID for WebAuthn - proper base64 encoding (standard, not URL-safe)
+    const userIdBytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, username + new Date().getTime());
+    const userId = Utilities.base64Encode(userIdBytes);
+    
+    // Store pending passkey setup
+    const pendingData = {
+      challenge: challenge,
+      deviceName: deviceName || 'Dispositivo nuevo',
+      username: username,
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString()
+    };
+
+    PropertiesService.getUserProperties().setProperty(
+      'passkey_setup_' + username,
+      JSON.stringify(pendingData)
+    );
+
+    // Derive rpId from origin (use hostname, default to localhost)
+    let rpId = 'localhost';
+    if (payload.origin) {
+      try {
+        const url = Utilities.newBlob(payload.origin).getDataAsString();
+        const match = url.match(/^https?:\/\/([^:\/]+)/);
+        if (match && match[1]) {
+          rpId = match[1];
+        }
+      } catch (e) {
+        rpId = 'localhost';
+      }
+    }
+
+    return {
+      success: true,
+      challenge: challenge,
+      rpId: rpId,
+      timeout: 60000,
+      user: {
+        id: userId,
+        name: username,
+        displayName: username
+      },
+      pubKeyCredParams: [
+        { type: 'public-key', alg: -7 },
+        { type: 'public-key', alg: -257 }
+      ],
+      attestation: 'preferred',
+      excludeCredentials: authConfig.passkeys.map(pk => ({
+        id: pk.id,
+        type: 'public-key'
+      }))
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Acción: confirmPasskey - Confirma registro de passkey
+ * @param {object} payload - { username, password, attestation }
+ * @return {object} Resultado
+ */
+function actionConfirmPasskey(payload) {
+  try {
+    const { username, password, attestation, sessionToken } = payload;
+    
+    let user = null;
+    let resolvedUsername = username;
+    
+    // If sessionToken provided, validate session and get user
+    if (sessionToken) {
+      const session = validateSession(sessionToken);
+      if (!session.valid) {
+        return { success: false, error: 'ERR_AUTH_INVALID: Sesión inválida o expirada' };
+      }
+      user = getUserById(session.userId);
+      resolvedUsername = user?.username || username;
+    } else {
+      // Fall back to password verification
+      user = getUserByUsername(username);
+      if (!user) {
+        return { success: false, error: 'ERR_USER_NOT_FOUND' };
+      }
+      
+      // Get pending setup data
+      const pendingStr = PropertiesService.getUserProperties().getProperty('passkey_setup_' + username);
+      if (!pendingStr) {
+        return { success: false, error: 'ERR_PASSKEY_SETUP_EXPIRED: La configuración expiró' };
+      }
+      
+      const pending = JSON.parse(pendingStr);
+      
+      // Check expiry
+      if (new Date(pending.expiresAt) < new Date()) {
+        PropertiesService.getUserProperties().deleteProperty('passkey_setup_' + username);
+        return { success: false, error: 'ERR_PASSKEY_SETUP_EXPIRED: La configuración expiró' };
+      }
+      
+      // Verify password again
+      let authConfigVerify = { password_hash: '', passkeys: [] };
+      try {
+        authConfigVerify = parseAuthConfig(user.auth_config);
+      } catch (e) {}
+      
+      if (!verifyPassword(password, authConfigVerify.password_hash)) {
+        return { success: false, error: 'ERR_AUTH_INVALID: Contraseña incorrecta' };
+      }
+    }
+    
+    if (!user) {
+      return { success: false, error: 'ERR_USER_NOT_FOUND' };
+    }
+    
+    let authConfig = { password_hash: '', passkeys: [] };
+    try {
+      authConfig = parseAuthConfig(user.auth_config);
+    } catch (e) {}
+    
+    // Get pending setup data
+    const pendingStr = PropertiesService.getUserProperties().getProperty('passkey_setup_' + resolvedUsername);
+    if (!pendingStr) {
+      return { success: false, error: 'ERR_PASSKEY_SETUP_EXPIRED: La configuración expiró' };
+    }
+    
+    const pending = JSON.parse(pendingStr);
+    
+    // Check expiry
+    if (new Date(pending.expiresAt) < new Date()) {
+      PropertiesService.getUserProperties().deleteProperty('passkey_setup_' + resolvedUsername);
+      return { success: false, error: 'ERR_PASSKEY_SETUP_EXPIRED: La configuración expiró' };
+    }
+    
+    // Parse attestation response from frontend
+    // attestation.response.clientDataJSON contains the client data
+    // attestation.response.attestationObject contains the authenticator data
+    
+    // For simplicity, we store the credential ID from the attestation
+    // In production, you'd verify the attestation properly
+    const credentialId = attestation.id;
+    const publicKey = attestation.response.publicKey || '';
+    
+    const newPasskey = {
+      id: credentialId,
+      public_key: publicKey,
+      device_name: pending.deviceName,
+      created_at: new Date().toISOString()
+    };
+    
+    // Add to passkeys array
+    authConfig.passkeys = authConfig.passkeys || [];
+    authConfig.passkeys.push(newPasskey);
+    
+    // Update user
+    updateUser(user.id, { auth_config: JSON.stringify(authConfig) });
+    
+    // Clear cache so AuthSettings gets fresh data
+    clearCache(getCoreSpreadsheetId(), 'Usuarios');
+    CacheService.getScriptCache().remove('u:un:' + username);
+    CacheService.getScriptCache().remove('u:id:' + user.id);
+    
+    // Clear pending
+    PropertiesService.getUserProperties().deleteProperty('passkey_setup_' + username);
+    
+    return {
+      success: true,
+      message: 'Passkey configurado exitosamente',
+      passkeyId: credentialId
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Acción: deletePasskey - Elimina un passkey
+ * @param {object} session - Objeto de sesión validado
+ * @param {object} payload - { passkeyId }
+ * @return {object} Resultado
+ */
+function actionDeletePasskey(session, payload) {
+  try {
+    const { passkeyId } = payload;
+    
+    const user = getUserById(session.userId);
+    if (!user) {
+      return { success: false, error: 'ERR_USER_NOT_FOUND' };
+    }
+    
+    const username = user.username;
+    
+    // Get authConfig for the user
+    let authConfig = { passkeys: [] };
+    try {
+      authConfig = parseAuthConfig(user.auth_config);
+    } catch (e) {}
+    
+    // Remove passkey
+    const passkeyIndex = authConfig.passkeys.findIndex(pk => pk.id === passkeyId);
+    if (passkeyIndex === -1) {
+      return { success: false, error: 'ERR_PASSKEY_NOT_FOUND: Passkey no encontrado' };
+    }
+    
+    authConfig.passkeys.splice(passkeyIndex, 1);
+    
+    // Update user
+    updateUser(user.id, { auth_config: JSON.stringify(authConfig) });
+    
+    // Clear cache so AuthSettings gets fresh data
+    clearCache(getCoreSpreadsheetId(), 'Usuarios');
+    CacheService.getScriptCache().remove('u:un:' + username);
+    CacheService.getScriptCache().remove('u:id:' + user.id);
+    
+    return { success: true, message: 'Passkey eliminado' };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Acción: getAuthMethods - Obtiene métodos de auth habilitados
+ * @param {object} session - Objeto de sesión validado
+ * @return {object} Métodos disponibles
+ */
+function actionGetAuthMethods(session) {
+  try {
+    const user = getUserById(session.userId);
+    if (!user) {
+      return { success: false, error: 'ERR_USER_NOT_FOUND' };
+    }
+    
+    let authConfig = { default_method: 'passkey', passkeys: [], totp: { enabled: false }, email_otp: { enabled: false } };
+    try {
+      authConfig = parseAuthConfig(user.auth_config);
+    } catch (e) {}
+    
+    const methods = [];
+    if (authConfig.passkeys && authConfig.passkeys.length > 0) methods.push('passkey');
+    if (authConfig.totp && authConfig.totp.enabled) methods.push('totp');
+    if (authConfig.email_otp && authConfig.email_otp.enabled) methods.push('email_otp');
+    
+    return {
+      success: true,
+      methods: methods,
+      defaultMethod: authConfig.default_method,
+      passkeys: authConfig.passkeys || [],
+      totp: { enabled: authConfig.totp?.enabled || false },
+      email_otp: { enabled: authConfig.email_otp?.enabled || false },
+      recovery_enabled: authConfig.recovery_enabled ?? true
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Acción: updateAuthConfig - Actualiza configuración de autenticación
+ * @param {object} session - Sesión del usuario
+ * @param {object} payload - { default_method, recovery_enabled, email_otp_enabled }
+ * @return {object} Respuesta
+ */
+function actionUpdateAuthConfig(session, payload) {
+  try {
+    const user = getUserById(session.userId);
+    if (!user) {
+      return { success: false, error: 'ERR_USER_NOT_FOUND' };
+    }
+    
+    let authConfig = { default_method: 'passkey', password_hash: '', recovery_enabled: true, email_otp: { enabled: false }, totp: { enabled: false }, passkeys: [] };
+    try {
+      authConfig = parseAuthConfig(user.auth_config);
+    } catch (e) {}
+    
+    if (payload.default_method !== undefined) {
+      authConfig.default_method = payload.default_method;
+    }
+    if (payload.recovery_enabled !== undefined) {
+      authConfig.recovery_enabled = payload.recovery_enabled;
+    }
+    if (payload.email_otp_enabled !== undefined) {
+      if (!authConfig.email_otp) authConfig.email_otp = {};
+      authConfig.email_otp.enabled = payload.email_otp_enabled;
+    }
+    
+    updateUser(session.userId, {
+      auth_config: JSON.stringify(authConfig)
+    });
+    
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Acción: changePassword - Cambia la contraseña del usuario
+ * @param {object} session - Sesión del usuario
+ * @param {object} payload - { old_password, new_password }
+ * @return {object} Respuesta
+ */
+function actionChangePassword(session, payload) {
+  try {
+    const { old_password, new_password } = payload;
+    
+    if (!old_password || !new_password) {
+      return { success: false, error: 'ERR_INVALID_CREDENTIALS: Contraseñas requeridas' };
+    }
+    
+    if (new_password.length < 8) {
+      return { success: false, error: 'ERR_WEAK_PASSWORD: La contraseña debe tener al menos 8 caracteres' };
+    }
+    
+    const user = getUserById(session.userId);
+    if (!user) {
+      return { success: false, error: 'ERR_USER_NOT_FOUND' };
+    }
+    
+    let authConfig = { default_method: 'passkey', password_hash: '', recovery_enabled: true, email_otp: { enabled: false }, totp: { enabled: false }, passkeys: [] };
+    try {
+      authConfig = parseAuthConfig(user.auth_config);
+    } catch (e) {}
+    
+    if (!verifyPassword(old_password, authConfig.password_hash)) {
+      updateUserMetadata(session.userId, { failed_login_attempts: (getUserMetadataValue(session.userId, 'failed_login_attempts') || 0) + 1 });
+      return { success: false, error: 'ERR_INVALID_CREDENTIALS: Contraseña actual incorrecta' };
+    }
+    
+    const newHash = hashPassword(new_password);
+    authConfig.password_hash = newHash;
+    
+    updateUser(session.userId, {
+      auth_config: JSON.stringify(authConfig)
+    });
+    
+    updateUserMetadata(session.userId, { 
+      last_password_change: new Date().toISOString(),
+      failed_login_attempts: 0
+    });
+    
+    logAccess(user.username, true, 'Contraseña cambiada');
+    
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Acción: deleteAccount - Elimina la cuenta del usuario
+ * @param {object} session - Sesión del usuario
+ * @param {object} payload - { password }
+ * @return {object} Respuesta
+ */
+function actionDeleteAccount(session, payload) {
+  try {
+    const { password } = payload;
+    
+    if (!password) {
+      return { success: false, error: 'ERR_INVALID_CREDENTIALS: Contraseña requerida para eliminar cuenta' };
+    }
+    
+    const user = getUserById(session.userId);
+    if (!user) {
+      return { success: false, error: 'ERR_USER_NOT_FOUND' };
+    }
+    
+    let authConfig = { default_method: 'passkey', password_hash: '', recovery_enabled: true, email_otp: { enabled: false }, totp: { enabled: false }, passkeys: [] };
+    try {
+      authConfig = parseAuthConfig(user.auth_config);
+    } catch (e) {}
+    
+    if (!verifyPassword(password, authConfig.password_hash)) {
+      return { success: false, error: 'ERR_INVALID_CREDENTIALS: Contraseña incorrecta' };
+    }
+    
+    invalidateAllSessions(session.userId);
+    
+    deleteData('Usuarios', user.id, true);
+    
+    logAccess(user.username, true, 'Cuenta eliminada');
+    
+    return { success: true, message: 'Cuenta eliminada correctamente' };
   } catch (err) {
     return { success: false, error: err.message };
   }
@@ -1019,16 +2199,34 @@ function actionChallenge(payload) {
  */
 function actionRequestOTP(payload) {
   try {
+    // Skip rate limiting for verification emails (e.g., during registration)
+    const isVerification = payload.verifyOnly === true;
+    
     const user = getUserByUsername(payload.username);
     
     if (!user) {
       return { success: false, error: 'ERR_USER_NOT_FOUND' };
     }
     
+    // Get email from user record
+    const email = user.email || payload.username;
+    
+    // Rate limiting: max 5 requests per minute (skip for verification)
+    if (!isVerification) {
+      const rateLimit = checkRateLimit('otp:' + payload.username, 5, 60);
+      if (!rateLimit.allowed) {
+        return { 
+          success: false, 
+          error: 'ERR_RATE_LIMITED: Demasiados códigos solicitados. Intenta más tarde.',
+          retryAfter: rateLimit.resetIn
+        };
+      }
+    }
+    
     // Generar código OTP de 6 dígitos
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     
-    // Guardar código temporalmente (en producción, usar tabla)
+    // Guardar código temporalmente
     PropertiesService.getUserProperties().setProperty(
       'otp_' + payload.username,
       JSON.stringify({
@@ -1038,12 +2236,17 @@ function actionRequestOTP(payload) {
       })
     );
     
-    // Enviar email
-    sendOTPEmail(user.username, code);
+    // Enviar email con código OTP
+    try {
+      sendOTPEmail(email, code);
+    } catch (emailErr) {
+      Logger.log('Error sending OTP email: ' + emailErr.message);
+      return { success: false, error: 'ERR_EMAIL_SEND: No se pudo enviar el código por email' };
+    }
     
-    logAccess(payload.username, true, 'OTP enviado');
+    logAccess(payload.username, true, 'OTP enviado por email');
     
-    return { success: true, message: 'Código enviado' };
+    return { success: true, message: 'Código enviado por email' };
   } catch (err) {
     return { success: false, error: err.message };
   }
@@ -1055,15 +2258,39 @@ function actionRequestOTP(payload) {
  * @param {string} code - Código OTP
  */
 function sendOTPEmail(email, code) {
+  const congregationName = PropertiesService.getScriptProperties().getProperty('CONGREGATION_NAME') || 'Congregación';
+  
+  MailApp.sendEmail({
+    to: email,
+    subject: 'Código de verificación - Congre-Admin',
+    name: 'Congre-Admin',
+    body: 'Tu código de verificación es: ' + code + '\n\nEste código expira en 10 minutos.\n\nSi no solicitaste este código, puedes ignorar este email.'
+  });
+}
+
+/**
+ * Envía email de bienvenida
+ * @param {string} email - Email del destinatario
+ * @param {string} username - Nombre de usuario
+ */
+function sendWelcomeEmail(email, username) {
   try {
+    const congregationName = PropertiesService.getScriptProperties().getProperty('CONGREGATION_NAME') || 'tu congregación';
+    
     MailApp.sendEmail({
       to: email,
-      subject: 'Código de verificación - Congre-Admin',
-      body: 'Tu código de verificación es: ' + code + '\n\nEste código expira en 10 minutos.'
+      subject: 'Bienvenido a Congre-Admin',
+      name: 'Congre-Admin',
+      body: 'Hola ' + username + ',\n\n' +
+        'Tu cuenta en Congre-Admin ha sido creada exitosamente.\n\n' +
+        ' Congregación: ' + congregationName + '\n' +
+        ' Usuario: ' + username + '\n\n' +
+        'Ya puedes iniciar sesión en la aplicación.\n\n' +
+        'Si tienes alguna pregunta, contacta al administrador del sistema.'
     });
   } catch (err) {
-    Logger.log('Error enviando email: ' + err.message);
-    throw new Error('ERR_EMAIL_SEND: No se pudo enviar el email');
+    Logger.log('Error enviando email de bienvenida: ' + err.message);
+    throw new Error('ERR_EMAIL_SEND: No se pudo enviar el email de bienvenida');
   }
 }
 
@@ -1074,43 +2301,335 @@ function sendOTPEmail(email, code) {
  * @return {boolean} true si es válido
  */
 function verifyEmailOTP(username, code) {
-  const stored = PropertiesService.getUserProperties().getProperty('otp_' + username);
-  if (!stored) return false;
-  
-  const otpData = JSON.parse(stored);
-  
-  // Verificar si no ha expirado
-  if (new Date(otpData.expiresAt) < new Date()) {
+  try {
+    const stored = PropertiesService.getUserProperties().getProperty('otp_' + username);
+    if (!stored) return false;
+    
+    const otpData = JSON.parse(stored);
+    if (new Date(otpData.expiresAt) < new Date()) return false;
+    if (otpData.code !== code) return false;
+    
+    PropertiesService.getUserProperties().deleteProperty('otp_' + username);
+    return true;
+  } catch (e) {
     return false;
   }
-  
-  // Verificar código
-  if (otpData.code !== code) {
-    return false;
-  }
-  
-  // Eliminar código usado
-  PropertiesService.getUserProperties().deleteProperty('otp_' + username);
-  
-  return true;
 }
 
 /**
- * Verifica código TOTP (implementación básica)
- * En producción, usar библиотека como jsSHA
- * @param {string} secret - Secreto TOTP
+ * Acción: requestPasswordReset - Envía email para restablecer contraseña
+ * @param {object} payload - Datos del request
+ * @return {object} Respuesta
+ */
+function actionRequestPasswordReset(payload) {
+  try {
+    const user = getUserByUsername(payload.username);
+    
+    if (!user) {
+      // Don't reveal if user exists or not
+      return { success: true, message: 'Si el usuario existe, recibirás un email' };
+    }
+    
+    // Generate reset token
+    const resetToken = Utilities.getUuid();
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    
+    // Store token
+    PropertiesService.getUserProperties().setProperty(
+      'pwd_reset_' + user.id,
+      JSON.stringify({
+        token: resetToken,
+        expiresAt: expiresAt.toISOString()
+      })
+    );
+    
+    // Send reset email
+    const email = user.email || payload.username;
+    const resetLink = 'https://congre-admin.github.io/admin/reset-password?token=' + resetToken + '&userId=' + user.id;
+    
+    sendPasswordResetEmail(email, user.username, resetLink);
+    
+    logAccess(payload.username, true, 'Solicitud de reset de contraseña');
+    
+    return { success: true, message: 'Si el usuario existe, recibirás un email con instrucciones' };
+  } catch (err) {
+    Logger.log('Error en requestPasswordReset: ' + err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Acción: resetPassword - Restablece la contraseña
+ * @param {object} payload - Datos del request
+ * @return {object} Respuesta
+ */
+function actionResetPassword(payload) {
+  try {
+    const { userId, token, newPassword } = payload;
+    
+    if (!userId || !token || !newPassword) {
+      return { success: false, error: 'ERR_INVALID_REQUEST: Datos incompletos' };
+    }
+    
+    // Validate password complexity
+    const pwValidation = validatePasswordComplexity(newPassword);
+    if (!pwValidation.valid) {
+      return { success: false, error: 'ERR_PASSWORD_WEAK: ' + pwValidation.errors.join(', ') };
+    }
+    
+    // Get stored token
+    const stored = PropertiesService.getUserProperties().getProperty('pwd_reset_' + userId);
+    if (!stored) {
+      return { success: false, error: 'ERR_INVALID_TOKEN: Token inválido o expirado' };
+    }
+    
+    const resetData = JSON.parse(stored);
+    
+    // Verify token matches
+    if (resetData.token !== token) {
+      return { success: false, error: 'ERR_INVALID_TOKEN: Token inválido' };
+    }
+    
+    // Check expiration
+    if (new Date(resetData.expiresAt) < new Date()) {
+      PropertiesService.getUserProperties().deleteProperty('pwd_reset_' + userId);
+      return { success: false, error: 'ERR_TOKEN_EXPIRED: El token ha expirado' };
+    }
+    
+    // Get user and update password
+    const user = getUserById(userId);
+    if (!user) {
+      return { success: false, error: 'ERR_USER_NOT_FOUND' };
+    }
+    
+    // Update password
+    updateUserPassword(userId, newPassword);
+    
+    // Invalidate all sessions for this user
+    invalidateAllUserSessions(userId);
+    
+    // Delete reset token
+    PropertiesService.getUserProperties().deleteProperty('pwd_reset_' + userId);
+    
+    // Send confirmation email
+    const email = user.email || user.username;
+    sendPasswordChangedEmail(email, user.username);
+    
+    logAccess(user.username, true, 'Contraseña restablecida');
+    
+    return { success: true, message: 'Contraseña restablecida exitosamente' };
+  } catch (err) {
+    Logger.log('Error en resetPassword: ' + err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Envía email de restablecimiento de contraseña
+ */
+function sendPasswordResetEmail(email, username, resetLink) {
+  try {
+    const congregationName = PropertiesService.getScriptProperties().getProperty('CONGREGATION_NAME') || 'tu congregación';
+    
+    MailApp.sendEmail({
+      to: email,
+      subject: 'Restablecer contraseña - Congre-Admin',
+      name: 'Congre-Admin',
+      body: 'Hola ' + username + ',\n\n' +
+        'Has solicitado restablecer tu contraseña.\n\n' +
+        'Haz clic en el siguiente enlace para crear una nueva contraseña:\n' +
+        resetLink + '\n\n' +
+        'Este enlace expirará en 1 hora.\n\n' +
+        'Si no solicitaste este cambio, puedes ignorar este email. Tu contraseña permanecerá sin cambios.'
+    });
+  } catch (err) {
+    Logger.log('Error enviando email de reset: ' + err.message);
+    throw new Error('ERR_EMAIL_SEND: No se pudo enviar el email');
+  }
+}
+
+/**
+ * Envía email de confirmación de cambio de contraseña
+ */
+function sendPasswordChangedEmail(email, username) {
+  try {
+    const congregationName = PropertiesService.getScriptProperties().getProperty('CONGREGATION_NAME') || 'tu congregación';
+    
+    MailApp.sendEmail({
+      to: email,
+      subject: 'Contraseña actualizada - Congre-Admin',
+      name: 'Congre-Admin',
+      body: 'Hola ' + username + ',\n\n' +
+        'Tu contraseña ha sido actualizada exitosamente.\n\n' +
+        'Si no realizaste este cambio, contacta al administrador inmediatamente.'
+    });
+  } catch (err) {
+    Logger.log('Error enviando email de confirmación: ' + err.message);
+  }
+}
+
+const BASE32_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+
+/**
+ * Genera un secreto TOTP aleatorio en base32
+ */
+function generateBase32Secret(size) {
+  let secret = '';
+  const randomBase = Utilities.getUuid() + Utilities.getUuid();
+  for (let i = 0; i < size; i++) {
+    const charCode = randomBase.charCodeAt(i % randomBase.length);
+    secret += BASE32_CHARS.charAt(charCode % 32);
+  }
+  return secret;
+}
+
+/**
+ * Genera un secreto TOTP para un usuario
+ * @param {string} username - Nombre de usuario
+ * @return {object} Objeto con secret y otpURI
+ */
+function generateTOTPSecret(username) {
+  try {
+    const secret = generateBase32Secret(20);
+    const issuer = 'CongreAdmin';
+    const otpURI = 'otpauth://totp/' + encodeURIComponent(issuer + ':' + username) + 
+                   '?secret=' + secret + 
+                   '&issuer=' + encodeURIComponent(issuer) + 
+                   '&algorithm=SHA1&digits=6&period=30';
+    
+    return {
+      success: true,
+      secret: secret,
+      otpURI: otpURI
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Convierte base32 a hex - implementación probada
+ */
+function base32tohex(base32) {
+  const base32chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  const hexChars = "0123456789abcdef";
+  let bits = "";
+  let hex = "";
+
+  for (let i = 0; i < base32.length; i++) {
+    const val = base32chars.indexOf(base32[i].toUpperCase());
+    if (val === -1) continue;
+    bits += val.toString(2).padStart(5, "0");
+  }
+
+  for (let i = 0; i < bits.length; i += 4) {
+    const chunk = bits.substr(i, 4);
+    const decimal = parseInt(chunk, 2);
+    hex += hexChars[decimal];
+  }
+  return hex;
+}
+
+/**
+ * Genera código TOTP - implementación probada
+ */
+function generateTOTP(secret, timeStepSeconds, digits) {
+  const str = base32tohex(secret);
+  const bytes = new Uint8Array(str.length / 2);
+  for (let i = 0; i < str.length; i += 2) {
+    bytes[i / 2] = parseInt(str.substr(i, 2), 16);
+  }
+
+  const timestamp = Math.floor(new Date().getTime() / 1000);
+  let counter = Math.floor(timestamp / timeStepSeconds);
+
+  const counterBytes = new Uint8Array(8);
+  for (let i = 7; i >= 0; i--) {
+    counterBytes[i] = counter & 0xff;
+    counter = counter >>> 8;
+  }
+
+  const hmacDigest = Utilities.computeHmacSignature(
+    Utilities.MacAlgorithm.HMAC_SHA_1,
+    counterBytes,
+    bytes
+  );
+
+  const offset = hmacDigest[hmacDigest.length - 1] & 0xf;
+  const truncatedHash = (
+    ((hmacDigest[offset] & 0x7f) << 24) |
+    ((hmacDigest[offset + 1] & 0xff) << 16) |
+    ((hmacDigest[offset + 2] & 0xff) << 8) |
+    (hmacDigest[offset + 3] & 0xff)
+  ) % Math.pow(10, digits);
+
+  return truncatedHash.toString().padStart(digits, '0');
+}
+
+/**
+ * Genera código TOTP - implementación probada
+ */
+function generateTOTP(secret, timeStepSeconds, digits) {
+  const timestamp = Math.floor(new Date().getTime() / 1000);
+  return generateTOTPAtTime(secret, timestamp, timeStepSeconds, digits);
+}
+
+/**
+ * Genera código TOTP en un timestamp específico
+ */
+function generateTOTPAtTime(secret, timestamp, timeStepSeconds, digits) {
+  const str = base32tohex(secret);
+  const bytes = new Uint8Array(str.length / 2);
+  for (let i = 0; i < str.length; i += 2) {
+    bytes[i / 2] = parseInt(str.substr(i, 2), 16);
+  }
+
+  let counter = Math.floor(timestamp / timeStepSeconds);
+
+  const counterBytes = new Uint8Array(8);
+  for (let i = 7; i >= 0; i--) {
+    counterBytes[i] = counter & 0xff;
+    counter = counter >>> 8;
+  }
+
+  const hmacDigest = Utilities.computeHmacSignature(
+    Utilities.MacAlgorithm.HMAC_SHA_1,
+    counterBytes,
+    bytes
+  );
+
+  const offset = hmacDigest[hmacDigest.length - 1] & 0xf;
+  const truncatedHash = (
+    ((hmacDigest[offset] & 0x7f) << 24) |
+    ((hmacDigest[offset + 1] & 0xff) << 16) |
+    ((hmacDigest[offset + 2] & 0xff) << 8) |
+    (hmacDigest[offset + 3] & 0xff)
+  ) % Math.pow(10, digits);
+
+  return truncatedHash.toString().padStart(digits, '0');
+}
+
+/**
+ * Verifica código TOTP - implementación probada
+ * @param {string} secret - Secreto TOTP en base32
  * @param {string} code - Código a verificar
  * @return {boolean} true si es válido
  */
 function verifyTOTP(secret, code) {
   if (!secret || !code) return false;
+  if (code.length !== 6 || !/^\d+$/.test(code)) return false;
   
-  // Implementación simplificada - en producción usar google-authenticator o similar
-  // Por ahora, aceptamos cualquier código de 6 dígitos si el secreto existe
-  // TODO: Implementar verificación TOTP real
+  const timestamp = Math.floor(new Date().getTime() / 1000);
+  const windowSize = 1;
   
-  // Placeholder: en producción, integrar библиотека TOTP
-  return code.length === 6 && /^\d+$/.test(code);
+  for (let i = -windowSize; i <= windowSize; i++) {
+    const testTimestamp = timestamp + (i * 30);
+    const expectedTOTP = generateTOTPAtTime(secret, testTimestamp, 30, 6);
+    if (expectedTOTP === code) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -1210,8 +2729,7 @@ function checkRateLimit(identifier, maxRequests, windowSeconds) {
   const current = parseInt(cache.get(key) || '0', 10);
   
   if (current >= maxRequests) {
-    const ttl = cache.getTtl(key);
-    return { allowed: false, remaining: 0, resetIn: ttl > 0 ? Math.ceil(ttl / 1000) : windowSeconds };
+    return { allowed: false, remaining: 0, resetIn: windowSeconds };
   }
   
   cache.put(key, (current + 1).toString(), windowSeconds);
@@ -1229,13 +2747,10 @@ function getCached(key, fetchFn) {
 }
 
 function invalidateCache(pattern) {
-  const cache = CacheService.getScriptCache();
-  const keys = cache.getAll();
-  if (keys) {
-    Object.keys(keys).forEach(k => {
-      if (k.startsWith(pattern)) cache.remove(k);
-    });
-  }
+  // CacheService.getScriptCache() no tiene getAll() en Google Apps Script
+  // El cache expira automáticamente según el TTL definido (CACHE_TTL_DATA = 10 min)
+  // Esta función queda aquí por compatibilidad pero no hace invalidación por patrón
+  Logger.log('Cache invalidation requested for pattern: ' + pattern + ' (no-op - cache expires automatically)');
 }
 
 /**
@@ -1321,6 +2836,26 @@ function actionGetPerfiles() {
   try {
     const perfiles = getAllPerfiles();
     return { success: true, perfiles: perfiles };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Acción: getCongregacion - Obtiene información de la congregación
+ */
+function actionGetCongregacion() {
+  try {
+    const nombre = PropertiesService.getScriptProperties().getProperty('CONGREGATION_NAME') || '';
+    const numero = PropertiesService.getScriptProperties().getProperty('CONGREGATION_NUMBER') || '';
+    
+    return { 
+      success: true, 
+      congregacion: {
+        nombre,
+        numero
+      } 
+    };
   } catch (err) {
     return { success: false, error: err.message };
   }
@@ -1495,6 +3030,18 @@ function actionLogout(payload) {
 // ================================================================= //
 
 /**
+ * Genera nombre de spreadsheet para módulo
+ * Formato: CongreAdmin-[nombre]-[modulo]
+ * @param {string} modulo - Nombre del módulo
+ * @return {string} Nombre formateado
+ */
+function getModuleSpreadsheetName(modulo) {
+  const nombre = PropertiesService.getScriptProperties().getProperty('CONGREGATION_NAME') || 'SinNombre';
+  const nombreLimpio = nombre.replace(/[^a-zA-Z0-9]/g, '');
+  return `CongreAdmin-${nombreLimpio}-${modulo}`;
+}
+
+/**
  * Crea un nuevo Google Spreadsheet
  * @param {string} name - Nombre del spreadsheet
  * @return {object} ID y URL del spreadsheet creado
@@ -1524,7 +3071,7 @@ function initCoreTables(ssId) {
     const results = [];
     
     // Tabla: Usuarios
-    const usuariosHeaders = ['id', 'username', 'wrapped_mk', 'perfilId', 'personaId', 'auth_factor', 'totp_secret', 'public_key', 'created_at', '_v', '_ts', '_deleted'];
+    const usuariosHeaders = ['id', 'username', 'email', 'wrapped_mk', 'perfilId', 'auth_config', 'metadata', 'created_at', '_v', '_ts', '_deleted'];
     results.push(createSheetIfNotExists(ss, 'Usuarios', usuariosHeaders));
     
     // Tabla: Perfiles
@@ -1623,7 +3170,7 @@ function seedPerfiles(ssId, customPerfiles) {
  * @param {string} ssId - ID del spreadsheet Core
  * @return {object} Resultado
  */
-function seedConfiguracion(ssId) {
+function seedConfiguracion(ssId, datosCongregacion) {
   try {
     const ss = SpreadsheetApp.openById(ssId);
     const sheet = ss.getSheetByName('Configuracion');
@@ -1632,7 +3179,10 @@ function seedConfiguracion(ssId) {
     }
     
     const configBase = [
-      { clave: 'nombre_congregacion', valor: '', is_public: false },
+      { clave: 'nombre_congregacion', valor: datosCongregacion?.nombre_congregacion || '', is_public: false },
+      { clave: 'numero_congregacion', valor: datosCongregacion?.numero_congregacion || '', is_public: false },
+      { clave: 'nombre_mostrar', valor: datosCongregacion?.nombre_mostrar || '', is_public: true },
+      { clave: 'ss_publico', valor: datosCongregacion?.ss_publico || '', is_public: false },
       { clave: 'idioma_predeterminado', valor: 'es', is_public: true },
       { clave: 'año_servicio_actual', valor: new Date().getFullYear().toString(), is_public: false },
       { clave: 'version_sistema', valor: '1.0.0', is_public: true }
@@ -1662,10 +3212,12 @@ function seedConfiguracion(ssId) {
  */
 function actionInstall(payload) {
   try {
-    const { nombreCongregacion, perfiles } = payload;
+    const { nombreCongregacion, numeroCongregacion, nombreMostrar, perfiles } = payload;
     
-    // 1. Crear Spreadsheet Core
-    const ssName = nombreCongregacion || 'CongreAdmin_Core';
+    const nombreLimpio = (nombreCongregacion || 'SinNombre').replace(/[^a-zA-Z0-9]/g, '');
+    
+    // 1. Crear Spreadsheet Core con formato: CongreAdmin-[nombre]-[modulo]
+    const ssName = `CongreAdmin-${nombreLimpio}-Core`;
     const ssResult = createSpreadsheet(ssName);
     if (!ssResult.success) {
       return { success: false, error: 'Error creando spreadsheet: ' + ssResult.error };
@@ -1673,29 +3225,68 @@ function actionInstall(payload) {
     
     const ssId = ssResult.ssId;
     
-    // 2. Inicializar tablas
+    // 2. Crear Spreadsheet Público (para información compartida)
+    const ssPublicName = `CongreAdmin-${nombreLimpio}-Public`;
+    const ssPublicResult = createSpreadsheet(ssPublicName);
+    let publicSsId = '';
+    if (ssPublicResult.success) {
+      publicSsId = ssPublicResult.ssId;
+      initPublicSheet(publicSsId);
+    }
+    
+    // 3. Inicializar tablas Core
     const initResult = initCoreTables(ssId);
     if (!initResult.success) {
       return { success: false, error: 'Error inicializando tablas: ' + initResult.error };
     }
     
-    // 3. Inyectar perfiles (desde el payload del frontend)
+    // 4. Inyectar perfiles (desde el payload del frontend)
     if (perfiles && Array.isArray(perfiles)) {
       seedPerfiles(ssId, perfiles);
     }
     
-    // 4. Inyectar configuración
-    seedConfiguracion(ssId);
+    // 5. Inyectar configuración con datos de la congregación
+    seedConfiguracion(ssId, {
+      nombre_congregacion: nombreCongregacion || '',
+      numero_congregacion: numeroCongregacion || '',
+      nombre_mostrar: nombreMostrar || `Co. ${nombreCongregacion}`,
+      ss_publico: publicSsId
+    });
     
-    // 5. Guardar configuración en propiedades del script
+    // 6. Guardar configuración en propiedades del script
     PropertiesService.getScriptProperties().setProperty('CORE_SS_ID', ssId);
+    PropertiesService.getScriptProperties().setProperty('PUBLIC_SS_ID', publicSsId);
+    PropertiesService.getScriptProperties().setProperty('CONGREGATION_NAME', nombreCongregacion || '');
+    PropertiesService.getScriptProperties().setProperty('CONGREGATION_NUMBER', numeroCongregacion || '');
     
     return {
       success: true,
       ssId: ssId,
       ssUrl: ssResult.url,
+      publicSsId: publicSsId,
+      nombreCongregacion: nombreCongregacion,
+      numeroCongregacion: numeroCongregacion,
+      nombreMostrar: nombreMostrar,
       message: 'Instalación completada exitosamente'
     };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Inicializa la hoja pública para datos compartidos
+ * @param {string} ssId - ID del spreadsheet público
+ */
+function initPublicSheet(ssId) {
+  try {
+    const ss = SpreadsheetApp.openById(ssId);
+    
+    createSheetIfNotExists(ss, 'Indice', ['modulo', 'titulo', 'actualizado']);
+    createSheetIfNotExists(ss, 'Anuncios', ['titulo', 'contenido', 'fecha', 'publicado']);
+    createSheetIfNotExists(ss, 'Reuniones', ['tipo', 'dia', 'hora', 'lugar', 'publicado']);
+    
+    return { success: true };
   } catch (err) {
     return { success: false, error: err.message };
   }
