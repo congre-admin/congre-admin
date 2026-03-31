@@ -83,10 +83,10 @@ export default function Dashboard() {
       <Grid container spacing={3} sx={{ mt: 3 }}>
         <Grid item xs={12} md={6}>
           <Card>
-            <CardHeader title="Próximas Asignaciones" />
+            <CardHeader title="Prónximas Asignaciones" />
             <CardContent>
               <Typography variant="body2" color="text.secondary">
-                No hay asignaciones próximas
+                No hay asignaciones prónximas
               </Typography>
             </CardContent>
           </Card>

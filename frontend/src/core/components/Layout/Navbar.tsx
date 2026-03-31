@@ -25,7 +25,11 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
-export default function Navbar() {
+interface NavbarProps {
+  isAdmin: boolean;
+}
+
+export default function Navbar({ isAdmin }: NavbarProps) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const theme = useTheme();
@@ -45,7 +49,7 @@ export default function Navbar() {
   const handleLogout = () => {
     handleClose();
     logout();
-    navigate('/login');
+    navigate('/admin/login');
   };
 
   const toggleDarkMode = () => {
@@ -76,47 +80,51 @@ export default function Navbar() {
         )}
         
         <Typography variant="h6" sx={{ flexGrow: 1 }}>
-          {user?.username || 'Dashboard'}
+          {isAdmin ? (user?.username || 'Admin') : 'Congre-Admin'}
         </Typography>
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <IconButton onClick={toggleDarkMode} color="inherit">
-            {darkMode ? <LightModeIcon /> : <DarkModeIcon />}
-          </IconButton>
-          
-          <IconButton color="inherit">
-            <Badge badgeContent={0} color="error">
-              <NotificationsIcon />
-            </Badge>
-          </IconButton>
+          {isAdmin && (
+            <>
+              <IconButton onClick={toggleDarkMode} color="inherit">
+                {darkMode ? <LightModeIcon /> : <DarkModeIcon />}
+              </IconButton>
+              
+              <IconButton color="inherit">
+                <Badge badgeContent={0} color="error">
+                  <NotificationsIcon />
+                </Badge>
+              </IconButton>
 
-          <IconButton
-            onClick={handleMenu}
-            color="inherit"
-          >
-            <PersonIcon />
-          </IconButton>
+              <IconButton
+                onClick={handleMenu}
+                color="inherit"
+              >
+                <PersonIcon />
+              </IconButton>
 
-          <Menu
-            anchorEl={anchorEl}
-            open={Boolean(anchorEl)}
-            onClose={handleClose}
-            transformOrigin={{ horizontal: 'right', vertical: 'top' }}
-            anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
-          >
-            <MenuItem onClick={() => navigate('/admin')}>
-              <ListItemIcon>
-                <SettingsIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText>Configuración</ListItemText>
-            </MenuItem>
-            <MenuItem onClick={handleLogout}>
-              <ListItemIcon>
-                <LogoutIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText>Cerrar Sesión</ListItemText>
-            </MenuItem>
-          </Menu>
+              <Menu
+                anchorEl={anchorEl}
+                open={Boolean(anchorEl)}
+                onClose={handleClose}
+                transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+                anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+              >
+                <MenuItem onClick={() => navigate('/admin/config/auth')}>
+                  <ListItemIcon>
+                    <SettingsIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Configuración</ListItemText>
+                </MenuItem>
+                <MenuItem onClick={handleLogout}>
+                  <ListItemIcon>
+                    <LogoutIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Cerrar sesión</ListItemText>
+                </MenuItem>
+              </Menu>
+            </>
+          )}
         </Box>
       </Toolbar>
     </AppBar>

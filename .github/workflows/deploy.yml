@@ -3,9 +3,7 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
-    paths:
-      - 'frontend/**'
-      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
 
 jobs:
   build-and-deploy:
@@ -20,7 +18,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
 
       - name: Install dependencies
         run: npm install --legacy-peer-deps --no-package-lock
@@ -28,11 +26,12 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Deploy to GitHub Pages repo
-        uses: JamesIves/github-pages-deploy-action@v4
+      - name: Deploy to external repository
+        uses: peaceiris/actions-gh-pages@v3
         with:
-          branch: main
-          folder: frontend/dist
-          repository-name: congre-admin/congre-admin.github.io
-          token: ${{ secrets.GH_PAGES_TOKEN }}
-          clean: true
+          github_token: ${{ secrets.GH_PAGES_TOKEN }}
+          publish_dir: ./dist
+          publish_branch: main
+          external_repository: congre-admin/congre-admin.github.io
+          user_name: github-actions[bot]
+          user_email: github-actions[bot]@users.noreply.github.com

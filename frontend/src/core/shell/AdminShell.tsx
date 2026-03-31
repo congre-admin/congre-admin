@@ -3,12 +3,12 @@ import { Box } from '@mui/material';
 import Sidebar from '../components/Layout/Sidebar';
 import Navbar from '../components/Layout/Navbar';
 
-export default function Shell() {
+export default function AdminShell() {
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
-      <Sidebar />
+      <Sidebar isAdmin />
       <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <Navbar />
+        <Navbar isAdmin />
         <Box
           component="main"
           sx={{

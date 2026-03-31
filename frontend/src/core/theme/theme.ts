@@ -28,7 +28,7 @@ export const theme = createTheme({
     },
   },
   typography: {
-    fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
+    fontFamily: '"Montserrat", "Roboto", "Helvetica", "Arial", sans-serif',
     h1: {
       fontSize: '2.5rem',
       fontWeight: 500,
@@ -70,6 +70,10 @@ export const theme = createTheme({
 
 export const darkTheme = createTheme({
   ...theme,
+  typography: {
+    ...theme.typography,
+    fontFamily: '"Montserrat", "Roboto", "Helvetica", "Arial", sans-serif',
+  },
   palette: {
     mode: 'dark',
     primary: {
