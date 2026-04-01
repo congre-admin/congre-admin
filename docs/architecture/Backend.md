@@ -3,6 +3,8 @@
 En la arquitectura modular de Congre-Admin, el Backend se define como un **Proveedor de Servicios** (Data Provider) que debe cumplir con un protocolo de comunicación estándar. Actúa como el motor de ejecución para un sistema modular con segmentación física de datos.
 
 > **Nota:** Para una referencia técnica completa de la implementación actual en Google Apps Script, incluyendo todas las acciones API, códigos de error, ejemplos de uso y detalles de optimización, ver **[Backend_API_Completa.md](./Backend_API_Completa.md)**.
+> 
+> **Despliegue:** El backend se despliega usando clasp. Ver **[Despliegue_GAS.md](./Despliegue_GAS.md)** para instrucciones.
 
 ---
 
@@ -356,6 +358,13 @@ Para una referencia completa de la implementación, ver:
   - Códigos de error
   - Ejemplos de uso
   - Notas de optimización de quota GAS
+
+- **[DataService.md](./DataService.md)** - Frontend DataService (implementación del cliente):
+  - Tipos TypeScript
+  - DataService (cliente HTTP)
+  - DataTransformService (JSONata)
+  - TanStack Query hooks
+  - AuthService y PublicService
 
 ### Archivos Relacionados
 

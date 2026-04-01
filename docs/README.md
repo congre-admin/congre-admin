@@ -18,8 +18,9 @@ La especificación del agente AI se encuentra en `/system` (raíz del proyecto):
 2.  [**Arquitectura del Núcleo**](./architecture/Core.md): Componentes del Core, datos y flujos de orquestación.
 3.  [**Sistema de Autenticación**](./architecture/Autenticacion.md): Passkeys, TOTP, Email OTP y flujos de login.
 4.  [**Especificación Tecnológica**](./architecture/Tecnologia.md): Stack React/GAS, JSONata y AES-GCM.
-5.  [**Interfaz y UX**](./architecture/Interfaz.md): Guía de diseño, Componentes M3 y Patrones de Interacción.
-6.  [**Backend_API_Completa.md**](./architecture/Backend_API_Completa.md): Referencia completa del API
+5.  [**DataService**](./architecture/DataService.md): Arquitectura de servicios, tipos TypeScript y hooks de TanStack Query.
+6.  [**Interfaz y UX**](./architecture/Interfaz.md): Guía de diseño, Componentes M3 y Patrones de Interacción.
+7.  [**Backend_API_Completa.md**](./architecture/Backend_API_Completa.md): Referencia completa del API
 7.  [**Estrategia de Localización (i18n)**](./architecture/Localizacion.md): Multi-idioma y personalización teocrática.
 8.  [**Matriz de Permisos**](./architecture/Permisos.md): Control de acceso RBAC y seguridad de campos.
 9.  [**Esquemas Comunes**](./architecture/Esquemas_Comunes.md): Estructuras de Logs, Sesión y GeoJSON.

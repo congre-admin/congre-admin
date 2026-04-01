@@ -297,7 +297,8 @@ sequenceDiagram
 | **AuthContext** | `core/context/AuthContext.tsx` | Gestión de sesión y autenticación | ✅ |
 | **Sidebar** | `core/components/Layout/Sidebar.tsx` | Navegación dinámica según permisos | ✅ |
 | **Navbar** | `core/components/Layout/Navbar.tsx` | Barra superior con user menu | ✅ |
-| **DataService** | `services/dataService.ts` | Adaptador para API del backend | ❌ Pendiente |
+| **DataService** | `services/dataService.ts` | Adaptador para API del backend | ✅ |
+| **CacheService** | `cache/cacheService.ts` | Caché Memory + localStorage + 24h expiry | ✅ |
 | **CryptoUtils** | `core/crypto/cryptoUtils.ts` | Funciones AES-GCM, PBKDF2 | ✅ |
 | **Theme** | `core/theme/theme.ts` | Configuración MUI (Light/Dark) | ✅ |
 
@@ -325,8 +326,9 @@ frontend/src/
 │   ├── dashboard/views/            # Dashboard
 │   ├── admin/views/                # BackupExport
 │   └── settings/views/             # AuthSettings
-├── services/                       # ❌ PENDIENTE
-├── types/                          # ❌ PENDIENTE
+├── services/                       # ✅ Implementado (dataService, dataTransformService, authService, publicService)
+├── cache/                          # ✅ Implementado (cacheService - Memory + localStorage + 24h expiry)
+├── types/                          # ✅ Implementado (auth, user, data, config)
 ├── admin/                          # App de administración
 │   └── AdminApp.tsx
 └── public/                         # App pública (guest access)
@@ -384,6 +386,7 @@ El Core proporciona variables globales para todas las expresiones JSONata:
 |--------|-------------|
 | `Backend.md` | Especificación del backend |
 | `Backend_API_Completa.md` | API completa del backend |
+| `DataService.md` | Cliente frontend (DataService, CacheService, JSONata, TanStack Query) |
 | `Tecnologia.md` | Especificación tecnológica |
 | `Autenticacion.md` | Sistema de autenticación |
 

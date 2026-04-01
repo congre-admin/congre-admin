@@ -21,10 +21,19 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: true,
+    chunkSizeWarningLimit: 500,
     rollupOptions: {
       input: {
         main: path.resolve(__dirname, 'index.html'),
         admin: path.resolve(__dirname, 'admin.html'),
+      },
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-mui': ['@mui/material', '@mui/icons-material', '@emotion/react', '@emotion/styled'],
+          'vendor-query': ['@tanstack/react-query'],
+          'vendor-utils': ['jose', 'jsonata', 'zod', 'otpauth', 'qrcode', 'pdf-lib'],
+        },
       },
     },
   },

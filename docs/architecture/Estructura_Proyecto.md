@@ -74,11 +74,27 @@ src/
 │       └── views/
 │           └── AuthSettings.tsx
 │
-├── services/                  # Adaptadores de API — PENDIENTE
-│   └── dataService.ts
+├── services/                  # Adaptadores de API — ✅ IMPLEMENTADO
+│   ├── dataService.ts         # HTTP → GAS (CRUD, module resolution)
+│   ├── dataTransformService.ts # JSONata transforms
+│   ├── authService.ts         # Auth operations
+│   └── publicService.ts       # /gviz/tq fetcher
 │
-├── types/                     # Interfaces TypeScript — PENDIENTE
-│   └── *.ts
+├── cache/                    # Cache service — ✅ IMPLEMENTADO
+│   └── cacheService.ts        # Memory + localStorage + 24h expiry
+│
+├── types/                     # Interfaces TypeScript — ✅ IMPLEMENTADO
+│   ├── index.ts               # Exports
+│   ├── auth.ts                # AuthConfig, Passkey, LoginResponse
+│   ├── user.ts                # User, UserMetadata, Perfil, Permisos
+│   ├── data.ts                # ApiResponse, GetDataResponse, SaveDataPayload
+│   └── config.ts              # Configuracion
+│
+├── hooks/                     # TanStack Query hooks — ✅ IMPLEMENTADO
+│   ├── usePersonas.ts
+│   ├── usePerfiles.ts
+│   ├── useConfig.ts
+│   └── useSession.ts
 │
 ├── admin/                     # App de administración
 │   └── AdminApp.tsx           # Rutas protegidas (/admin/*)
@@ -119,7 +135,7 @@ module_name/
 
 1. **Importación:** Los módulos pueden importar desde `@core/*`. El Core nunca importa desde `@modules/*` (debe usar `React.lazy()`).
 2. **Estilos:** No se permite CSS global dentro de módulos. Solo Tailwind o CSS Modules.
-3. **Estado:** Los módulos deben usar `AuthContext` del Core para sesión y autenticación. Para datos, usar `DataService` (pendiente Phase 2).
+3. **Estado:** Los módulos deben usar `AuthContext` del Core para sesión y autenticación. Para datos, usar `DataService` (implementado en Phase 2).
 4. **App Pública:** `src/public/App.tsx` no importa nada del Core. Recibe el tema por herencia del `ThemeProvider` configurado en `main.tsx`. Consume datos directamente via `/gviz/tq`.
 5. **Core es compartido:** Tanto `AdminApp` como `PublicApp` usan `src/core/` (crypto, theme). El Core no debe tener lógica específica de ninguna app.
 
@@ -132,9 +148,9 @@ module_name/
 | UI | React 19, MUI v6, Tailwind v4 | ✅ En uso |
 | Routing | react-router-dom v6 | ✅ En uso |
 | QR | qrcode v1.5 | ✅ En uso (SetupTOTP) |
-| Data | @tanstack/react-query v5 | ❌ Pendiente (requiere DataService) |
+| Data | @tanstack/react-query v5 | ✅ En uso |
 | Data | @tanstack/react-table v8 | ❌ Pendiente |
-| Data | jsonata v2 | ❌ Pendiente |
+| Data | jsonata v2 | ✅ En uso |
 | Validation | zod v3 | ❌ Pendiente |
 | Crypto | jose v5 | ❌ Pendiente |
 | Storage | idb-keyval v6 | ❌ Pendiente |
@@ -159,6 +175,19 @@ npm run build
 ```
 
 El comando `build` genera la carpeta `dist/` con los archivos estáticos de ambas apps (multi-page) y crea `dist/404.html` para el fallback de SPA.
+
+### Despliegue del Backend (GAS)
+
+El backend se despliega manualmente usando **clasp**:
+
+- **Ubicación:** `backend/src/api.gs`
+- **Documentación:** [Despliegue_GAS.md](./Despliegue_GAS.md)
+
+```bash
+cd frontend
+npm run clasp:push   # Subir código
+npm run clasp:deploy # Deployar versión
+```
 
 ---
 
@@ -229,3 +258,15 @@ Todo el contenido de `src/admin/modules/` se mueve a `src/modules/`.
 
 - Ejecutar `npm run build` desde `frontend/` y confirmar que compila sin errores
 - Ejecutar `npm run dev` y verificar que ambas rutas (`/` y `/admin/*`) funcionan
+
+---
+
+## Archivos Relacionados
+
+| Archivo | Descripción |
+|---------|-------------|
+| `DataService.md` | Cliente frontend (DataService, JSONata, TanStack Query) |
+| `Tecnologia.md` | Stack tecnológico |
+| `Backend_API_Completa.md` | API del backend GAS |
+| `Core.md` | Arquitectura del núcleo |
+

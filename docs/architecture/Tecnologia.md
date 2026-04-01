@@ -123,7 +123,7 @@ Para garantizar la compatibilidad, el proyecto debe utilizar las siguientes libr
 - **lucide-react**: Set de iconos complementarios.
 - **PBKDF2**: Implementado mediante la Web Crypto API nativa.
 
-> **⚠️ Estado de integración:** Las siguientes dependencias están instaladas en `package.json` pero **aún no tienen imports activos** en el código: `@tanstack/react-query`, `@tanstack/react-table`, `jsonata`, `zod`, `jose`, `idb-keyval`, `pdf-lib`, `framer-motion`, `lucide-react`, `otpauth`. Se integrarán en Phase 2 con DataService y los módulos de administración.
+> **⚠️ Estado de integración:** Las siguientes dependencias están instaladas en `package.json` y **tienen imports activos** en el código: `@tanstack/react-query` ✅, `jsonata` ✅, `idb-keyval` ✅ (usado por cacheService). Las demás están pendientes: `@tanstack/react-table`, `zod`, `jose`, `pdf-lib`, `framer-motion`, `lucide-react`, `otpauth`. Se integrarán en Phase 2 con DataService y los módulos de administración.
 
 ## 7. Catálogo de Validaciones JSONata (Ejemplos Reales)
 El sistema utiliza estas expresiones tanto en el frontend (feedback inmediato) como en el backend (integridad).
@@ -187,9 +187,10 @@ El Core registra funciones personalizadas dentro del motor:
 ## Archivos Relacionados
 
 | Archivo | Descripción |
-|--------|-------------|
+|---------|-------------|
 | `Core.md` | Arquitectura del núcleo del sistema |
 | `Autenticacion.md` | Sistema de autenticación y flujos |
 | `Backend.md` | Especificación del backend |
 | `Backend_API_Completa.md` | API completa del backend |
+| `DataService.md` | Cliente frontend (DataService, JSONata, TanStack Query, CacheService) |
 | `Arquitectura.md` | Arquitectura general del sistema |

@@ -1,7 +1,7 @@
 # Congre-Admin: Documentación Técnica del Backend API
 
-> **Versión:** 1.1.0
-> **Última actualización:** 2026-03-27
+> **Versión:** 1.2.0
+> **Última actualización:** 2026-03-31
 > **Archivo fuente:** `backend/src/api.gs`
 > **Plataforma:** Google Apps Script (GAS)
 
@@ -342,11 +342,17 @@ Elimina una hoja del spreadsheet.
 ### 4.1 Flujo de Autenticación
 
 ```
-1. Usuario envía username
-2. Servidor verifica credentials
-3. Servidor genera sessionToken
-4. Cliente usa sessionToken en peticiones subsiguientes
+1. Usuario envía username + password (siempre requerido como primer paso)
+2. Servidor verifica password
+3. Servidor detecta métodos de auth habilitados (totp, email_otp, passkey)
+4. Si un solo método está habilitado: avanza automáticamente
+   Si múltiples métodos: retorna paso 'method' para que usuario elija
+5. Usuario completa segundo factor (código TOTP/email, o credencial passkey)
+6. Servidor genera sessionToken
+7. Cliente usa sessionToken en peticiones subsiguientes
 ```
+
+**Importante:** La contraseña SIEMPRE es requerida como primer paso. El sistema verifica la contraseña antes de solicitar el segundo factor.
 
 ### 4.2 Acciones de Autenticación
 
@@ -367,14 +373,48 @@ Crea un nuevo usuario (requiere configuración de contraseña + TOTP posterior).
 
 #### `login`
 Autentica al usuario. Soporta múltiples métodos de autenticación:
-- **Password + Email OTP** (flujo por defecto)
-- **Password + TOTP**
-- **Passkey** (WebAuthn)
+- **Password + TOTP** (Google Authenticator) - Método recomendado
+- **Password + Email OTP** (código por email)
+- **Password + Passkey** (WebAuthn)
 
-##### Flujo 1: Password + Email OTP
+**Importante:** La contraseña siempre es requerida como primer paso. El backend requiere que el payload incluya `password` incluso cuando se usa TOTP, email OTP o Passkey como segundo factor.
+
+##### Flujo 1: Password + TOTP (Google Authenticator)
 
 ```javascript
-// Paso 1: Solo password
+// Paso 1: username + password
+{
+  "action": "login",
+  "payload": {
+    "username": "admin",
+    "password": "MiContraseña123!"
+  }
+}
+
+// Response: requiere verificar TOTP
+{
+  "success": false,
+  "step": "totp",
+  "availableMethods": ["passkey", "totp", "email_otp"],
+  "message": "Ingrese su código"
+}
+
+// Paso 2: Con código TOTP
+{
+  "action": "login",
+  "payload": {
+    "username": "admin",
+    "password": "MiContraseña123!",
+    "method": "totp",
+    "code": "123456"
+  }
+}
+```
+
+##### Flujo 2: Password + Email OTP
+
+```javascript
+// Paso 1: username + password
 {
   "action": "login",
   "payload": {
@@ -388,7 +428,7 @@ Autentica al usuario. Soporta múltiples métodos de autenticación:
   "success": false,
   "step": "email_otp",
   "availableMethods": ["passkey", "totp", "email_otp"],
-  "message": "Se envió código al email"
+  "message": "Código enviado automáticamente"
 }
 
 // Paso 2: Con código OTP
@@ -403,7 +443,7 @@ Autentica al usuario. Soporta múltiples métodos de autenticación:
 }
 ```
 
-##### Flujo 2: Passkey (WebAuthn)
+##### Flujo 3: Passkey (WebAuthn)
 
 ```javascript
 // Paso 1: Solicitar desafío
@@ -424,11 +464,12 @@ Autentica al usuario. Soporta múltiples métodos de autenticación:
   "rpId": "dominio.com"
 }
 
-// Paso 2: Enviar aserción del passkey
+// Paso 2: Enviar aserción del passkey (incluye password del paso 1)
 {
   "action": "login",
   "payload": {
     "username": "admin",
+    "password": "MiContraseña123!",
     "method": "passkey",
     "passkeyAssertion": {
       "credentialId": "credential_id",
@@ -519,6 +560,8 @@ Desactiva TOTP para un usuario (requiere sesión activa).
 
 #### `challenge`
 Genera un desafío para Passkey/WebAuthn durante el login. El frontend envía el origen para calcular el `rpId` correcto.
+
+**Nota importante:** El flujo de Passkey requiere que el frontend先用 `challenge` acción para obtener el desafío, luego use `navigator.credentials.get()` para completar la autenticación, y finalmente envíe el resultado en el login payload junto con la password del primer paso.
 
 ```javascript
 {
@@ -1132,9 +1175,40 @@ checkRateLimit('login:usuario@email.com', 5, 60)
 | `ERR_TOTP_NOT_CONFIGURED` | TOTP no configurado para el usuario |
 | `ERR_TOTP_EXPIRED` | Configuración TOTP expirada |
 | `ERR_NO_PENDING_TOTP` | No hay configuración TOTP pendiente |
+| `ERR_CODE_REQUIRED` | Se requiere código de verificación |
+| `ERR_EMAIL_OTP_NOT_CONFIGURED` | Email OTP no configurado para el usuario |
+| `ERR_EMAIL_SEND` | Error al enviar email (ver `debug.error` para detalles) |
+| `ERR_PASSKEY_NOT_CONFIGURED` | Passkey no configurado para el usuario |
+| `ERR_PASSKEY_REQUIRED` | Se requiere autenticación con passkey |
 | `ERR_INVALID_CREDENTIALS` | Usuario o contraseña incorrectos |
 | `ERR_PASSWORD_REQUIRED` | Se requiere contraseña |
 | `ERR_PASSWORD_WEAK` | Contraseña no cumple requisitos de complejidad |
+
+### 10.1 Respuestas de Error con Debug Info
+
+Algunas acciones incluyen información de debug en la respuesta para facilitar la resolución de problemas:
+
+```javascript
+// requestOTP - Error
+{
+  "success": false,
+  "error": "ERR_EMAIL_SEND",
+  "debug": {
+    "username": "admin",
+    "email": "admin@congregacion.com",
+    "error": "MailApp quota exceeded"
+  }
+}
+
+// requestOTP - Éxito
+{
+  "success": true,
+  "message": "Código enviado por email",
+  "debug": {
+    "email": "admin@congregacion.com"
+  }
+}
+```
 
 ---
 
@@ -1198,6 +1272,30 @@ El script debe tener configurada la propiedad:
 CORE_SS_ID = "ID_DEL_SPREADSHEET_CORE"
 ```
 
+### 13.4 Email con MailApp
+
+El sistema utiliza `MailApp.sendEmail()` para enviar códigos OTP por email y emails de recuperación de contraseña.
+
+**Notas importantes:**
+- MailApp tiene un límite de 100 emails/día para cuentas gratuitas de Google
+- Para cuentas Google Workspace, el límite es mayor
+- El email se envía desde la cuenta del propietario del script
+- La dirección de destino se resuelve del campo `email` del usuario, o usa el `username` como fallback
+
+### 13.5 CORS y Configuración de Fetch
+
+Google Apps Script no permiteheaders CORS personalizados. El frontend debe usar esta configuración:
+
+```javascript
+fetch(url, {
+  method: 'POST',
+  headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+  body: JSON.stringify(body),
+  mode: 'cors',
+  redirect: 'follow'
+});
+```
+
 ---
 
 ## 14. Ejemplo de Uso Completo
@@ -1219,7 +1317,7 @@ CORE_SS_ID = "ID_DEL_SPREADSHEET_CORE"
 ### 14.2 Autenticación
 
 ```javascript
-// 1. Solicitar código OTP
+// 1. Solicitar código OTP (método manual)
 {
   "action": "requestOTP",
   "payload": {
@@ -1228,14 +1326,17 @@ CORE_SS_ID = "ID_DEL_SPREADSHEET_CORE"
 }
 
 // 2. El usuario recibe el código por email
+//    La respuesta incluye debug info con el email usado:
+//    { "success": true, "debug": { "email": "admin@congregacion.com" } }
 
-// 3. Iniciar sesión
+// 3. Iniciar sesión (siempre incluir password)
 {
   "action": "login",
   "payload": {
     "username": "admin@congregacion.com",
-    "code": "123456",
-    "authType": "email"
+    "password": "MiContraseña123!",
+    "method": "email_otp",
+    "code": "123456"
   }
 }
 
@@ -1298,10 +1399,11 @@ CORE_SS_ID = "ID_DEL_SPREADSHEET_CORE"
 - `docs/architecture/Autenticacion.md` - Sistema de autenticación y flujos
 - `docs/architecture/Arquitectura.md` - Arquitectura general
 - `docs/architecture/Tecnologia.md` - Especificación tecnológica
+- `docs/architecture/DataService.md` - Cliente frontend (DataService, JSONata, TanStack Query)
 - `docs/architecture/Instalacion.md` - Guía de instalación
 - `docs/PLAN_DESARROLLO.md` - Plan de desarrollo
 - `docs/CHANGELOG.md` - Historial de cambios
 
 ---
 
-*Documento generado automáticamente el 2026-03-24*
+*Documento generado automáticamente el 2026-03-31*

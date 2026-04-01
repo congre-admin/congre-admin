@@ -1,5 +1,6 @@
-import { Box, Typography, Grid, Card, CardContent, CardHeader } from '@mui/material';
+import { Box, Typography, Grid, Card, CardContent, CardHeader, CircularProgress } from '@mui/material';
 import { People, EventNote, Campaign, Map } from '@mui/icons-material';
+import { usePerfiles } from '../../../../hooks/usePerfiles';
 
 interface StatCardProps {
   title: string;
@@ -36,6 +37,8 @@ function StatCard({ title, value, icon, color }: StatCardProps) {
 }
 
 export default function Dashboard() {
+  const { data: perfiles, isLoading } = usePerfiles();
+
   return (
     <Box>
       <Typography variant="h4" gutterBottom>
@@ -47,12 +50,18 @@ export default function Dashboard() {
 
       <Grid container spacing={3}>
         <Grid item xs={12} sm={6} md={3}>
-          <StatCard 
-            title="Total Personas" 
-            value="0" 
-            icon={<People />} 
-            color="#1976d2" 
-          />
+          {isLoading ? (
+            <Card sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2 }}>
+              <CircularProgress size={32} />
+            </Card>
+          ) : (
+            <StatCard 
+              title="Perfiles" 
+              value={perfiles?.length || 0} 
+              icon={<People />} 
+              color="#1976d2" 
+            />
+          )}
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
           <StatCard 
@@ -83,10 +92,10 @@ export default function Dashboard() {
       <Grid container spacing={3} sx={{ mt: 3 }}>
         <Grid item xs={12} md={6}>
           <Card>
-            <CardHeader title="Prónximas Asignaciones" />
+            <CardHeader title="Próximas Asignaciones" />
             <CardContent>
               <Typography variant="body2" color="text.secondary">
-                No hay asignaciones prónximas
+                No hay asignaciones próximas
               </Typography>
             </CardContent>
           </Card>

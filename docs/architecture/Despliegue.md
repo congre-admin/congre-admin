@@ -24,7 +24,12 @@ Para evitar el "hardcoding" de credenciales y permitir que una misma instancia d
 ## 3. Configuración del Backend (Apps Script)
 - **Despliegue:** El archivo `api.gs` se despliega como una **Web App**.
 - **Permisos de Ejecución:** "Ejecutar como: Mí" (el administrador que creó el script) y "Quién tiene acceso: Cualquiera".
-- **Seguridad CORS:** Dado que GAS no soporta encabezados CORS tradicionales para peticiones POST con `no-cors`, el `dataService.js` del front-end está optimizado para manejar estas limitaciones mediante una cola de sincronización asíncrona.
+- **Solución CORS:** Google Apps Script no permite agregar headers CORS personalizados mediante `ContentService.setHeaders()`. El workaround funciona así:
+  1. **Frontend:** Usar `Content-Type: text/plain` + `redirect: 'follow'` + `mode: 'cors'`
+  2. **Backend:** No intentar agregar headers CORS - GAS los ignora
+  - `text/plain` evita el preflight (OPTIONS request)
+  - `redirect: 'follow'` permite seguir los redirects de GAS
+  - Ver [DataService.md](./DataService.md) para la configuración exacta
 
 ## 4. Entornos de Desarrollo y Producción
 - **Local:** `npm run dev` utiliza variables de entorno en un archivo `.env.local` para emular los parámetros de URL.

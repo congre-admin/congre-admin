@@ -22,7 +22,15 @@ import { useAuth } from '../../../core/context/AuthContext';
 const API_URL_KEY = 'congre_admin_api_url';
 
 async function fetchApi(url: string, options?: RequestInit) {
-  const response = await fetch(url, options);
+  const response = await fetch(url, {
+    ...options,
+    mode: 'cors',
+    redirect: 'follow',
+    headers: {
+      'Content-Type': 'text/plain;charset=utf-8',
+      ...options?.headers,
+    },
+  });
   return response.json();
 }
 

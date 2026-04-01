@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { initializeCacheOnLogin } from '../../../hooks/useSession';
 
 interface User {
   id: string;
@@ -28,10 +29,51 @@ const API_URL_KEY = 'congre_admin_api_url';
 const SESSION_TOKEN_KEY = 'congre_admin_session_token';
 const USER_DATA_KEY = 'congre_admin_user_data';
 const ADMIN_SS_ID_KEY = 'congre_admin_ss_id';
+const PUBLIC_SS_ID_KEY = 'congre_public_ss_id';
 
 async function fetchApi(url: string, options?: RequestInit) {
-  const response = await fetch(url, options);
+  const response = await fetch(url, {
+    ...options,
+    mode: 'cors',
+    redirect: 'follow',
+    headers: {
+      'Content-Type': 'text/plain;charset=utf-8',
+      ...options?.headers,
+    },
+  });
   return response.json();
+}
+
+async function fetchLinkedPublicSs(apiUrl: string, adminSsId: string): Promise<string | null> {
+  try {
+    const url = apiUrl.includes('script.google.com') 
+      ? apiUrl.endsWith('/exec') ? apiUrl : `${apiUrl}/exec`
+      : `https://script.google.com/macros/s/${apiUrl}/exec`;
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'getData',
+        ssId: adminSsId,
+        payload: { sheet: 'Configuracion' }
+      }),
+      mode: 'cors',
+      redirect: 'follow',
+    });
+    
+    const result = await response.json();
+    const rows = result.data || [];
+    const linkedRow = rows.find((r: any) => r.clave === 'ss_publico');
+    
+    if (linkedRow) {
+      return JSON.parse(linkedRow.valor).ssId;
+    }
+    return null;
+  } catch (err) {
+    console.warn('Failed to fetch linked public SSID:', err);
+    return null;
+  }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -100,6 +142,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (data.wrapped_mk) {
       setMasterKeyState(data.wrapped_mk);
       setWrappedMk(data.wrapped_mk);
+    }
+
+    // Fetch linked public SSID from Admin Sheet Configuracion
+    const adminSsId = localStorage.getItem(ADMIN_SS_ID_KEY);
+    if (adminSsId && apiUrl) {
+      try {
+        const linkedPublicSs = await fetchLinkedPublicSs(apiUrl, adminSsId);
+        if (linkedPublicSs) {
+          localStorage.setItem(PUBLIC_SS_ID_KEY, linkedPublicSs);
+        }
+      } catch (err) {
+        console.warn('Failed to fetch linked public SSID:', err);
+      }
+    }
+
+    try {
+      await initializeCacheOnLogin();
+    } catch (error) {
+      console.error('Failed to initialize cache:', error);
     }
   };
 

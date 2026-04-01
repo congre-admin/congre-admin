@@ -346,8 +346,9 @@ flowchart TB
 ## 7. Archivos Relacionados
 
 | Archivo | Descripción |
-|--------|-------------|
+|---------|-------------|
 | `Backend_API_Completa.md` | Documentación completa de la API |
+| `DataService.md` | Cliente frontend (authService) |
 | `Tecnologia.md` | Especificación de criptografía |
 | `Core.md` | Arquitectura del núcleo |
 

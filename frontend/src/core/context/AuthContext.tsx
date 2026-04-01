@@ -28,7 +28,15 @@ const SESSION_TOKEN_KEY = 'congre_admin_session_token';
 const USER_DATA_KEY = 'congre_admin_user_data';
 
 async function fetchApi(url: string, options?: RequestInit) {
-  const response = await fetch(url, options);
+  const response = await fetch(url, {
+    ...options,
+    mode: 'cors',
+    redirect: 'follow',
+    headers: {
+      'Content-Type': 'text/plain;charset=utf-8',
+      ...options?.headers,
+    },
+  });
   return response.json();
 }
 

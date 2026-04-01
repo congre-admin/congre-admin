@@ -35,13 +35,32 @@ import {
   Fingerprint
 } from '@mui/icons-material';
 import { useAuth } from '../../../core/context/AuthContext';
+import { authService } from '../../../../services/authService';
+import { dataService } from '../../../../services/dataService';
 
 const API_URL_KEY = 'congre_admin_api_url';
 const SS_ID_KEY = 'congre_admin_ss_id';
 
-async function fetchApi(url: string, options?: RequestInit) {
-  const response = await fetch(url, options);
-  return response.json();
+async function getCongregationName(apiUrl: string | null, ssId: string | null): Promise<string> {
+  if (!apiUrl || !ssId) return 'CongreAdmin';
+  try {
+    const url = apiUrl.includes('script.google.com') 
+      ? apiUrl.endsWith('/exec') ? apiUrl : `${apiUrl}/exec`
+      : `https://script.google.com/macros/s/${apiUrl}/exec`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'getData', ssId, payload: { sheet: 'Configuracion' } }),
+      mode: 'cors',
+      redirect: 'follow',
+    });
+    const result = await response.json();
+    const rows = result.data || [];
+    const nombre = rows.find((r: any) => r.clave === 'nombre_mostrar')?.valor || rows.find((r: any) => r.clave === 'nombre_congregacion')?.valor;
+    return nombre || 'CongreAdmin';
+  } catch {
+    return 'CongreAdmin';
+  }
 }
 
 type AuthStep = 'password' | 'method' | 'totp' | 'email_otp' | 'passkey';
@@ -80,6 +99,10 @@ export default function Login() {
   const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
   const [forgotPasswordSuccess, setForgotPasswordSuccess] = useState(false);
   const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false);
+  const [hasAutocompleteSubmitted, setHasAutocompleteSubmitted] = useState(false);
+  const [defaultMethodStep, setDefaultMethodStep] = useState<AuthStep | null>(null);
+  const [showMethodSelection, setShowMethodSelection] = useState(false);
+  const [congregationName, setCongregationName] = useState('CongreAdmin');
 
   useEffect(() => {
     const storedGasUrl = localStorage.getItem(API_URL_KEY);
@@ -89,7 +112,32 @@ export default function Login() {
     if (storedGasUrl) setGasUrl(storedGasUrl);
     if (storedSsId) setCoreSsId(storedSsId);
     setShowConfig(!hasConfig);
+    
+    getCongregationName(storedGasUrl, storedSsId).then(setCongregationName);
   }, []);
+
+  useEffect(() => {
+    if (username && password && !loading && step === 'password' && !hasAutocompleteSubmitted) {
+      setHasAutocompleteSubmitted(true);
+      handlePasswordStep();
+    }
+  }, [username, password]);
+
+  const getStatusMessage = () => {
+    if (loading) {
+      switch (step) {
+        case 'password': return 'Verificando credenciales...';
+        case 'method': return 'Verificando métodos disponibles...';
+        case 'totp': return 'Verificando código TOTP...';
+        case 'email_otp': return 'Verificando código...';
+        case 'passkey': return 'Autenticando con passkey...';
+      }
+    }
+    if (defaultMethodStep === 'passkey' && !loading) {
+      return 'Esperando autenticación con passkey...';
+    }
+    return null;
+  };
 
   const handleSaveConfig = () => {
     if (!gasUrl.trim()) {
@@ -137,17 +185,13 @@ export default function Login() {
       return;
     }
 
+    dataService.setApiUrl(apiUrl);
+
     setLoading(true);
     setError(null);
 
     try {
-      const data = await fetchApi(apiUrl, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'login',
-          payload: { username, password }
-        })
-      });
+      const data = await authService.loginWithPassword(username, password);
 
       if (!data.success) {
         if (data.requiresSetup) {
@@ -158,11 +202,13 @@ export default function Login() {
         }
         if (data.step === 'method') {
           setAvailableMethods(data.availableMethods || []);
-          setDefaultMethod(data.defaultMethod || 'passkey');
-          setStep('method');
+          const defaultM = data.defaultMethod || 'passkey';
+          setDefaultMethod(defaultM);
+          setDefaultMethodStep(defaultM as AuthStep);
+          setShowMethodSelection(false);
+          handleMethodSelect(defaultM);
           return;
         }
-        // Auto-proceed to single method (email_otp, totp, or passkey)
         if (data.step === 'email_otp' || data.step === 'totp' || data.step === 'passkey') {
           setAvailableMethods(data.availableMethods || []);
           setStep(data.step);
@@ -184,10 +230,46 @@ export default function Login() {
   const handleMethodSelect = async (method: string) => {
     if (method === 'passkey') {
       await handlePasskeyLogin();
-    } else {
-      setStep(method as AuthStep);
+    } else if (method === 'email_otp') {
+      const apiUrl = localStorage.getItem(API_URL_KEY);
+      if (!apiUrl) {
+        setError('API URL no configurada');
+        return;
+      }
+      dataService.setApiUrl(apiUrl);
+      
+      setLoading(true);
+      setStep('email_otp');
+      setError(null);
+      setDefaultMethodStep('email_otp');
+      setShowMethodSelection(false);
+      try {
+        const result = await dataService.request<{ success: boolean; error?: string; debug?: { email?: string; error?: string } }>('requestOTP', { username });
+        if (result.success) {
+          setCode('');
+          setError('Código enviado a ' + (result.debug?.email || username));
+        } else {
+          setError(result.debug?.error || result.error || 'Error al enviar código');
+        }
+      } catch (err: any) {
+        setError(err.message || 'Error al enviar código');
+      } finally {
+        setLoading(false);
+      }
+    } else if (method === 'totp') {
+      setStep('totp');
       setCode('');
+      setDefaultMethodStep('totp');
+      setShowMethodSelection(false);
+      setError(null);
     }
+  };
+
+  const handleShowMethodSelection = () => {
+    setDefaultMethodStep(null);
+    setShowMethodSelection(true);
+    setStep('method');
+    setError(null);
   };
 
   const handleCodeSubmit = async () => {
@@ -200,20 +282,11 @@ export default function Login() {
     setError(null);
 
     try {
-      const apiUrl = localStorage.getItem(API_URL_KEY);
-      if (!apiUrl) {
-        throw new Error('API URL no configurada');
-      }
-      
       const method = step === 'totp' ? 'totp' : 'email_otp';
       
-      const data = await fetchApi(apiUrl, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'login',
-          payload: { username, password, method, code }
-        })
-      });
+      const data = step === 'totp'
+        ? await authService.loginWithTOTP(username, code, password)
+        : await authService.loginWithEmailOTP(username, code, password);
 
       if (!data.success) {
         throw new Error(data.error || 'Código inválido');
@@ -231,6 +304,7 @@ export default function Login() {
   const handlePasskeyLogin = async () => {
     setLoading(true);
     setError(null);
+    setStep('passkey');
 
     try {
       const apiUrl = localStorage.getItem(API_URL_KEY);
@@ -238,12 +312,11 @@ export default function Login() {
         throw new Error('API URL no configurada');
       }
 
-      const challengeData = await fetchApi(apiUrl, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'challenge',
-          payload: { username, origin: window.location.origin }
-        })
+      dataService.setApiUrl(apiUrl);
+
+      const challengeData = await dataService.request<{ success: boolean; challenge?: string; rpId?: string; timeout?: number; allowCredentials?: any[] }>('challenge', {
+        username,
+        origin: window.location.origin
       });
 
       if (!challengeData.success) {
@@ -251,7 +324,7 @@ export default function Login() {
       }
 
       const publicKey: PublicKeyCredentialRequestOptions = {
-        challenge: Uint8Array.from(atob(challengeData.challenge), c => c.charCodeAt(0)),
+        challenge: Uint8Array.from(atob(challengeData.challenge!), c => c.charCodeAt(0)),
         rpId: challengeData.rpId || 'localhost',
         timeout: challengeData.timeout || 60000,
         allowCredentials: challengeData.allowCredentials?.map((cred: any) => ({
@@ -283,13 +356,7 @@ export default function Login() {
         authenticatorData: arrayBufferToBase64(assertionResponse.response.authenticatorData)
       };
 
-      const data = await fetchApi(apiUrl, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'login',
-          payload: { username, password, method: 'passkey', passkeyAssertion }
-        })
-      });
+      const data = await authService.loginWithPasskey(username, passkeyAssertion, password);
 
       if (!data.success) {
         throw new Error(data.error || 'Error al verificar passkey');
@@ -299,6 +366,9 @@ export default function Login() {
       navigate('/admin');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error en el login con passkey');
+      setDefaultMethodStep(null);
+      setShowMethodSelection(true);
+      setStep('method');
     } finally {
       setLoading(false);
     }
@@ -358,23 +428,7 @@ export default function Login() {
     setError(null);
 
     try {
-      const apiUrl = localStorage.getItem(API_URL_KEY);
-      if (!apiUrl) {
-        throw new Error('API URL no configurada');
-      }
-
-      const data = await fetchApi(apiUrl, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'requestPasswordReset',
-          payload: { username: forgotPasswordEmail.trim() }
-        })
-      });
-
-      if (!data.success) {
-        throw new Error(data.error || 'Error al solicitar restablecimiento');
-      }
-
+      await authService.requestPasswordReset(forgotPasswordEmail.trim());
       setForgotPasswordSuccess(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al solicitar restablecimiento');
@@ -426,7 +480,7 @@ export default function Login() {
         sx={{ p: 4, maxWidth: 420, width: '100%' }}
       >
         <Typography variant="h4" align="center" gutterBottom>
-          Congre-Admin
+          {congregationName}
         </Typography>
         <Typography variant="subtitle1" align="center" color="text.secondary" sx={{ mb: 3 }}>
           {getStepTitle()}
@@ -435,6 +489,12 @@ export default function Login() {
         {error && (
           <Alert severity="error" sx={{ mb: 3 }}>
             {error}
+          </Alert>
+        )}
+
+        {getStatusMessage() && (
+          <Alert severity="info" sx={{ mb: 3 }}>
+            {getStatusMessage()}
           </Alert>
         )}
 
@@ -562,7 +622,7 @@ export default function Login() {
           </>
         )}
 
-        {step === 'method' && (
+        {step === 'method' && showMethodSelection && (
           <>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               {getStepSubtitle()}
@@ -626,8 +686,13 @@ export default function Login() {
           </>
         )}
 
-        {(step === 'totp' || step === 'email_otp') && (
+        {(step === 'totp' || step === 'email_otp') && defaultMethodStep && !showMethodSelection && (
           <>
+            <Box sx={{ mb: 3, textAlign: 'center' }}>
+              <Button variant="outlined" onClick={handleShowMethodSelection}>
+                Cambiar método de autenticación
+              </Button>
+            </Box>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               {getStepSubtitle()}
             </Typography>
@@ -665,19 +730,14 @@ export default function Login() {
                   variant="body2"
                   onClick={async () => {
                     try {
-                      const apiUrl = localStorage.getItem(API_URL_KEY);
-                      if (!apiUrl) return;
-                      const data = await fetchApi(apiUrl, {
-                        method: 'POST',
-                        body: JSON.stringify({ action: 'requestOTP', payload: { username } })
-                      });
-                      if (data.success) {
-                        setError('Nuevo código enviado');
+                      const result = await dataService.request<{ success: boolean; error?: string; debug?: { email?: string; error?: string } }>('requestOTP', { username });
+                      if (result.success) {
+                        setError('Nuevo código enviado a ' + (result.debug?.email || username));
                       } else {
-                        setError(data.error || 'Error al reenviar código');
+                        setError((result.debug?.error || result.error) + (result.debug?.email ? ' (' + result.debug.email + ')' : ''));
                       }
-                    } catch {
-                      setError('Error al reenviar código');
+                    } catch (err: any) {
+                      setError(err.message || 'Error al reenviar código');
                     }
                   }}
                   sx={{ cursor: 'pointer' }}
@@ -687,6 +747,34 @@ export default function Login() {
               </Box>
             )}
           </>
+        )}
+
+        {step === 'passkey' && (
+          <Box sx={{ textAlign: 'center', py: 4 }}>
+            {loading ? (
+              <>
+                <CircularProgress sx={{ mb: 3 }} />
+                <Typography variant="body1" sx={{ mb: 3 }}>
+                  Esperando autenticación con passkey...
+                </Typography>
+              </>
+            ) : (
+              <>
+                <Fingerprint sx={{ fontSize: 64, mb: 2, color: 'primary.main' }} />
+                <Typography variant="body1" sx={{ mb: 3 }}>
+                  Use su passkey para autenticarse
+                </Typography>
+              </>
+            )}
+            {defaultMethodStep && !showMethodSelection && (
+              <Button 
+                variant="outlined" 
+                onClick={handleShowMethodSelection}
+              >
+                Cambiar método de autenticación
+              </Button>
+            )}
+          </Box>
         )}
 
         <Box sx={{ mt: 3, textAlign: 'center' }}>
