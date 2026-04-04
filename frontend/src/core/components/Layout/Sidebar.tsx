@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Drawer,
@@ -29,6 +29,39 @@ import { useAuth } from '../../context/AuthContext';
 
 const DRAWER_WIDTH = 240;
 
+const ADMIN_SS_ID_KEY = 'congre_admin_ss_id';
+
+function useCongregacionName() {
+  const [nombre, setNombre] = useState('CongreAdmin');
+  
+  useEffect(() => {
+    const ssId = localStorage.getItem(ADMIN_SS_ID_KEY);
+    if (!ssId) return;
+    
+    const gvizUrl = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&sheet=Configuracion`;
+    fetch(gvizUrl)
+      .then(res => res.text())
+      .then(text => {
+        const match = text.match(/(\{.*\})/);
+        if (match) {
+          const data = JSON.parse(match[1]);
+          const rows = data.table?.rows || [];
+          for (const row of rows) {
+            const clave = row.c?.[0]?.v;
+            const valor = row.c?.[1]?.v;
+            if (clave === 'nombre_mostrar' || clave === 'nombre_congregacion') {
+              setNombre(valor || 'CongreAdmin');
+              break;
+            }
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
+  
+  return nombre;
+}
+
 const menuItems = [
   { label: 'Dashboard', icon: DashboardIcon, path: '/' },
   { label: 'Personas', icon: PeopleIcon, path: '/personas' },
@@ -37,13 +70,14 @@ const menuItems = [
   { label: 'Predicación', icon: MapIcon, path: '/predicacion' },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ isAdmin }: { isAdmin?: boolean }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuth();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [mobileOpen, setMobileOpen] = useState(false);
+  const congregationName = useCongregacionName();
 
   const handleNavigation = (path: string) => {
     navigate(path);
@@ -61,7 +95,7 @@ export default function Sidebar() {
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <Typography variant="h6" noWrap>
-          Congre-Admin
+          {congregationName}
         </Typography>
         {isMobile && (
           <ChevronLeftIcon onClick={() => setMobileOpen(false)} sx={{ cursor: 'pointer' }} />

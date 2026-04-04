@@ -38,7 +38,8 @@ import {
   Home as HomeIcon,
   ChevronLeft as ChevronLeftIcon,
   ChevronRight as ChevronRightIcon,
-  Share as ShareIcon
+  Share as ShareIcon,
+  Business as BusinessIcon
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
 import { useCongregacion } from '@/hooks/useCongregacion';
@@ -56,6 +57,7 @@ const menuItems = [
 ];
 
 const settingsMenuItems = [
+  { label: 'Sitio', icon: BusinessIcon, path: '/admin/settings/congregation' },
   { label: 'Respaldo', icon: BackupIcon, path: '/admin/backup' },
   { label: 'Modo Oscuro', icon: DarkModeIcon, action: 'toggleDarkMode' },
   { label: 'Compartir', icon: ShareIcon, action: 'share' },

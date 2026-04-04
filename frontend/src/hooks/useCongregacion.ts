@@ -1,22 +1,48 @@
 import { useQuery } from '@tanstack/react-query';
 import { dataService } from '../services/dataService';
-import { useAuth } from '@/admin/core/context/AuthContext';
+import { QUERY_OPTIONS } from './queryConfig';
 
 const ADMIN_SS_ID_KEY = 'congre_admin_ss_id';
+
+export interface CongregacionSettings {
+  nombre?: string;
+  numero?: string;
+  nombreMostrar?: string;
+  temaColor?: string;
+  temaColorSecundario?: string;
+  iconoUrl?: string;
+  idioma?: string;
+  zonaHoraria?: string;
+}
 
 export function useCongregacion() {
   const adminSsId = localStorage.getItem(ADMIN_SS_ID_KEY);
   
-  return useQuery({
+  return useQuery<CongregacionSettings | null>({
     queryKey: ['congregacion'],
     queryFn: async () => {
       if (!adminSsId) return null;
       const config = await dataService.getData<{ clave: string; valor: string }[]>('Configuracion', adminSsId);
-      const nombre = config.find((c) => c.clave === 'nombre_mostrar')?.valor || config.find((c) => c.clave === 'nombre_congregacion')?.valor;
-      const numero = config.find((c) => c.clave === 'numero_congregacion')?.valor;
-      return { nombre: nombre || 'CongreAdmin', numero };
+      
+      const getValue = (key: string) => config.find((c) => c.clave === key)?.valor;
+      
+      return {
+        nombre: getValue('nombre_mostrar') || getValue('nombre_congregacion') || 'CongreAdmin',
+        numero: getValue('numero_congregacion'),
+        nombreMostrar: getValue('nombre_mostrar'),
+        temaColor: getValue('tema_color'),
+        temaColorSecundario: getValue('tema_color_secundario'),
+        iconoUrl: getValue('icono_url'),
+        idioma: getValue('idioma_predeterminado'),
+        zonaHoraria: getValue('zona_horaria'),
+      };
     },
     enabled: !!adminSsId,
-    staleTime: 10 * 60 * 1000,
+    ...QUERY_OPTIONS,
   });
+}
+
+export function useCongregacionName(): string {
+  const { data } = useCongregacion();
+  return data?.nombre || 'CongreAdmin';
 }

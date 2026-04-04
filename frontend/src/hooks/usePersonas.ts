@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { dataService } from '../services/dataService';
 import { dataTransformService } from '../services/dataTransformService';
 import type { GetDataOptions, SaveDataOptions } from '../types';
+import { QUERY_OPTIONS } from './queryConfig';
 
 const QUERY_KEYS = {
   personas: ['personas'],
@@ -29,7 +30,7 @@ export function usePersonas(ssId: string | undefined) {
       return dataService.getData<any[]>('Personas', ssId);
     },
     enabled: !!ssId,
-    staleTime: 5 * 60 * 1000,
+    ...QUERY_OPTIONS,
   });
 }
 

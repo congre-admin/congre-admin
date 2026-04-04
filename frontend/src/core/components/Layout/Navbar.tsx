@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   AppBar,
   Toolbar,
@@ -29,11 +29,45 @@ interface NavbarProps {
   isAdmin: boolean;
 }
 
+const ADMIN_SS_ID_KEY = 'congre_admin_ss_id';
+
+function useCongregacionName() {
+  const [nombre, setNombre] = useState('CongreAdmin');
+  
+  useEffect(() => {
+    const ssId = localStorage.getItem(ADMIN_SS_ID_KEY);
+    if (!ssId) return;
+    
+    const gvizUrl = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&sheet=Configuracion`;
+    fetch(gvizUrl)
+      .then(res => res.text())
+      .then(text => {
+        const match = text.match(/(\{.*\})/);
+        if (match) {
+          const data = JSON.parse(match[1]);
+          const rows = data.table?.rows || [];
+          for (const row of rows) {
+            const clave = row.c?.[0]?.v;
+            const valor = row.c?.[1]?.v;
+            if (clave === 'nombre_mostrar' || clave === 'nombre_congregacion') {
+              setNombre(valor || 'CongreAdmin');
+              break;
+            }
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
+  
+  return nombre;
+}
+
 export default function Navbar({ isAdmin }: NavbarProps) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const congregationName = useCongregacionName();
   
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [darkMode, setDarkMode] = useState(false);
@@ -80,7 +114,7 @@ export default function Navbar({ isAdmin }: NavbarProps) {
         )}
         
         <Typography variant="h6" sx={{ flexGrow: 1 }}>
-          {isAdmin ? (user?.username || 'Admin') : 'Congre-Admin'}
+          {isAdmin ? (user?.username || congregationName) : congregationName}
         </Typography>
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>

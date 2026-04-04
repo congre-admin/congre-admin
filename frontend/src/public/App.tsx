@@ -29,7 +29,8 @@ import {
   Badge,
   Menu,
   MenuItem,
-  Popover
+  Popover,
+  CssBaseline
 } from '@mui/material';
 import {
   Home as HomeIcon,
@@ -45,9 +46,11 @@ import {
   Settings as SettingsIcon,
   ChevronLeft as ChevronLeftIcon,
   ChevronRight as ChevronRightIcon,
-  Share as ShareIcon
+  Share as ShareIcon,
+  Image as ImageIcon
 } from '@mui/icons-material';
 import ShareDialog from '@/admin/core/components/ShareDialog/ShareDialog';
+import { parseCsvToJson } from '@/utils/csvUtils';
 
 const PUBLIC_SS_ID_KEY = 'congre_public_ss_id';
 const ADMIN_SS_ID_KEY = 'congre_admin_ss_id';
@@ -87,7 +90,13 @@ export default function PublicApp() {
   const [ssIdInput, setSsIdInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [congregacion, setCongregacion] = useState<{ nombre?: string; numero?: string } | null>(null);
+  const [congregacion, setCongregacion] = useState<{
+    nombre?: string;
+    numero?: string;
+    temaColor?: string;
+    temaColorSecundario?: string;
+    iconoUrl?: string;
+  } | null>(null);
   const [publicData, setPublicData] = useState<any[]>([]);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
@@ -129,46 +138,60 @@ export default function PublicApp() {
     setLoading(true);
     setError(null);
     
+    let nombreMostrar: string | undefined;
+    let numeroCongregacion: string | undefined;
+    let temaColor: string | undefined;
+    let temaColorSecundario: string | undefined;
+    let iconoUrl: string | undefined;
+    
     try {
-      try {
-        const gvizUrl = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&sheet=Configuracion`;
-        const configResponse = await fetch(gvizUrl);
-        const configText = await configResponse.text();
-        const configMatch = configText.match(/(\{.*\})/);
+      const gvizUrl = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:csv&sheet=Configuracion`;
+      const configResponse = await fetch(gvizUrl);
+      const configText = await configResponse.text();
+      const configData = parseCsvToJson(configText);
+      
+      for (const row of configData) {
+        const clave = row.clave;
+        const valor = row.valor;
         
-        if (configMatch) {
-          const configData = JSON.parse(configMatch[1]);
-          const rows = configData.table?.rows || [];
-          
-          for (const row of rows) {
-            const values = row.c?.map((c: any) => c?.v).filter(Boolean) || [];
-            if (values[0] === 'linked_admin_ss') {
-              const linkedData = JSON.parse(values[1]);
-              if (linkedData.ssId && linkedData.gasUrl) {
-                localStorage.setItem(ADMIN_SS_ID_KEY, linkedData.ssId);
-                localStorage.setItem(ADMIN_API_URL_KEY, linkedData.gasUrl);
-              }
-              break;
+        if (clave === 'linked_admin_ss' && valor) {
+          try {
+            const linkedData = JSON.parse(valor);
+            if (linkedData.ssId && linkedData.gasUrl) {
+              localStorage.setItem(ADMIN_SS_ID_KEY, linkedData.ssId);
+              localStorage.setItem(ADMIN_API_URL_KEY, linkedData.gasUrl);
             }
+          } catch (e) {
+            console.warn('Failed to parse linked_admin_ss:', e);
           }
         }
-      } catch (configErr) {
-        console.warn('Could not resolve linked Admin SSID:', configErr);
+        if (clave === 'nombre_mostrar') nombreMostrar = valor;
+        if (clave === 'numero_congregacion') numeroCongregacion = valor;
+        if (clave === 'tema_color') temaColor = valor;
+        if (clave === 'tema_color_secundario') temaColorSecundario = valor;
+        if (clave === 'icono_url') iconoUrl = valor;
       }
       
-      const gvizUrl = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:json&sheet=Publico`;
-      const response = await fetch(gvizUrl);
-      const text = await response.text();
-      
-      const jsonMatch = text.match(/(\{.*\})/);
-      if (jsonMatch) {
-        const data = JSON.parse(jsonMatch[1]);
-        if (data.table) {
-          setPublicData(data.table.rows || []);
-        }
+      if (temaColor) {
+        document.documentElement.style.setProperty('--theme-primary', temaColor);
+      }
+      if (temaColorSecundario) {
+        document.documentElement.style.setProperty('--theme-secondary', temaColorSecundario);
       }
       
-      setCongregacion({ nombre: 'Congregación' });
+      const gvizUrl2 = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:csv&sheet=Publico`;
+      const response = await fetch(gvizUrl2);
+      const csvText = await response.text();
+      const publicData = parseCsvToJson(csvText);
+      setPublicData(publicData);
+      
+      setCongregacion({ 
+        nombre: nombreMostrar || 'CongreAdmin', 
+        numero: numeroCongregacion,
+        temaColor,
+        temaColorSecundario,
+        iconoUrl
+      });
     } catch (err) {
       setError('Error al cargar datos públicos. Verifique el ID de la hoja de cálculo.');
     } finally {
@@ -255,6 +278,16 @@ export default function PublicApp() {
           }}
         >
           <Toolbar>
+            {congregacion?.iconoUrl ? (
+              <img 
+                src={congregacion.iconoUrl} 
+                alt="Logo"
+                style={{ width: 32, height: 32, objectFit: 'contain', borderRadius: 4, marginRight: 12 }}
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = 'none';
+                }}
+              />
+            ) : null}
             <Typography variant="h6" sx={{ flexGrow: 1, fontWeight: 600 }}>
               {congregationName}
             </Typography>
@@ -391,7 +424,7 @@ export default function PublicApp() {
           {!loading && !error && (
             <>
               <Typography variant="h4" gutterBottom>
-                Bienvenidos
+                Bienvenido a {congregationName}
               </Typography>
               <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
                 Información pública de la congregación
@@ -484,20 +517,45 @@ export default function PublicApp() {
             justifyContent: collapsed ? 'center' : 'space-between'
           }}>
             {collapsed ? (
-              <IconButton size="small" onClick={() => setCollapsed(false)}>
-                <HomeIcon />
-              </IconButton>
+              <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+                {congregacion?.iconoUrl ? (
+                  <img 
+                    src={congregacion.iconoUrl} 
+                    alt="Logo"
+                    style={{ width: 32, height: 32, objectFit: 'contain', borderRadius: 4 }}
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = 'none';
+                    }}
+                  />
+                ) : (
+                  <IconButton size="small" onClick={() => setCollapsed(false)}>
+                    <HomeIcon />
+                  </IconButton>
+                )}
+              </Box>
             ) : (
               <>
-                <Box sx={{ textAlign: 'center', flex: 1 }}>
-                  <Typography variant="h6" noWrap sx={{ fontWeight: 600 }}>
-                    {congregationName}
-                  </Typography>
-                  {congregacion?.numero && (
-                    <Typography variant="caption" color="text.secondary">
-                      #{congregacion.numero}
+                <Box sx={{ textAlign: 'center', flex: 1, display: 'flex', alignItems: 'center', gap: 1, justifyContent: 'center' }}>
+                  {congregacion?.iconoUrl ? (
+                    <img 
+                      src={congregacion.iconoUrl} 
+                      alt="Logo"
+                      style={{ width: 40, height: 40, objectFit: 'contain', borderRadius: 4 }}
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = 'none';
+                      }}
+                    />
+                  ) : null}
+                  <Box>
+                    <Typography variant="h6" noWrap sx={{ fontWeight: 600 }}>
+                      {congregationName}
                     </Typography>
-                  )}
+                    {congregacion?.numero && (
+                      <Typography variant="caption" color="text.secondary">
+                        #{congregacion.numero}
+                      </Typography>
+                    )}
+                  </Box>
                 </Box>
                 <IconButton size="small" onClick={() => setCollapsed(true)}>
                   <ChevronLeftIcon />
@@ -680,7 +738,7 @@ export default function PublicApp() {
         {!loading && !error && (
           <>
             <Typography variant="h4" gutterBottom>
-              Bienvenidos
+              Bienvenido a {congregationName}
             </Typography>
             <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
               Información pública de la congregación

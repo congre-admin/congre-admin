@@ -3,7 +3,7 @@
 En la arquitectura modular de Congre-Admin, el Backend se define como un **Proveedor de Servicios** (Data Provider) que debe cumplir con un protocolo de comunicación estándar. Actúa como el motor de ejecución para un sistema modular con segmentación física de datos.
 
 > **Nota:** Para una referencia técnica completa de la implementación actual en Google Apps Script, incluyendo todas las acciones API, códigos de error, ejemplos de uso y detalles de optimización, ver **[Backend_API_Completa.md](./Backend_API_Completa.md)**.
-> 
+>
 > **Despliegue:** El backend se despliega usando clasp. Ver **[Despliegue_GAS.md](./Despliegue_GAS.md)** para instrucciones.
 
 ---
@@ -14,18 +14,17 @@ Cualquier implementación de backend debe cumplir con las siguientes normas estr
 - **Convención de Nombres de ID:** Todas las tablas de datos **DEBEN** tener una columna de clave primaria denominada exactamente `id` (en minúsculas). Esto permite que la acción `saveData` realice operaciones *upsert* de forma universal e independiente del módulo.
 - **Acciones Estándar:**
     - **`getData`**: Recuperación de datos de una hoja.
-    - **`batchGetData`**: Recuperación de múltiples tablas.
     - **`saveData`**: Operación *upsert* (insertar o actualizar) en un recurso específico.
     - **`deleteData`**: Borrado lógico de registros.
     - **`hardDelete`**: Borrado físico de registros.
     - **`restoreData`**: Restaurar registro borrado lógicamente.
-    - **`getHistory`**: Obtener historial de versiones de un registro.
     - **`initSheet`**: Preparación estructural del recurso basado en el esquema.
     - **`clearSheet`**: Limpiar contenido de una hoja manteniendo cabeceras.
-    - **`deleteSheet`**: Eliminar una hoja del spreadsheet.
+- **Batch Orchestrator:**
+    - **`batchExecute`**: Ejecuta múltiples operaciones (read, readById, save, delete, hardDelete, restore, initSheet) en una sola llamada API. Soporta modos `continue` (éxito parcial) y `fail-fast` (detener al primer error). Máximo 50 operaciones por llamada. Reemplaza a `batchGetData`, `batchSaveData`, `batchDeleteData` y `batchInitSheet`.
 
 ### Seguridad del Recurso
-El backend debe validar que el `ssId` solicitado sea un recurso autorizado por el Núcleo para evitar accesos a archivos externos no relacionados con el sistema.
+El backend debe validar que el `ssId` solicitado sea un recurso autorizado por el Núcleo para evitar accesos a archivos externos no relacionados con el sistema. **Todas las operaciones de escritura requieren sesión válida y permisos RBAC.** Las operaciones de lectura validan permisos si se proporciona sessionToken.
 
 ## 2. Validaciones
 Las validaciones de esquema se ejecutan en el **Frontend** mediante JSONata antes de enviar los datos al backend. El backend confiablemente recepta los datos y los persiste.
@@ -113,7 +112,7 @@ El campo `auth_config` es un objeto JSON que almacena toda la configuración de 
 | `passkeys[].device_name` | string | Nombre descriptivo del dispositivo |
 | `passkeys[].created_at` | ISO 8601 | Fecha de registro del passkey |
 
-### Tabla: `Perfiles` (NUEVA)
+### Tabla: `Perfiles`
 - `id`: ID del perfil (ej: `p_secretario`, `p_siervo_territorios`).
 - `nombre`: Nombre descriptivo (ej: "Secretario", "Siervo de Territorios").
 - `permisos`: Objeto JSON con el mapa de accesos (ej: `{"personas": "RW", "territorios": "R"}`).
@@ -169,13 +168,14 @@ El script `api.gs` es el plug-in de backend primario y utiliza Google Sheets com
 ### Seguridad y Acceso
 -   **Persistencia de API:** El frontend identifica el URL del GAS mediante el parámetro `api` en la URL y lo persiste localmente.
 -   **Aislamiento:** El GAS gestiona el acceso a diferentes archivos de Google Sheets basándose en los IDs proporcionados por el Núcleo para el GSheet Core, el Público, el de Personas y los Operativos.
+-   **Multi-tenancy:** No se usan Script Properties para estado de la aplicación. Todo el estado (ssId) se pasa explícitamente en cada petición.
 
 ### Modelo de Seguridad (Zero-Knowledge)
 -   **Cofre Criptográfico:** El backend almacena la **Master Key (MK)** cifrada con la contraseña del usuario (`wrapped_mk`). La clave de envolver (Wrapping Key) se deriva de la contraseña mediante PBKDF2-HMAC-SHA256.
 -   **Cifrado en Reposo:** El backend almacena y entrega bloques de texto cifrados con AES-GCM (incluyendo su IV) sin conocer su contenido original.
 -   **Configuración de Auth:** Toda la configuración de autenticación se almacena en el campo `auth_config` de la tabla Usuarios, incluyendo passkeys, TOTP y email OTP.
 
-## 4. Niveles de Autenticación
+## 5. Niveles de Autenticación
 El proveedor de backend debe validar los factores de autenticación requeridos antes de emitir un `session_token`. El sistema soporta:
 
 1.  **Autenticación Biométrica (Passkeys/WebAuthn):** Método primario para administradores. Requiere almacenamiento de la `Public Key` para validación de firmas.
@@ -191,21 +191,21 @@ El proveedor de backend debe validar los factores de autenticación requeridos a
 - **`deletePasskey`**: Eliminar un passkey registrado.
 - **`setupTOTP`**: Generar código QR para configurar Google Authenticator.
 - **`confirmTOTP`**: Confirmar configuración de TOTP.
-- **`disableTOTP`**: Desactivar TOTP para el usuario.
 - **`requestOTP`**: Enviar código OTP por email.
 - **`getAuthMethods`**: Obtener métodos de autenticación habilitados del usuario.
-- **`updateAuthConfig`**: Actualizar configuración de autenticación.
+- **`setDefaultAuthMethod`**: Establecer método de autenticación predeterminado.
 - **`changePassword`**: Cambiar contraseña del usuario.
-- **`deleteAccount`**: Eliminar la cuenta del usuario.
+- **`confirmPasswordReset`**: Restablecer contraseña con token de recuperación.
+- **`requestPasswordReset`**: Solicitar email de restablecimiento de contraseña.
 - **`logout`**: Cerrar sesión.
 - **`validateSession`**: Validar token de sesión.
 - **`refreshSession`**: Renovar token de sesión.
-- **`getActiveSessions`**: Obtener sesiones activas de un usuario.
-- **`invalidateAllSessions`**: Cerrar todas las sesiones de un usuario.
+
+> **Acciones eliminadas en v2.0:** `disableTOTP` (usar `saveData` en Usuarios), `deleteAccount` (usar `deleteData` en Usuarios), `updateAuthConfig` (usar `saveData` en Usuarios).
 
 ---
 
-## 5. Control de Permisos RBAC
+## 6. Control de Permisos RBAC
 
 El sistema implementa Control de Acceso Basado en Roles con perfiles. Los perfiles base se definen en el archivo `backend/data/seed_perfiles.json` y se injectan durante la instalación.
 
@@ -220,20 +220,21 @@ El sistema implementa Control de Acceso Basado en Roles con perfiles. Los perfil
 | `p_publicador` | Publicador | R en reuniones, predicación |
 
 ### Acciones de Permisos (LECTURA)
-- **`getPerfiles`**: Obtener todos los perfiles disponibles.
-- **`getPermisos`**: Obtener permisos de un usuario específico.
-- **`checkPermission`**: Verificar si un usuario tiene permiso para una acción.
+- **`getPerfiles`** (ELIMINADO): Usar `batchExecute` con op `read` en hoja `Perfiles`.
+- **`getPermisos`** (ELIMINADO): Usar `batchExecute` con op `read` en `Usuarios` + `Perfiles`.
+- **`checkPermission`** (ELIMINADO): El frontend valida permisos leyendo `Perfiles` directamente.
 
-### Acciones de Perfiles (GESTIÓN - Requiere `core: RW`)
-- **`createProfile`**: Crear un nuevo perfil.
-- **`updateProfile`**: Actualizar un perfil existente.
-- **`deleteProfile`**: Eliminar un perfil (borrado lógico). No permite eliminar perfiles con usuarios asignados.
+### Gestión de Perfiles (CRUD)
+Los perfiles se gestionan mediante las operaciones CRUD genéricas:
+- **`createProfile`** (ELIMINADO): Usar `saveData('Perfiles')`.
+- **`updateProfile`** (ELIMINADO): Usar `saveData('Perfiles')`.
+- **`deleteProfile`** (ELIMINADO): Usar `deleteData('Perfiles')`.
 
-> **Nota:** Los perfiles son dinámicos. El administrador puede crear, modificar y eliminar perfiles desde la aplicación (excepto los que tengan usuarios asignados).
+> **Nota:** Los perfiles son dinámicos. El administrador puede crear, modificar y eliminar perfiles desde la aplicación usando las operaciones CRUD genéricas.
 
 ---
 
-## 6. Versionado y Borrado Lógico
+## 7. Versionado y Borrado Lógico
 
 El sistema implementa versionado automático y borrado lógico para todas las tablas.
 
@@ -249,12 +250,13 @@ El sistema implementa versionado automático y borrado lógico para todas las ta
 
 ---
 
-## 7. Sistema de Caché y Rate Limiting
+## 8. Sistema de Caché y Rate Limiting
 
 ### Caché
 - **TTL de datos**: 10 minutos (600 segundos).
 - **TTL de búsquedas**: 5 minutos (300 segundos).
 - Implementado mediante `CacheService` de GAS.
+- `invalidateCache(pattern)` es un no-op; la expiración es automática por TTL.
 
 ### Rate Limiting
 - Máximo 5 intentos por minuto por username en acciones de autenticación.
@@ -262,57 +264,66 @@ El sistema implementa versionado automático y borrado lógico para todas las ta
 
 ---
 
-## 8. Instalación
+## 9. Instalación
 
-### Proceso de Instalación
-La instalación se realiza mediante la acción `install` que recibe los perfiles desde el frontend (cargados del archivo JSON).
+### Proceso de Instalación (Frontend Orchestration)
+La instalación se realiza mediante la acción `install` que crea los spreadsheets, seguida de orquestación desde el frontend usando `batchExecute`.
 
 ```javascript
+// Paso 1: Install (solo crea spreadsheets)
 {
   "action": "install",
   "payload": {
-    "nombreCongregacion": "Nombre de la Congregación",
-    "perfiles": [ ... ]  // Del archivo backend/data/seed_perfiles.json
+    "nombreCongregacion": "Nombre de la Congregación"
+  }
+}
+// Respuesta: { ssId, ssUrl, publicSsId, publicSsUrl }
+
+// Paso 2: Frontend orchestra usando batchExecute
+{
+  "action": "batchExecute",
+  "payload": {
+    "ssId": "CORE_SS_ID",
+    "operations": [
+      { "op": "initSheet", "sheet": "Usuarios", "headers": [...] },
+      { "op": "initSheet", "sheet": "Perfiles", "headers": [...] },
+      { "op": "initSheet", "sheet": "Configuracion", "headers": [...] },
+      { "op": "save", "sheet": "Perfiles", "data": { "id": "p_admin", ... } },
+      { "op": "save", "sheet": "Configuracion", "data": { "clave": "nombre_congregacion", ... } }
+    ]
   }
 }
 ```
 
 ### Acciones de Instalación
-- **`install`**: Proceso completo de instalación (crea SS, inicializa tablas, injecta perfiles y configuración).
-- **`createSpreadsheet`**: Crear nuevo Google Spreadsheet.
-- **`initCoreTables`**: Inicializar tablas del Core (`Usuarios`, `Perfiles`, `Registro_Plugins`, `Configuracion`, `Sistema_Migraciones`). La tabla `Etiquetas` está definida en schema pero no se crea aún.
-- **`seedPerfiles`**: Inyectar perfiles (acepta array de perfiles como segundo parámetro).
-- **`seedConfiguracion`**: Inyectar configuración inicial.
-- **`register`**: Crear nuevo usuario.
-- **`login`**: Autenticar usuario y obtener sessionToken.
-- **`challenge`**: Generar desafío para Passkey/WebAuthn.
-- **`requestOTP`**: Enviar código OTP por email.
-- **`logout`**: Cerrar sesión.
-- **`validateSession`**: Validar token de sesión.
-- **`refreshSession`**: Renovar token de sesión.
-- **`getActiveSessions`**: Obtener sesiones activas de un usuario.
-- **`invalidateAllSessions`**: Cerrar todas las sesiones de un usuario.
+- **`install`**: Crea los spreadsheets Core y Público.
+- **`createSpreadsheet`**: Crear nuevo Google Spreadsheet (función interna).
+- **`batchExecute`**: Operación unificada para init, save, delete, restore, read. Reemplaza `batchInitSheet`, `batchSaveData`, `batchDeleteData`.
+- **`initCoreTables`** (ELIMINADO): Usar `batchExecute` con op `initSheet`.
+- **`seedPerfiles`** (ELIMINADO): Usar `batchExecute` con op `save`.
+- **`seedConfiguracion`** (ELIMINADO): Usar `batchExecute` con op `save`.
 
 ---
 
-## 5. El Cofre Criptográfico y Passkeys
-Cuando un usuario se autentica mediante **Passkey**, el backend valida el desafío y entrega la **Master Key cifrada** (`wrapped_mk`). 
+## 10. El Cofre Criptográfico y Passkeys
+Cuando un usuario se autentica mediante **Passkey**, el backend valida el desafío y entrega la **Master Key cifrada** (`wrapped_mk`).
 -   El frontend descifra la MK localmente para mantener el modelo de **Conocimiento Cero**.
 -   Se recomienda el uso del Keyring del sistema operativo para mantener las llaves de desbloqueo de forma persistente y segura.
 
 ---
 
-## 6. Optimización: Sistema de Lotes y Caché
--   **Batching:** Agrupamiento de respuestas para minimizar latencia. Crucial para cargar el esquema y los datos públicos inicialmente.
+## 11. Optimización: Batch Execute y Caché
+-   **`batchExecute`:** Ejecuta múltiples operaciones en una sola llamada API, reduciendo latencia y consumo de quota GAS. Soporta caché intra-batch (cada hoja se lee una vez por lote).
 -   **Capa de Caché:** Implementación de `CacheService` para acelerar lecturas masivas de datos públicos y configuraciones de plugins.
+-   **softDeleteRow optimizado:** Usa un solo `setValues()` en lugar de 3× `setValue()`.
 
-## 7. Logs y Auditoría
+## 12. Logs y Auditoría
 El backend es responsable de registrar en el GSheet Core:
 -   Intentos de acceso fallidos y exitosos.
 -   Cambios en la tabla maestra de Esquema.
 -   Historial de operaciones de escritura en la tabla de Personas y configuraciones de Plugins.
 
-## 8. Evolución de Datos y Backups
+## 13. Evolución de Datos y Backups
 Para garantizar que no haya pérdida de información durante actualizaciones del sistema:
 
 ### A. Política de `initSheet` No Destructiva
@@ -329,7 +340,7 @@ Para garantizar que no haya pérdida de información durante actualizaciones del
 - El Core debe exponer una función de "Exportar Backup Completo" que descargue un archivo ZIP conteniendo todos los archivos GSheet vinculados en formato JSON.
 - **Requerido:** Ejecutar backup antes de cualquier migración breaking.
 
-## 9. Gestión de Volumen y Archivado (Cold Storage)
+## 14. Gestión de Volumen y Archivado (Cold Storage)
 Para mantener el rendimiento óptimo y no alcanzar el límite de 10M de celdas de Google Sheets:
 
 ### A. Archivado de Logs
@@ -343,10 +354,39 @@ Para mantener el rendimiento óptimo y no alcanzar el límite de 10M de celdas d
 
 ### C. Optimización de Lectura
 - El backend (`api.gs`) utiliza `CacheService` para las tablas de configuración y esquemas, reduciendo las llamadas a la API de GSheets.
+- `batchExecute` implementa caché intra-batch: cada hoja se carga una vez y se reutiliza para todas las operaciones del lote.
 
 ---
 
-## 10. Documentación Técnica
+## 15. Funciones Deprecadas y Eliminadas
+
+### Eliminadas en v2.0 (reemplazadas por operaciones genéricas)
+
+| Función Eliminada | Reemplazo |
+|-------------------|-----------|
+| `batchGetData` | `batchExecute` con múltiples ops `read` |
+| `batchSaveData` | `batchExecute` con múltiples ops `save` |
+| `batchDeleteData` | `batchExecute` con múltiples ops `delete` |
+| `batchInitSheet` | `batchExecute` con múltiples ops `initSheet` |
+| `getHistory` | `batchExecute` con op `read` (frontend filtra por id) |
+| `deleteSheet` | No disponible (usar Google Sheets UI) |
+| `getPerfiles` | `batchExecute` con op `read` en `Perfiles` |
+| `getPermisos` | `batchExecute` con op `read` en `Usuarios` + `Perfiles` |
+| `checkPermission` | Validación directa en frontend |
+| `createProfile` | `batchExecute` con op `save` en `Perfiles` |
+| `updateProfile` | `batchExecute` con op `save` en `Perfiles` |
+| `deleteProfile` | `batchExecute` con op `delete` en `Perfiles` |
+| `disableTOTP` | `batchExecute` con op `save` en `Usuarios` (actualizar auth_config) |
+| `deleteAccount` | `batchExecute` con op `delete` en `Usuarios` |
+| `updateAuthConfig` | `batchExecute` con op `save` en `Usuarios` |
+| `initCoreTables` | `batchExecute` con ops `initSheet` |
+| `seedPerfiles` | `batchExecute` con ops `save` en `Perfiles` |
+| `seedConfiguracion` | `batchExecute` con ops `save` en `Configuracion` |
+| `actionResetPassword` | Renombrada a `confirmPasswordReset` |
+
+---
+
+## 16. Documentación Técnica
 
 Para una referencia completa de la implementación, ver:
 
@@ -358,6 +398,7 @@ Para una referencia completa de la implementación, ver:
   - Códigos de error
   - Ejemplos de uso
   - Notas de optimización de quota GAS
+  - Funciones deprecadas y sus reemplazos
 
 - **[DataService.md](./DataService.md)** - Frontend DataService (implementación del cliente):
   - Tipos TypeScript
@@ -376,4 +417,4 @@ Para una referencia completa de la implementación, ver:
 | `Autenticacion.md` | Sistema de autenticación y flujos |
 | `Tecnologia.md` | Especificación tecnológica |
 | `Instalacion.md` | Guía de instalación |
-| `PLAN_DESARROLLO.md` | Plan de desarrollo | |
+| `PLAN_DESARROLLO.md` | Plan de desarrollo |

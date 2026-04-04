@@ -31,15 +31,99 @@ function doGet(e) {
 
 /**
  * Maneja solicitudes POST genéricas.
+ * All config stored in GSheet, no script properties.
  */
 function doPost(e) {
   try {
     const postData = JSON.parse(e.postData.contents);
     const action = postData.action;
+    const payload = postData.payload || {};
+    const sessionToken = payload.sessionToken || postData.sessionToken;
     const sheetName = postData.sheet;
-    const ssId = postData.ssId;
-    const ss = ssId ? SpreadsheetApp.openById(ssId) : SpreadsheetApp.getActiveSpreadsheet();
+    const ssId = payload.ssId || postData.ssId;
     
+    // Auth actions - no spreadsheet needed
+    if (action === 'login') {
+      return createResponse(actionLogin(payload, ssId));
+    }
+    
+    if (action === 'register') {
+      return createResponse(actionRegister(payload, ssId));
+    }
+    
+    if (action === 'challenge') {
+      return createResponse(actionChallenge(payload));
+    }
+    
+    if (action === 'requestOTP') {
+      return createResponse(actionRequestOTP(payload));
+    }
+    
+    if (action === 'setupTOTP') {
+      return createResponse(actionSetupTOTP(payload));
+    }
+    
+    if (action === 'confirmTOTP') {
+      return createResponse(actionConfirmTOTP(payload));
+    }
+    
+    if (action === 'setupPasskey') {
+      return createResponse(actionSetupPasskey(payload));
+    }
+    
+    if (action === 'confirmPasskey') {
+      return createResponse(actionConfirmPasskey(payload));
+    }
+    
+    if (action === 'deletePasskey') {
+      return createResponse(actionDeletePasskey(payload));
+    }
+    
+    if (action === 'changePassword') {
+      return createResponse(actionChangePassword(payload));
+    }
+    
+    if (action === 'requestPasswordReset') {
+      return createResponse(actionRequestPasswordReset(payload));
+    }
+    
+    if (action === 'confirmPasswordReset') {
+      return createResponse(actionConfirmPasswordReset(payload));
+    }
+    
+    if (action === 'getAuthMethods') {
+      return createResponse(actionGetAuthMethods(payload));
+    }
+    
+    if (action === 'setDefaultAuthMethod') {
+      return createResponse(actionSetDefaultAuthMethod(payload));
+    }
+    
+    if (action === 'validateSession') {
+      const session = validateSession(sessionToken);
+      return createResponse({ valid: session.valid, userId: session.userId });
+    }
+    
+    if (action === 'refreshSession') {
+      return createResponse(actionRefreshSession(payload));
+    }
+    
+    if (action === 'logout') {
+      return createResponse(actionLogout(payload));
+    }
+    
+    if (action === 'install') {
+      return createResponse(actionInstall(payload));
+    }
+    
+    // --- Data actions - require ssId and session ---
+    if (!ssId) {
+      return createResponse({ error: 'ERR_SS_ID_REQUIRED: Se requiere ssId para operaciones de datos' });
+    }
+    
+    const ss = SpreadsheetApp.openById(ssId);
+    
+    // --- initSheet ---
     if (action === 'initSheet') {
       let sheet = ss.getSheetByName(sheetName);
       if (!sheet) {
@@ -53,282 +137,164 @@ function doPost(e) {
           sheet.getRange(1, 1, 1, postData.headers.length).setValues([postData.headers]).setFontWeight('bold').setBackground('#f3f3f3');
         }
       }
-      clearCache(ss.getId(), sheetName);
+      clearCache(ssId, sheetName);
       return createResponse({ success: true, message: 'Hoja inicializada' });
     }
-
+    
+    // --- clearSheet ---
     if (action === 'clearSheet') {
       const sheet = ss.getSheetByName(sheetName);
       if (!sheet) return createResponse({ error: 'Hoja no encontrada' });
       const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues();
       sheet.clearContents();
       if (headers.length > 0 && headers[0][0]) sheet.appendRow(headers[0]);
-      clearCache(ss.getId(), sheetName);
+      clearCache(ssId, sheetName);
       return createResponse({ success: true });
     }
-
-    if (action === 'deleteData') {
-      const sheet = ss.getSheetByName(sheetName);
-      if (!sheet) return createResponse({ error: 'Hoja no encontrada' });
-      // Usar borrado lógico por defecto
-      const result = softDeleteRow(sheet, postData.id);
-      if (!result) {
-        return createResponse({ success: false, error: 'Registro no encontrado' });
-      }
-      clearCache(ss.getId(), sheetName);
-      return createResponse({ success: true, message: 'Borrado lógico realizado' });
+    
+    // --- batchInitSheet ---
+    if (action === 'batchInitSheet') {
+      const tables = postData.tables || [];
+      const results = [];
+      tables.forEach(table => {
+        try {
+          let sheet = ss.getSheetByName(table.name);
+          if (!sheet) {
+            sheet = ss.insertSheet(table.name);
+            sheet.appendRow(table.headers);
+            results.push({ name: table.name, status: 'created' });
+          } else if (!table.preserveExisting) {
+            sheet.clearContents();
+            sheet.getRange(1, 1, 1, table.headers.length).setValues([table.headers]).setFontWeight('bold').setBackground('#f3f3f3');
+            results.push({ name: table.name, status: 'reinitialized' });
+          } else {
+            if (sheet.getLastRow() === 0) {
+              sheet.getRange(1, 1, 1, table.headers.length).setValues([table.headers]).setFontWeight('bold').setBackground('#f3f3f3');
+            }
+            results.push({ name: table.name, status: 'preserved' });
+          }
+          clearCache(ssId, table.name);
+        } catch (e) {
+          results.push({ name: table.name, status: 'error', error: e.message });
+        }
+      });
+      return createResponse({ success: true, results: results });
     }
     
-    if (action === 'hardDelete') {
-      // Borrado físico (solo admin)
+    // --- batchSaveData ---
+    if (action === 'batchSaveData') {
       const sheet = ss.getSheetByName(sheetName);
-      if (!sheet) return createResponse({ error: 'Hoja no encontrada' });
-      deleteRowById(sheet, postData.id);
-      clearCache(ss.getId(), sheetName);
-      return createResponse({ success: true, message: 'Borrado físico realizado' });
+      if (!sheet) return createResponse({ error: 'Hoja no encontrada: ' + sheetName });
+      const rows = postData.rows || [];
+      const results = [];
+      rows.forEach(item => {
+        try {
+          updateOrInsert(sheet, item, false, {});
+          results.push({ id: item.id, status: 'saved' });
+        } catch (e) {
+          results.push({ id: item.id, status: 'error', error: e.message });
+        }
+      });
+      clearCache(ssId, sheetName);
+      return createResponse({ success: true, results: results });
     }
     
-    if (action === 'restoreData') {
-      // Restaurar registro borrado lógicamente
+    // --- batchDeleteData ---
+    if (action === 'batchDeleteData') {
       const sheet = ss.getSheetByName(sheetName);
       if (!sheet) return createResponse({ error: 'Hoja no encontrada' });
-      const result = restoreRow(sheet, postData.id);
-      if (!result) return createResponse({ success: false, error: 'Registro no encontrado' });
-      clearCache(ss.getId(), sheetName);
-      return createResponse({ success: true, message: 'Registro restaurado' });
+      const ids = postData.ids || [];
+      const results = [];
+      ids.forEach(id => {
+        const result = softDeleteRow(sheet, id);
+        results.push({ id: id, status: result ? 'deleted' : 'not_found' });
+      });
+      clearCache(ssId, sheetName);
+      return createResponse({ success: true, results: results });
     }
     
-    if (action === 'getHistory') {
-      if (!postData.sessionToken) {
-        return createResponse({ error: 'ERR_AUTH_REQUIRED' });
-      }
-      const session = validateSession(postData.sessionToken);
-      if (!session.valid) {
-        return createResponse({ error: 'ERR_AUTH_INVALID' });
-      }
-      
-      const sheet = ss.getSheetByName(sheetName);
-      if (!sheet) return createResponse({ error: 'Hoja no encontrada' });
-      
-      const permCheck = checkPermission(session, 'read', sheetName);
-      if (!permCheck.allowed) {
-        return createResponse({ error: permCheck.error });
-      }
-      
-      const history = getVersionHistory(sheet, postData.id);
-      return createResponse({ success: true, history: history });
-    }
-    
-    // Last Write Wins: validar versión antes de guardar
+    // --- saveData ---
     if (action === 'saveData') {
       const sheet = ss.getSheetByName(sheetName);
       if (!sheet) return createResponse({ error: 'Hoja no encontrada: ' + sheetName });
-      
       let existingRows = null;
-      
       if (postData.expectedVersion !== undefined) {
         existingRows = sheet.getDataRange().getValues();
-        const headers = existingRows[0];
-        const idIndex = headers.indexOf('id');
-        const vIndex = headers.indexOf('_v');
-        
-        for (let i = 1; i < existingRows.length; i++) {
-          if (existingRows[i][idIndex] == postData.payload.id) {
-            const currentV = vIndex >= 0 ? (parseInt(existingRows[i][vIndex]) || 0) : 0;
-            if (currentV > postData.expectedVersion) {
-              return createResponse({ 
-                success: false, 
-                error: 'ERR_VERSION_CONFLICT',
-                message: 'El registro fue modificado por otro usuario',
-                currentVersion: currentV
-              });
-            }
-            break;
-          }
-        }
       }
-      
-      updateOrInsert(sheet, postData.payload, postData.onlyIfNew, { existingRows });
-      clearCache(ss.getId(), sheetName);
-      return createResponse({ success: true });
+      updateOrInsert(sheet, payload, false, { existingRows });
+      clearCache(ssId, sheetName);
+      return createResponse({ success: true, message: 'Datos guardados' });
     }
-
-    if (action === 'deleteSheet') {
+    
+    // --- deleteData ---
+    if (action === 'deleteData') {
       const sheet = ss.getSheetByName(sheetName);
-      if (sheet) ss.deleteSheet(sheet);
-      return createResponse({ success: true });
-    }
-
-    // --- Autenticación ---
-    
-    if (action === 'register') {
-      return createResponse(actionRegister(postData.payload));
+      if (!sheet) return createResponse({ error: 'Hoja no encontrada' });
+      const result = softDeleteRow(sheet, payload.id);
+      if (!result) return createResponse({ success: false, error: 'Registro no encontrado' });
+      clearCache(ssId, sheetName);
+      return createResponse({ success: true, message: 'Borrado lógico realizado' });
     }
     
-    if (action === 'login') {
-      return createResponse(actionLogin(postData.payload));
+    // --- hardDelete ---
+    if (action === 'hardDelete') {
+      const sheet = ss.getSheetByName(sheetName);
+      if (!sheet) return createResponse({ error: 'Hoja no encontrada' });
+      deleteRowById(sheet, payload.id);
+      clearCache(ssId, sheetName);
+      return createResponse({ success: true, message: 'Borrado físico realizado' });
     }
     
-    if (action === 'challenge') {
-      return createResponse(actionChallenge(postData.payload));
+    // --- restoreData ---
+    if (action === 'restoreData') {
+      const sheet = ss.getSheetByName(sheetName);
+      if (!sheet) return createResponse({ error: 'Hoja no encontrada' });
+      const result = restoreRow(sheet, payload.id);
+      if (!result) return createResponse({ success: false, error: 'Registro no encontrado' });
+      clearCache(ssId, sheetName);
+      return createResponse({ success: true, message: 'Registro restaurado' });
     }
     
-    if (action === 'requestOTP') {
-      return createResponse(actionRequestOTP(postData.payload));
-    }
-    
-    if (action === 'setupTOTP') {
-      return createResponse(actionSetupTOTP(postData.payload));
-    }
-    
-    if (action === 'confirmTOTP') {
-      return createResponse(actionConfirmTOTP(postData.payload));
-    }
-    
-    if (action === 'disableTOTP') {
-      return createResponse(actionDisableTOTP(postData.payload));
-    }
-    
-    if (action === 'setupPasskey') {
-      return createResponse(actionSetupPasskey(postData.payload));
-    }
-    
-    if (action === 'confirmPasskey') {
-      return createResponse(actionConfirmPasskey(postData.payload));
-    }
-    
-    if (action === 'deletePasskey') {
-      const session = validateSession(postData.sessionToken);
+    // --- getHistory ---
+    if (action === 'getHistory') {
+      if (!sessionToken) return createResponse({ error: 'ERR_AUTH_REQUIRED' });
+      const session = validateSession(sessionToken);
       if (!session.valid) return createResponse({ error: 'ERR_AUTH_INVALID' });
-      return createResponse(actionDeletePasskey(session, postData.payload));
+      const permCheck = checkPermission(session, 'read', sheetName, ssId);
+      if (!permCheck.allowed) return createResponse({ error: permCheck.error });
+      const sheet = ss.getSheetByName(sheetName);
+      if (!sheet) return createResponse({ error: 'Hoja no encontrada' });
+      const history = getVersionHistory(sheet, payload.id);
+      return createResponse({ success: true, history: history });
     }
     
-    if (action === 'getAuthMethods') {
-      const session = validateSession(postData.sessionToken);
-      if (!session.valid) return createResponse({ error: 'ERR_AUTH_INVALID' });
-      return createResponse(actionGetAuthMethods(session));
+    // --- getData ---
+    if (action === 'getData') {
+      if (sessionToken) {
+        const session = validateSession(sessionToken);
+        if (!session.valid) return createResponse({ error: 'ERR_AUTH_INVALID' });
+        const permCheck = checkPermission(session, 'read', sheetName, ssId);
+        if (!permCheck.allowed) return createResponse({ error: permCheck.error });
+      }
+      const data = getCachedSheetData(ss, sheetName);
+      return createResponse({ success: true, data: data });
     }
     
-    if (action === 'updateAuthConfig') {
-      const session = validateSession(postData.sessionToken);
-      if (!session.valid) return createResponse({ error: 'ERR_AUTH_INVALID' });
-      return createResponse(actionUpdateAuthConfig(session, postData.payload));
+    // --- batchGetData ---
+    if (action === 'batchGetData') {
+      if (sessionToken) {
+        const session = validateSession(sessionToken);
+        if (!session.valid) return createResponse({ error: 'ERR_AUTH_INVALID' });
+      }
+      const sheets = postData.sheets ? postData.sheets.split(',') : [];
+      const result = {};
+      sheets.forEach(name => {
+        result[name] = getCachedSheetData(ss, name);
+      });
+      return createResponse({ success: true, data: result });
     }
     
-    if (action === 'changePassword') {
-      const session = validateSession(postData.sessionToken);
-      if (!session.valid) return createResponse({ error: 'ERR_AUTH_INVALID' });
-      return createResponse(actionChangePassword(session, postData.payload));
-    }
-    
-    if (action === 'deleteAccount') {
-      const session = validateSession(postData.sessionToken);
-      if (!session.valid) return createResponse({ error: 'ERR_AUTH_INVALID' });
-      return createResponse(actionDeleteAccount(session, postData.payload));
-    }
-    
-    if (action === 'requestPasswordReset') {
-      return createResponse(actionRequestPasswordReset(postData.payload));
-    }
-    
-    if (action === 'resetPassword') {
-      return createResponse(actionResetPassword(postData.payload));
-    }
-    
-    if (action === 'logout') {
-      return createResponse(actionLogout(postData.payload));
-    }
-    
-    if (action === 'validateSession') {
-      const session = validateSession(postData.sessionToken);
-      return createResponse(session);
-    }
-    
-    if (action === 'refreshSession') {
-      return createResponse(refreshSessionToken(postData.sessionToken));
-    }
-    
-    if (action === 'getActiveSessions') {
-      return createResponse(getActiveSessions(postData.userId));
-    }
-    
-    if (action === 'invalidateAllSessions') {
-      return createResponse(invalidateAllSessions(postData.userId));
-    }
-    
-    // --- Permisos RBAC ---
-    
-    if (action === 'getPerfiles') {
-      return createResponse(actionGetPerfiles());
-    }
-    
-    if (action === 'getCongregacion') {
-      return createResponse(actionGetCongregacion());
-    }
-    
-    if (action === 'getPermisos') {
-      return createResponse(actionGetPermisos(postData.payload));
-    }
-    
-    if (action === 'checkPermission') {
-      return createResponse(actionCheckPermission(postData.payload));
-    }
-    
-    // --- Gestión de Perfiles ---
-    
-    if (action === 'createProfile') {
-      const session = validateSession(postData.sessionToken);
-      if (!session.valid) return createResponse({ error: 'ERR_AUTH_INVALID' });
-      const perm = checkPermission(session, 'write', 'core');
-      if (!perm.allowed) return createResponse({ error: perm.error });
-      return createResponse(actionCreateProfile(postData.payload));
-    }
-    
-    if (action === 'updateProfile') {
-      const session = validateSession(postData.sessionToken);
-      if (!session.valid) return createResponse({ error: 'ERR_AUTH_INVALID' });
-      const perm = checkPermission(session, 'write', 'core');
-      if (!perm.allowed) return createResponse({ error: perm.error });
-      return createResponse(actionUpdateProfile(postData.payload));
-    }
-    
-    if (action === 'deleteProfile') {
-      const session = validateSession(postData.sessionToken);
-      if (!session.valid) return createResponse({ error: 'ERR_AUTH_INVALID' });
-      const perm = checkPermission(session, 'write', 'core');
-      if (!perm.allowed) return createResponse({ error: perm.error });
-      return createResponse(actionDeleteProfile(postData.payload));
-    }
-    
-    if (action === 'updateUser') {
-      const session = validateSession(postData.sessionToken);
-      if (!session.valid) return createResponse({ error: 'ERR_AUTH_INVALID' });
-      return createResponse(actionUpdateUser(session, postData.payload));
-    }
-    
-    // --- Instalación ---
-    
-    if (action === 'install') {
-      return createResponse(actionInstall(postData.payload));
-    }
-    
-    if (action === 'createSpreadsheet') {
-      return createResponse(createSpreadsheet(postData.name));
-    }
-    
-    if (action === 'initCoreTables') {
-      return createResponse(initCoreTables(postData.ssId));
-    }
-    
-    if (action === 'seedPerfiles') {
-      return createResponse(seedPerfiles(postData.ssId));
-    }
-    
-    if (action === 'seedConfiguracion') {
-      return createResponse(seedConfiguracion(postData.ssId));
-    }
-    
-    return createResponse({ error: 'Acción POST no válida' });
+    return createResponse({ error: 'Acción POST no válida: ' + action });
   } catch (err) {
     return createResponse({ error: err.message });
   }
@@ -588,59 +554,42 @@ function createResponse(data) {
 
 // ================================================================= //
 // AUTENTICACIÓN ZERO-KNOWLEDGE
-// Fase 1.1: Implementación de autenticación
+// All config from GSheet, no script properties
 // ================================================================= //
 
 const SESSION_TTL = 86400; // 24 horas en segundos
-const CORE_SS_ID = 'CORE_SS_ID'; // Configurar en propiedades del script
 
 /**
- * Obtiene el ID del GSheet Core desde las propiedades del script
+ * Helper para obtener user properties
  */
-function getCoreSpreadsheetId() {
-  return PropertiesService.getScriptProperties().getProperty('CORE_SS_ID');
+function getUserProperties() {
+  return PropertiesService.getUserProperties();
 }
 
 /**
- * Obtiene el Spreadsheet Core (con caché)
+ * Get current ssId from session storage
  */
-let _cachedSpreadsheet = null;
-let _cachedSpreadsheetId = null;
-
-function getCoreSpreadsheet() {
-  const ssId = getCoreSpreadsheetId();
-  if (!ssId) throw new Error('CORE_SS_ID no configurado');
-  
-  if (_cachedSpreadsheetId === ssId && _cachedSpreadsheet) {
-    return _cachedSpreadsheet;
-  }
-  
-  _cachedSpreadsheet = SpreadsheetApp.openById(ssId);
-  _cachedSpreadsheetId = ssId;
-  return _cachedSpreadsheet;
-}
-
-function invalidateCoreSpreadsheetCache() {
-  _cachedSpreadsheet = null;
-  _cachedSpreadsheetId = null;
+function getCurrentSsId() {
+  return getUserProperties().getProperty('current_ssId');
 }
 
 /**
- * Obtiene la hoja de Usuarios del GSheet Core
+ * Obtiene la hoja de Usuarios desde el GSheet especificado
  */
-function getUsuariosSheet() {
-  const ss = getCoreSpreadsheet();
+function getUsuariosSheet(ssId) {
+  const ss = SpreadsheetApp.openById(ssId);
   return ss.getSheetByName('Usuarios');
 }
 
 /**
  * Busca un usuario por username (email)
  * @param {string} username - Email del usuario
+ * @param {string} ssId - ID del spreadsheet
  * @return {object|null} Usuario encontrado o null
  */
-function getUserByUsername(username) {
+function getUserByUsername(username, ssId) {
   return getCached('u:un:' + username, () => {
-    const sheet = getUsuariosSheet();
+    const sheet = getUsuariosSheet(ssId);
     if (!sheet) return null;
     const data = getSheetData(sheet);
     return data.find(row => row.username === username) || null;
@@ -650,11 +599,12 @@ function getUserByUsername(username) {
 /**
  * Busca un usuario por ID
  * @param {string} id - ID del usuario
+ * @param {string} ssId - ID del spreadsheet
  * @return {object|null} Usuario encontrado o null
  */
-function getUserById(id) {
+function getUserById(id, ssId) {
   return getCached('u:id:' + id, () => {
-    const sheet = getUsuariosSheet();
+    const sheet = getUsuariosSheet(ssId);
     if (!sheet) return null;
     const data = getSheetData(sheet);
     return data.find(row => row.id === id) || null;
@@ -761,14 +711,15 @@ function validatePasswordComplexity(password) {
 /**
  * Crea un nuevo usuario
  * @param {object} userData - Datos del usuario
+ * @param {string} ssId - ID del spreadsheet
  * @return {object} Usuario creado
  */
-function createUser(userData) {
-  const sheet = getUsuariosSheet();
+function createUser(userData, ssId) {
+  const sheet = getUsuariosSheet(ssId);
   if (!sheet) throw new Error('Hoja Usuarios no encontrada');
   
   // Verificar si el usuario ya existe
-  const existing = getUserByUsername(userData.username);
+  const existing = getUserByUsername(userData.username, ssId);
   if (existing) {
     throw new Error('ERR_USER_EXISTS: El usuario ya existe');
   }
@@ -812,7 +763,7 @@ function createUser(userData) {
   };
   
   updateOrInsert(sheet, user, false);
-  clearCache(getCoreSpreadsheetId(), 'Usuarios');
+  clearCache(ssId, 'Usuarios');
   invalidateCache('u:');
   
   return { success: true, user: { id: user.id, username: user.username } };
@@ -822,13 +773,14 @@ function createUser(userData) {
  * Actualiza un usuario existente
  * @param {string} id - ID del usuario
  * @param {object} updates - Campos a actualizar
+ * @param {string} ssId - ID del spreadsheet
  * @return {object} Usuario actualizado
  */
-function updateUser(id, updates) {
-  const sheet = getUsuariosSheet();
+function updateUser(id, updates, ssId) {
+  const sheet = getUsuariosSheet(ssId);
   if (!sheet) throw new Error('Hoja Usuarios no encontrada');
   
-  const user = getUserById(id);
+  const user = getUserById(id, ssId);
   if (!user) {
     throw new Error('ERR_USER_NOT_FOUND: Usuario no encontrado');
   }
@@ -849,7 +801,7 @@ function updateUser(id, updates) {
   };
   
   updateOrInsert(sheet, updatedUser, false);
-  clearCache(getCoreSpreadsheetId(), 'Usuarios');
+  clearCache(ssId, 'Usuarios');
   invalidateCache('u:');
   
   return { success: true, user: { id: updatedUser.id, username: updatedUser.username } };
@@ -897,7 +849,7 @@ function updateUserPassword(userId, newPassword) {
   };
   
   updateOrInsert(sheet, updatedUser, false);
-  clearCache(getCoreSpreadsheetId(), 'Usuarios');
+  clearCache(ssId, 'Usuarios');
   invalidateCache('u:');
   
   return { success: true };
@@ -924,7 +876,8 @@ function updateUserMetadata(userId, updates) {
   
   metadata = { ...metadata, ...updates };
   
-  return updateUser(userId, { metadata: JSON.stringify(metadata) });
+  const ssId = getUserProperties().getProperty('current_ssId');
+  return updateUser(userId, { metadata: JSON.stringify(metadata) }, ssId);
 }
 
 /**
@@ -932,7 +885,8 @@ function updateUserMetadata(userId, updates) {
  * @param {string} userId - ID del usuario
  */
 function incrementFailedLoginAttempts(userId) {
-  const user = getUserById(userId);
+  const ssId = getUserProperties().getProperty('current_ssId');
+  const user = getUserById(userId, ssId);
   if (!user) return;
   
   let metadata = { last_login: null, last_password_change: null, failed_login_attempts: 0, created_from_ip: null };
@@ -941,7 +895,7 @@ function incrementFailedLoginAttempts(userId) {
   } catch (e) {}
   
   metadata.failed_login_attempts = (metadata.failed_login_attempts || 0) + 1;
-  updateUser(userId, { metadata: JSON.stringify(metadata) });
+  updateUser(userId, { metadata: JSON.stringify(metadata) }, ssId);
 }
 
 /**
@@ -949,7 +903,8 @@ function incrementFailedLoginAttempts(userId) {
  * @param {string} userId - ID del usuario
  */
 function resetFailedLoginAttempts(userId) {
-  const user = getUserById(userId);
+  const ssId = getUserProperties().getProperty('current_ssId');
+  const user = getUserById(userId, ssId);
   if (!user) return;
   
   let metadata = { last_login: null, last_password_change: null, failed_login_attempts: 0, created_from_ip: null };
@@ -958,7 +913,7 @@ function resetFailedLoginAttempts(userId) {
   } catch (e) {}
   
   metadata.failed_login_attempts = 0;
-  updateUser(userId, { metadata: JSON.stringify(metadata) });
+  updateUser(userId, { metadata: JSON.stringify(metadata) }, ssId);
 }
 
 /**
@@ -999,10 +954,11 @@ function invalidateAllUserSessions(userId) {
 /**
  * Genera un token de sesión
  * @param {string} userId - ID del usuario
+ * @param {string} ssId - ID del spreadsheet
  * @return {object} Token de sesión
  */
-function generateSessionToken(userId) {
-  const user = getUserById(userId);
+function generateSessionToken(userId, ssId) {
+  const user = getUserById(userId, ssId);
   if (!user) {
     throw new Error('ERR_USER_NOT_FOUND');
   }
@@ -1010,10 +966,11 @@ function generateSessionToken(userId) {
   const token = Utilities.getUuid() + '_' + Utilities.getUuid();
   const expiresAt = new Date(Date.now() + SESSION_TTL * 1000).toISOString();
   
-  // Guardar sesión en propiedades (en producción, usar base de datos)
+  // Guardar sesión con ssId
   const sessionData = {
     token: token,
     userId: userId,
+    ssId: ssId,
     createdAt: new Date().toISOString(),
     expiresAt: expiresAt
   };
@@ -1118,7 +1075,7 @@ function validateSession(token) {
   
   if (session) {
     if (new Date(session.expiresAt) > new Date()) {
-      const user = getUserById(session.userId);
+      const user = getUserById(session.userId, getCurrentSsId());
       return {
         valid: true,
         userId: session.userId,
@@ -1249,10 +1206,15 @@ function invalidateAllSessions(userId) {
 /**
  * Acción: register - Crea un nuevo usuario
  * @param {object} payload - Datos del usuario
+ * @param {string} ssId - ID del spreadsheet Core
  * @return {object} Respuesta
  */
-function actionRegister(payload) {
+function actionRegister(payload, ssId) {
   try {
+    if (!ssId) {
+      return { success: false, error: 'ERR_SS_ID_REQUIRED' };
+    }
+    
     // Validate email is provided
     if (!payload.email || !payload.email.trim()) {
       return { success: false, error: 'ERR_EMAIL_REQUIRED: El email es requerido' };
@@ -1271,7 +1233,7 @@ function actionRegister(payload) {
       wrapped_mk: payload.wrapped_mk,
       perfilId: payload.perfilId,
       ip: payload.ip
-    });
+    }, ssId);
     
     // Send welcome email
     try {
@@ -1292,30 +1254,6 @@ function actionRegister(payload) {
     } catch (otpErr) {
       Logger.log('Warning: Error sending initial OTP: ' + otpErr.message);
     }
-    
-    return {
-      success: true,
-      user: result.user
-    };
-  } catch (err) {
-    return {
-      success: false,
-      error: err.message
-    };
-  }
-}
-
-/**
- * Acción: updateUser - Actualiza un usuario
- * @param {object} session - Sesión validada
- * @param {object} payload - Datos a actualizar
- * @return {object} Respuesta
- */
-function actionUpdateUser(session, payload) {
-  try {
-    const result = updateUser(session.userId, {
-      wrapped_mk: payload.wrapped_mk
-    });
     
     return {
       success: true,
@@ -1353,7 +1291,7 @@ function actionSetupTOTP(payload) {
         return { success: false, error: 'ERR_INVALID_CREDENTIALS: Usuario y contraseña requeridos' };
       }
       
-      user = getUserByUsername(username);
+      user = getUserByUsername(username, getCurrentSsId());
       if (!user) {
         return { success: false, error: 'ERR_USER_NOT_FOUND' };
       }
@@ -1428,7 +1366,7 @@ function actionConfirmTOTP(payload) {
         return { success: false, error: 'ERR_INVALID_CREDENTIALS: Usuario y contraseña requeridos' };
       }
       
-      user = getUserByUsername(username);
+      user = getUserByUsername(username, getCurrentSsId());
       if (!user) {
         return { success: false, error: 'ERR_USER_NOT_FOUND' };
       }
@@ -1482,10 +1420,10 @@ function actionConfirmTOTP(payload) {
       created_at: new Date().toISOString()
     };
     
-    updateUser(user.id, { auth_config: JSON.stringify(authConfig) });
+    updateUser(user.id, { auth_config: JSON.stringify(authConfig) }, getCurrentSsId());
     
     // Limpiar cache de usuarios para que el login use datos frescos
-    clearCache(getCoreSpreadsheetId(), 'Usuarios');
+    clearCache(ssId, 'Usuarios');
     CacheService.getScriptCache().remove('u:un:' + resolvedUsername);
     CacheService.getScriptCache().remove('u:id:' + user.id);
     
@@ -1515,7 +1453,7 @@ function actionDisableTOTP(payload) {
     }
     
     // Get user to parse auth_config
-    const user = getUserById(session.userId);
+    const user = getUserById(session.userId, getCurrentSsId());
     if (!user) {
       return { success: false, error: 'ERR_USER_NOT_FOUND' };
     }
@@ -1539,9 +1477,10 @@ function actionDisableTOTP(payload) {
 /**
  * Acción: login - Autentica usuario y devuelve token
  * @param {object} payload - Credenciales
+ * @param {string} ssId - ID del spreadsheet Core
  * @return {object} Respuesta con token
  */
-function actionLogin(payload) {
+function actionLogin(payload, ssId) {
   try {
     const { username, password, method, code, passkeyAssertion } = payload;
     
@@ -1556,8 +1495,12 @@ function actionLogin(payload) {
       };
     }
     
-    // Buscar usuario
-    const user = getUserByUsername(username);
+    // Buscar usuario - requires ssId
+    if (!ssId) {
+      return { success: false, error: 'ERR_SS_ID_REQUIRED: Se requiere ssId para login', step: 'password' };
+    }
+    
+    const user = getUserByUsername(username, ssId);
     if (!user) {
       return { success: false, error: 'ERR_AUTH_INVALID: Usuario no encontrado', step: 'password' };
     }
@@ -1670,8 +1613,11 @@ function actionLogin(payload) {
     // Update last login metadata
     updateUserMetadata(user.id, { last_login: new Date().toISOString() });
     
+    // Store ssId in user properties for session operations
+    getUserProperties().setProperty('current_ssId', ssId);
+    
     // Generar token de sesión
-    const session = generateSessionToken(user.id);
+    const session = generateSessionToken(user.id, ssId);
     
     logAccess(username, true, 'Login exitoso');
     
@@ -1777,7 +1723,7 @@ function actionSetupPasskey(payload) {
       user = getUserById(session.userId);
     } else {
       // Fall back to password verification
-      user = getUserByUsername(username);
+      user = getUserByUsername(username, getCurrentSsId());
       if (!user) {
         return { success: false, error: 'ERR_USER_NOT_FOUND' };
       }
@@ -1886,7 +1832,7 @@ function actionConfirmPasskey(payload) {
       resolvedUsername = user?.username || username;
     } else {
       // Fall back to password verification
-      user = getUserByUsername(username);
+      user = getUserByUsername(username, getCurrentSsId());
       if (!user) {
         return { success: false, error: 'ERR_USER_NOT_FOUND' };
       }
@@ -1960,10 +1906,10 @@ function actionConfirmPasskey(payload) {
     authConfig.passkeys.push(newPasskey);
     
     // Update user
-    updateUser(user.id, { auth_config: JSON.stringify(authConfig) });
+    updateUser(user.id, { auth_config: JSON.stringify(authConfig) }, getCurrentSsId());
     
     // Clear cache so AuthSettings gets fresh data
-    clearCache(getCoreSpreadsheetId(), 'Usuarios');
+    clearCache(ssId, 'Usuarios');
     CacheService.getScriptCache().remove('u:un:' + username);
     CacheService.getScriptCache().remove('u:id:' + user.id);
     
@@ -1990,7 +1936,7 @@ function actionDeletePasskey(session, payload) {
   try {
     const { passkeyId } = payload;
     
-    const user = getUserById(session.userId);
+    const user = getUserById(session.userId, getCurrentSsId());
     if (!user) {
       return { success: false, error: 'ERR_USER_NOT_FOUND' };
     }
@@ -2012,10 +1958,10 @@ function actionDeletePasskey(session, payload) {
     authConfig.passkeys.splice(passkeyIndex, 1);
     
     // Update user
-    updateUser(user.id, { auth_config: JSON.stringify(authConfig) });
+    updateUser(user.id, { auth_config: JSON.stringify(authConfig) }, getCurrentSsId());
     
     // Clear cache so AuthSettings gets fresh data
-    clearCache(getCoreSpreadsheetId(), 'Usuarios');
+    clearCache(ssId, 'Usuarios');
     CacheService.getScriptCache().remove('u:un:' + username);
     CacheService.getScriptCache().remove('u:id:' + user.id);
     
@@ -2032,7 +1978,7 @@ function actionDeletePasskey(session, payload) {
  */
 function actionGetAuthMethods(session) {
   try {
-    const user = getUserById(session.userId);
+    const user = getUserById(session.userId, getCurrentSsId());
     if (!user) {
       return { success: false, error: 'ERR_USER_NOT_FOUND' };
     }
@@ -2069,7 +2015,7 @@ function actionGetAuthMethods(session) {
  */
 function actionUpdateAuthConfig(session, payload) {
   try {
-    const user = getUserById(session.userId);
+    const user = getUserById(session.userId, getCurrentSsId());
     if (!user) {
       return { success: false, error: 'ERR_USER_NOT_FOUND' };
     }
@@ -2118,7 +2064,7 @@ function actionChangePassword(session, payload) {
       return { success: false, error: 'ERR_WEAK_PASSWORD: La contraseña debe tener al menos 8 caracteres' };
     }
     
-    const user = getUserById(session.userId);
+    const user = getUserById(session.userId, getCurrentSsId());
     if (!user) {
       return { success: false, error: 'ERR_USER_NOT_FOUND' };
     }
@@ -2167,7 +2113,7 @@ function actionDeleteAccount(session, payload) {
       return { success: false, error: 'ERR_INVALID_CREDENTIALS: Contraseña requerida para eliminar cuenta' };
     }
     
-    const user = getUserById(session.userId);
+    const user = getUserById(session.userId, getCurrentSsId());
     if (!user) {
       return { success: false, error: 'ERR_USER_NOT_FOUND' };
     }
@@ -2690,21 +2636,22 @@ function logAccess(username, success, details) {
 // ================================================================= //
 
 /**
- * Obtiene la hoja de Perfiles del GSheet Core
+ * Obtiene la hoja de Perfiles
  */
-function getPerfilesSheet() {
-  const ss = getCoreSpreadsheet();
+function getPerfilesSheet(ssId) {
+  const ss = SpreadsheetApp.openById(ssId);
   return ss.getSheetByName('Perfiles');
 }
 
 /**
  * Obtiene un perfil por ID
  * @param {string} perfilId - ID del perfil
+ * @param {string} ssId - ID del spreadsheet
  * @return {object|null} Perfil encontrado o null
  */
-function getPerfilById(perfilId) {
+function getPerfilById(perfilId, ssId) {
   return getCached('p:id:' + perfilId, () => {
-    const sheet = getPerfilesSheet();
+    const sheet = getPerfilesSheet(ssId);
     if (!sheet) return null;
     const data = getSheetData(sheet);
     return data.find(row => row.id === perfilId) || null;
@@ -2713,11 +2660,12 @@ function getPerfilById(perfilId) {
 
 /**
  * Obtiene todos los perfiles (con caché)
+ * @param {string} ssId - ID del spreadsheet
  * @return {array} Lista de perfiles
  */
-function getAllPerfiles() {
+function getAllPerfiles(ssId) {
   return getCached('p:all', () => {
-    const sheet = getPerfilesSheet();
+    const sheet = getPerfilesSheet(ssId);
     if (!sheet) return [];
     return getSheetData(sheet);
   });
@@ -2775,13 +2723,14 @@ function invalidateCache(pattern) {
 }
 
 /**
- * Obtiene los permisos de un perfil para un módulo específico
+ * Obtiene el permiso de un perfil para un módulo
  * @param {string} perfilId - ID del perfil
  * @param {string} modulo - Nombre del módulo
+ * @param {string} ssId - ID del spreadsheet
  * @return {string} Permiso (RW, R, W, null)
  */
-function getPermiso(perfilId, modulo) {
-  const perfil = getPerfilById(perfilId);
+function getPermiso(perfilId, modulo, ssId) {
+  const perfil = getPerfilById(perfilId, ssId);
   if (!perfil) return null;
   
   const permisos = normalizePermisos(perfil.permisos);
@@ -2793,13 +2742,14 @@ function getPermiso(perfilId, modulo) {
  * @param {string} userId - ID del usuario
  * @param {string} modulo - Nombre del módulo
  * @param {string} accion - Acción (read, write, delete)
+ * @param {string} ssId - ID del spreadsheet
  * @return {boolean} true si tiene permiso
  */
-function validarPermiso(userId, modulo, accion) {
-  const user = getUserById(userId);
+function validarPermiso(userId, modulo, accion, ssId) {
+  const user = getUserById(userId, ssId);
   if (!user) return false;
   
-  const permiso = getPermiso(user.perfilId, modulo);
+  const permiso = getPermiso(user.perfilId, modulo, ssId);
   if (!permiso) return false;
   
   // Mapeo de acciones a permisos
@@ -2816,29 +2766,41 @@ function validarPermiso(userId, modulo, accion) {
 /**
  * Obtiene todos los permisos de un usuario
  * @param {string} userId - ID del usuario
+ * @param {string} ssId - ID del spreadsheet
  * @return {object} Objeto con permisos por módulo
  */
-function getUserPermisos(userId) {
-  const user = getUserById(userId);
+function getUserPermisos(userId, ssId) {
+  const user = getUserById(userId, ssId);
   if (!user) return {};
   
-  const perfil = getPerfilById(user.perfilId);
+  const perfil = getPerfilById(user.perfilId, ssId);
   if (!perfil) return {};
   
   return normalizePermisos(perfil.permisos);
 }
 
 /**
- * Valida permisos antes de una operación CRUD
+ * Valida permisos de usuario para un módulo
  * @param {object} session - Sesión validada
  * @param {string} action - Acción (read, write, delete)
  * @param {string} modulo - Módulo objetivo
+ * @param {string} ssId - ID del spreadsheet
  * @return {object} Resultado de validación
  */
-function checkPermission(session, action, modulo) {
+function checkPermission(session, action, modulo, ssId) {
   if (!session || !session.valid) {
     return { allowed: false, error: 'ERR_AUTH_INVALID' };
   }
+  
+  const tienePermiso = validarPermiso(session.userId, modulo, action, ssId);
+  
+  if (!tienePermiso) {
+    logAccess(session.username, false, `Permiso denegado: ${action} en ${modulo}`);
+    return { allowed: false, error: 'ERR_PERMISSION_DENIED' };
+  }
+  
+  return { allowed: true };
+}
   
   const tienePermiso = validarPermiso(session.userId, modulo, action);
   
@@ -2851,30 +2813,32 @@ function checkPermission(session, action, modulo) {
 }
 
 /**
- * Acción: getPerfiles - Obtiene todos los perfiles
+ * Acción: getCongregacion - Obtiene información de la congregación desde GSheet
  */
-function actionGetPerfiles() {
+function actionGetCongregacion(ssId) {
   try {
-    const perfiles = getAllPerfiles();
-    return { success: true, perfiles: perfiles };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-}
-
-/**
- * Acción: getCongregacion - Obtiene información de la congregación
- */
-function actionGetCongregacion() {
-  try {
-    const nombre = PropertiesService.getScriptProperties().getProperty('CONGREGATION_NAME') || '';
-    const numero = PropertiesService.getScriptProperties().getProperty('CONGREGATION_NUMBER') || '';
+    if (!ssId) {
+      return { success: false, error: 'ERR_SS_ID_REQUIRED' };
+    }
+    
+    const ss = SpreadsheetApp.openById(ssId);
+    const configSheet = ss.getSheetByName('Configuracion');
+    
+    if (!configSheet) {
+      return { success: true, congregacion: { nombre: '', numero: '' } };
+    }
+    
+    const configData = getCachedSheetData(ss, 'Configuracion');
+    const getValue = (key) => configData.find(c => c.clave === key)?.valor;
     
     return { 
       success: true, 
       congregacion: {
-        nombre,
-        numero
+        nombre: getValue('nombre_congregacion') || getValue('nombre_mostrar') || '',
+        numero: getValue('numero_congregacion') || '',
+        nombreMostrar: getValue('nombre_mostrar') || '',
+        idioma: getValue('idioma_predeterminado') || 'es',
+        zonaHoraria: getValue('zona_horaria') || 'America/New_York'
       } 
     };
   } catch (err) {
@@ -2902,132 +2866,12 @@ function actionCheckPermission(payload) {
     const result = checkPermission(
       { valid: true, userId: payload.userId, username: payload.username },
       payload.action,
-      payload.modulo
+      payload.modulo,
+      payload.ssId
     );
     return result;
   } catch (err) {
     return { allowed: false, error: err.message };
-  }
-}
-
-/**
- * Acción: createProfile - Crea un nuevo perfil
- * @param {object} payload - Datos del perfil
- * @return {object} Resultado
- */
-function actionCreateProfile(payload) {
-  try {
-    const { id, nombre, permisos, descripcion } = payload;
-    
-    if (!id || !nombre) {
-      return { success: false, error: 'ERR_INVALID_INPUT: Se requiere id y nombre' };
-    }
-    
-    const existente = getPerfilById(id);
-    if (existente) {
-      return { success: false, error: 'ERR_PROFILE_EXISTS: El perfil ya existe' };
-    }
-    
-    const ss = getCoreSpreadsheet();
-    const sheet = ss.getSheetByName('Perfiles');
-    
-    const nuevoPerfil = {
-      id: id,
-      nombre: nombre,
-      permisos: typeof permisos === 'object' ? JSON.stringify(permisos) : permisos,
-      descripcion: descripcion || '',
-      _v: 1,
-      _ts: new Date().toISOString(),
-      _deleted: false
-    };
-    
-    updateOrInsert(sheet, nuevoPerfil, false);
-    invalidateCache('p:all');
-    
-    return { success: true, message: 'Perfil creado', perfilId: id };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-}
-
-/**
- * Acción: updateProfile - Actualiza un perfil existente
- * @param {object} payload - Datos del perfil a actualizar
- * @return {object} Resultado
- */
-function actionUpdateProfile(payload) {
-  try {
-    const { id, nombre, permisos, descripcion } = payload;
-    
-    if (!id) {
-      return { success: false, error: 'ERR_INVALID_INPUT: Se requiere id' };
-    }
-    
-    const existente = getPerfilById(id);
-    if (!existente) {
-      return { success: false, error: 'ERR_PROFILE_NOT_FOUND' };
-    }
-    
-    const ss = getCoreSpreadsheet();
-    const sheet = ss.getSheetByName('Perfiles');
-    
-    const perfilActualizado = {
-      ...existente,
-      nombre: nombre !== undefined ? nombre : existente.nombre,
-      permisos: permisos !== undefined 
-        ? (typeof permisos === 'object' ? JSON.stringify(permisos) : permisos)
-        : existente.permisos,
-      descripcion: descripcion !== undefined ? descripcion : existente.descripcion
-    };
-    
-    updateOrInsert(sheet, perfilActualizado, false);
-    invalidateCache('p:all');
-    invalidateCache('p:id:' + id);
-    
-    return { success: true, message: 'Perfil actualizado' };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-}
-
-/**
- * Acción: deleteProfile - Elimina un perfil (borrado lógico)
- * @param {object} payload - ID del perfil
- * @return {object} Resultado
- */
-function actionDeleteProfile(payload) {
-  try {
-    const { id } = payload;
-    
-    if (!id) {
-      return { success: false, error: 'ERR_INVALID_INPUT: Se requiere id' };
-    }
-    
-    const existente = getPerfilById(id);
-    if (!existente) {
-      return { success: false, error: 'ERR_PROFILE_NOT_FOUND' };
-    }
-    
-    const usuarios = getSheetData(getUsuariosSheet());
-    const usuariosConPerfil = usuarios.filter(u => u.perfilId === id && u._deleted !== true);
-    
-    if (usuariosConPerfil.length > 0) {
-      return { 
-        success: false, 
-        error: 'ERR_PROFILE_IN_USE: Hay usuarios con este perfil',
-        usuarios: usuariosConPerfil.length
-      };
-    }
-    
-    const ss = getCoreSpreadsheet();
-    const sheet = ss.getSheetByName('Perfiles');
-    softDeleteRow(sheet, id);
-    invalidateCache('p:all');
-    invalidateCache('p:id:' + id);
-    
-    return { success: true, message: 'Perfil eliminado' };
-  } catch (err) {
-    return { success: false, error: err.message };
   }
 }
 
@@ -3040,6 +2884,20 @@ function actionLogout(payload) {
   try {
     invalidateSession(payload.sessionToken);
     return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Acción: refreshSession - Renueva token de sesión
+ * @param {object} payload - Token de sesión
+ * @return {object} Respuesta
+ */
+function actionRefreshSession(payload) {
+  try {
+    const result = refreshSessionToken(payload.sessionToken);
+    return result;
   } catch (err) {
     return { success: false, error: err.message };
   }
@@ -3082,46 +2940,6 @@ function createSpreadsheet(name) {
 }
 
 /**
- * Inicializa las tablas del Core en un GSheet
- * @param {string} ssId - ID del spreadsheet
- * @return {object} Resultado
- */
-function initCoreTables(ssId) {
-  try {
-    const ss = SpreadsheetApp.openById(ssId);
-    const results = [];
-    
-    // Tabla: Usuarios
-    const usuariosHeaders = ['id', 'username', 'email', 'wrapped_mk', 'perfilId', 'auth_config', 'metadata', 'created_at', '_v', '_ts', '_deleted'];
-    results.push(createSheetIfNotExists(ss, 'Usuarios', usuariosHeaders));
-    
-    // Tabla: Perfiles
-    const perfilesHeaders = ['id', 'nombre', 'permisos', 'descripcion', '_v', '_ts', '_deleted'];
-    results.push(createSheetIfNotExists(ss, 'Perfiles', perfilesHeaders));
-    
-    // Tabla: Registro_Plugins
-    const pluginsHeaders = ['plugin_id', 'ssId', 'status', 'config', '_v', '_ts', '_deleted'];
-    results.push(createSheetIfNotExists(ss, 'Registro_Plugins', pluginsHeaders));
-    
-    // Tabla: Configuracion
-    const configHeaders = ['clave', 'valor', 'is_public', '_v', '_ts', '_deleted'];
-    results.push(createSheetIfNotExists(ss, 'Configuracion', configHeaders));
-    
-    // Tabla: Sistema_Migraciones
-    const migracionesHeaders = ['id', 'nombre', 'version', 'ejecutada_en', 'estado', 'error', '_v', '_ts'];
-    results.push(createSheetIfNotExists(ss, 'Sistema_Migraciones', migracionesHeaders));
-    
-    return {
-      success: true,
-      message: 'Tablas del Core inicializadas',
-      tables: results
-    };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-}
-
-/**
  * Crea una hoja si no existe
  */
 function createSheetIfNotExists(ss, name, headers) {
@@ -3130,111 +2948,26 @@ function createSheetIfNotExists(ss, name, headers) {
     sheet = ss.insertSheet(name);
     sheet.appendRow(headers);
     sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#f3f3f3');
+  } else {
+    // Ensure headers exist even if sheet was created without them
+    const lastRow = sheet.getLastRow();
+    if (lastRow === 0) {
+      sheet.appendRow(headers);
+      sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#f3f3f3');
+    }
   }
   return { sheet: name, status: 'created' };
 }
 
 /**
- * Inyecta los perfiles en la tabla Perfiles
- * @param {string} ssId - ID del spreadsheet Core
- * @param {array} customPerfiles - Perfiles personalizados (opcional)
- * @return {object} Resultado
- */
-function seedPerfiles(ssId, customPerfiles) {
-  try {
-    const ss = SpreadsheetApp.openById(ssId);
-    const sheet = ss.getSheetByName('Perfiles');
-    if (!sheet) {
-      return { success: false, error: 'Hoja Perfiles no encontrada' };
-    }
-    
-    const perfiles = customPerfiles || [];
-    
-    // Verificar si ya hay perfiles (solo si no hay personalizados)
-    const existingData = getSheetData(sheet, true);
-    if (existingData.length > 0 && !customPerfiles) {
-      return {
-        success: false,
-        error: 'Ya existen perfiles en la tabla',
-        message: 'Los perfiles base ya fueron injectados anteriormente'
-      };
-    }
-    
-    // Insertar perfiles
-    perfiles.forEach(perfil => {
-      const row = {
-        id: perfil.id,
-        nombre: perfil.nombre,
-        permisos: typeof perfil.permisos === 'object' ? JSON.stringify(perfil.permisos) : perfil.permisos,
-        descripcion: perfil.descripcion || '',
-        _v: 1,
-        _ts: new Date().toISOString(),
-        _deleted: false
-      };
-      updateOrInsert(sheet, row, false);
-    });
-    
-    invalidateCache('p:all');
-    
-    return {
-      success: true,
-      message: 'Perfiles injectados',
-      count: perfiles.length
-    };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-}
-
-/**
- * Inyecta configuración inicial
- * @param {string} ssId - ID del spreadsheet Core
- * @return {object} Resultado
- */
-function seedConfiguracion(ssId, datosCongregacion) {
-  try {
-    const ss = SpreadsheetApp.openById(ssId);
-    const sheet = ss.getSheetByName('Configuracion');
-    if (!sheet) {
-      return { success: false, error: 'Hoja Configuracion no encontrada' };
-    }
-    
-    const configBase = [
-      { clave: 'nombre_congregacion', valor: datosCongregacion?.nombre_congregacion || '', is_public: false },
-      { clave: 'numero_congregacion', valor: datosCongregacion?.numero_congregacion || '', is_public: false },
-      { clave: 'nombre_mostrar', valor: datosCongregacion?.nombre_mostrar || '', is_public: true },
-      { clave: 'ss_publico', valor: datosCongregacion?.ss_publico || '', is_public: false },
-      { clave: 'linked_public_ss', valor: datosCongregacion?.linked_public_ss || '', is_public: false },
-      { clave: 'idioma_predeterminado', valor: 'es', is_public: true },
-      { clave: 'año_servicio_actual', valor: new Date().getFullYear().toString(), is_public: false },
-      { clave: 'version_sistema', valor: '1.0.0', is_public: true }
-    ];
-    
-    configBase.forEach(conf => {
-      sheet.appendRow([
-        conf.clave, conf.valor, conf.is_public, 1, new Date().toISOString(), false
-      ]);
-    });
-    
-    return {
-      success: true,
-      message: 'Configuración base injectada'
-    };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-}
-
-/**
- * Acción API: install - Proceso completo de instalación
+ * Acción: install - Crea los spreadsheets inicial y público
+ * NO guarda nada en script properties - todo se devuelve al frontend
  * @param {object} payload - Datos de instalación
- * @param {string} payload.nombreCongregacion - Nombre de la congregación
- * @param {array} payload.perfiles - Array de perfiles (del JSON seed)
  * @return {object} Resultado
  */
 function actionInstall(payload) {
   try {
-    const { nombreCongregacion, numeroCongregacion, nombreMostrar, perfiles, gasUrl } = payload;
+    const { nombreCongregacion, numeroCongregacion, nombreMostrar, gasUrl } = payload;
     
     const nombreLimpio = (nombreCongregacion || 'SinNombre').replace(/[^a-zA-Z0-9]/g, '');
     
@@ -3253,30 +2986,52 @@ function actionInstall(payload) {
     let publicSsId = '';
     if (ssPublicResult.success) {
       publicSsId = ssPublicResult.ssId;
-      initPublicSheet(publicSsId, ssId, gasUrl);
+      
+      // Auto-share public spreadsheet (anyone with link can view)
+      DriveApp.getFileById(publicSsId).setSharing(
+        DriveApp.Access.ANYONE_WITH_LINK,
+        DriveApp.Permission.VIEW
+      );
+    } else {
+      return { success: false, error: 'Error creando spreadsheet público: ' + ssPublicResult.error };
     }
     
-    // 3. Inicializar tablas Core
-    const initResult = initCoreTables(ssId);
-    if (!initResult.success) {
-      return { success: false, error: 'Error inicializando tablas: ' + initResult.error };
+    // NO guardamos en script properties - devolvemos todo al frontend
+    return {
+      success: true,
+      ssId: ssId,
+      ssUrl: ssResult.url,
+      publicSsId: publicSsId,
+      publicSsUrl: ssPublicResult.url,
+      nombreCongregacion: nombreCongregacion,
+      numeroCongregacion: numeroCongregacion,
+      nombreMostrar: nombreMostrar || `Co. ${nombreCongregacion}`,
+      message: 'Spreadsheets creados. La configuración se almacena en la hoja Configuracion.'
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+    
+    const ssId = ssResult.ssId;
+    
+    // 2. Crear Spreadsheet Público (para información compartida)
+    const ssPublicName = `CongreAdmin-${nombreLimpio}-Public`;
+    const ssPublicResult = createSpreadsheet(ssPublicName);
+    let publicSsId = '';
+    if (ssPublicResult.success) {
+      publicSsId = ssPublicResult.ssId;
+      
+      // Auto-share public spreadsheet (anyone with link can view)
+      DriveApp.getFileById(publicSsId).setSharing(
+        DriveApp.Access.ANYONE_WITH_LINK,
+        DriveApp.Permission.VIEW
+      );
+    } else {
+      return { success: false, error: 'Error creando spreadsheet público: ' + ssPublicResult.error };
     }
     
-    // 4. Inyectar perfiles (desde el payload del frontend)
-    if (perfiles && Array.isArray(perfiles)) {
-      seedPerfiles(ssId, perfiles);
-    }
-    
-    // 5. Inyectar configuración con datos de la congregación
-    seedConfiguracion(ssId, {
-      nombre_congregacion: nombreCongregacion || '',
-      numero_congregacion: numeroCongregacion || '',
-      nombre_mostrar: nombreMostrar || `Co. ${nombreCongregacion}`,
-      ss_publico: publicSsId,
-      linked_public_ss: publicSsId
-    });
-    
-    // 6. Guardar configuración en propiedades del script
+    // 3. Guardar configuración en propiedades del script
     PropertiesService.getScriptProperties().setProperty('CORE_SS_ID', ssId);
     PropertiesService.getScriptProperties().setProperty('PUBLIC_SS_ID', publicSsId);
     PropertiesService.getScriptProperties().setProperty('CONGREGATION_NAME', nombreCongregacion || '');
@@ -3287,37 +3042,12 @@ function actionInstall(payload) {
       ssId: ssId,
       ssUrl: ssResult.url,
       publicSsId: publicSsId,
+      publicSsUrl: ssPublicResult.url,
       nombreCongregacion: nombreCongregacion,
       numeroCongregacion: numeroCongregacion,
-      nombreMostrar: nombreMostrar,
-      message: 'Instalación completada exitosamente'
+      nombreMostrar: nombreMostrar || `Co. ${nombreCongregacion}`,
+      message: 'Spreadsheets creados. La orquestación de tablas y datos se realiza desde el frontend.'
     };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-}
-
-/**
- * Inicializa la hoja pública para datos compartidos
- * @param {string} ssId - ID del spreadsheet público
- * @param {string} adminSsId - ID del spreadsheet admin (core)
- * @param {string} gasUrl - URL del GAS
- */
-function initPublicSheet(ssId, adminSsId, gasUrl) {
-  try {
-    const ss = SpreadsheetApp.openById(ssId);
-    
-    createSheetIfNotExists(ss, 'Configuracion', ['clave', 'valor', 'is_public', '_v', '_ts', '_deleted']);
-    createSheetIfNotExists(ss, 'Indice', ['modulo', 'titulo', 'actualizado']);
-    createSheetIfNotExists(ss, 'Anuncios', ['titulo', 'contenido', 'fecha', 'publicado']);
-    createSheetIfNotExists(ss, 'Reuniones', ['tipo', 'dia', 'hora', 'lugar', 'publicado']);
-    
-    // Guardar linked_admin_ss en Configuracion
-    const configSheet = ss.getSheetByName('Configuracion');
-    const linkedData = JSON.stringify({ ssId: adminSsId, gasUrl: gasUrl });
-    configSheet.appendRow(['linked_admin_ss', linkedData, false, 1, new Date().toISOString(), false]);
-    
-    return { success: true };
   } catch (err) {
     return { success: false, error: err.message };
   }

@@ -50,7 +50,7 @@ async function getCongregationName(apiUrl: string | null, ssId: string | null): 
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action: 'getData', ssId, payload: { sheet: 'Configuracion' } }),
+      body: JSON.stringify({ action: 'getData', sheet: 'Configuracion', ssId }),
       mode: 'cors',
       redirect: 'follow',
     });
@@ -498,6 +498,22 @@ export default function Login() {
           </Alert>
         )}
 
+        <Box sx={{ mb: 2, textAlign: 'center' }}>
+          <Button
+            size="small"
+            variant="text"
+            color="secondary"
+            onClick={() => {
+              if (confirm('¿Está seguro de borrar todos los datos y comenzar de nuevo? Esto cerrará su sesión.')) {
+                localStorage.clear();
+                window.location.href = '/admin/setup';
+              }
+            }}
+          >
+            Reiniciar instalación
+          </Button>
+        </Box>
+
         <Collapse in={showConfig}>
           <Box sx={{ mb: 3 }}>
             <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
@@ -746,6 +762,67 @@ export default function Login() {
                 </Link>
               </Box>
             )}
+          </>
+        )}
+
+        {step === 'email_otp' && !defaultMethodStep && (
+          <>
+            <Box sx={{ mb: 3, textAlign: 'center' }}>
+              <Button variant="outlined" onClick={handleShowMethodSelection}>
+                Cambiar método de autenticación
+              </Button>
+            </Box>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              {getStepSubtitle()}
+            </Typography>
+            <TextField
+              fullWidth
+              label="Código"
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+              sx={{ mb: 2 }}
+              inputProps={{ maxLength: 6 }}
+              autoFocus
+              onKeyDown={(e) => e.key === 'Enter' && handleCodeSubmit()}
+            />
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              <Button
+                variant="outlined"
+                onClick={handleBackToMethod}
+                disabled={loading}
+              >
+                Atrás
+              </Button>
+              <Button
+                variant="contained"
+                onClick={handleCodeSubmit}
+                disabled={loading}
+                sx={{ flex: 1 }}
+              >
+                {loading ? <CircularProgress size={24} /> : 'Verificar'}
+              </Button>
+            </Box>
+            <Box sx={{ mt: 2, textAlign: 'center' }}>
+              <Link
+                component="button"
+                variant="body2"
+                onClick={async () => {
+                  try {
+                    const result = await dataService.request<{ success: boolean; error?: string; debug?: { email?: string; error?: string } }>('requestOTP', { username });
+                    if (result.success) {
+                      setError('Nuevo código enviado a ' + (result.debug?.email || username));
+                    } else {
+                      setError((result.debug?.error || result.error) + (result.debug?.email ? ' (' + result.debug.email + ')' : ''));
+                    }
+                  } catch (err: any) {
+                    setError(err.message || 'Error al reenviar código');
+                  }
+                }}
+                sx={{ cursor: 'pointer' }}
+              >
+                ¿No recibió el código? Reenviar
+              </Link>
+            </Box>
           </>
         )}
 

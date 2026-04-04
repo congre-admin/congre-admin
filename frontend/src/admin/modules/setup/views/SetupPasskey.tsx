@@ -18,6 +18,7 @@ import {
 } from '@mui/material';
 import { Security, CheckCircle, Devices, Keyboard, PhoneIphone } from '@mui/icons-material';
 import { useAuth } from '../../../core/context/AuthContext';
+import { useCongregacion } from '@/hooks/useCongregacion';
 
 const API_URL_KEY = 'congre_admin_api_url';
 
@@ -51,6 +52,8 @@ interface PasskeyChallenge {
 export default function SetupPasskey() {
   const navigate = useNavigate();
   const { user, sessionToken, isAuthenticated } = useAuth();
+  const { data: congregacion } = useCongregacion();
+  const congregationName = congregacion?.nombre || 'CongreAdmin';
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -151,7 +154,7 @@ export default function SetupPasskey() {
         challenge: Uint8Array.from(atob(challenge.challenge), c => c.charCodeAt(0)),
         rp: {
           id: challenge.rpId || 'localhost',
-          name: 'Congre-Admin'
+          name: congregationName
         },
         user: {
           id: Uint8Array.from(challenge.user.id, c => c.charCodeAt(0)),

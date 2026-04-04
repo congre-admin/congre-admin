@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { authService } from '../services/authService';
 import { cacheService } from '../cache/cacheService';
 import { dataService } from '../services/dataService';
+import { QUERY_OPTIONS } from './queryConfig';
 
 const QUERY_KEYS = {
   session: ['session'] as const,
@@ -14,8 +15,8 @@ export function useSession() {
     queryFn: async () => {
       return authService.validateSession();
     },
-    staleTime: 0,
-    refetchOnWindowFocus: true,
+    ...QUERY_OPTIONS,
+    enabled: false, // Manual only
   });
 }
 
@@ -46,7 +47,7 @@ export function useAuthMethods() {
     queryFn: async () => {
       return authService.getAuthMethods();
     },
-    staleTime: 5 * 60 * 1000,
+    ...QUERY_OPTIONS,
   });
 }
 
@@ -57,7 +58,7 @@ export async function initializeCacheOnLogin(): Promise<void> {
   const [pluginsResult, configResult, perfilesResult] = await Promise.all([
     dataService.getData<{ plugin_id: string; ssId: string }[]>('Registro_Plugins', coreSsId),
     dataService.getData<{ clave: string; valor: string }[]>('Configuracion', coreSsId),
-    dataService.getPerfiles(),
+    dataService.getPerfiles(coreSsId),
   ]);
 
   const modules: Record<string, string> = {};
@@ -75,7 +76,7 @@ export async function initializeCacheOnLogin(): Promise<void> {
   });
 
   const userPerfilId = localStorage.getItem('congre_perfil_id');
-  const perfil = perfilesResult.perfiles.find((p) => p.id === userPerfilId);
+  const perfil = perfilesResult.find((p) => p.id === userPerfilId);
 
   if (perfil) {
     await cacheService.refreshOnLogin(

@@ -1,7 +1,7 @@
 # Congre-Admin: Documentación Técnica del Backend API
 
-> **Versión:** 1.2.0
-> **Última actualización:** 2026-03-31
+> **Versión:** 2.0.0
+> **Última actualización:** 2026-04-03
 > **Archivo fuente:** `backend/src/api.gs`
 > **Plataforma:** Google Apps Script (GAS)
 
@@ -11,18 +11,32 @@
 
 El Backend de Congre-Admin es un proveedor de servicios implementado como Google Apps Script que utiliza Google Sheets como base de datos distribuida. El sistema sigue una arquitectura de **Segmentación Física de Datos** donde cada módulo/plugin tiene su propio spreadsheet.
 
+### Cambios en v2.0
+
+| Cambio | Descripción |
+|--------|-------------|
+| **`batchExecute`** | Nueva función unificada que reemplaza `batchGetData`, `batchSaveData`, `batchDeleteData`, `batchInitSheet` |
+| **Zero Script Properties** | Eliminada dependencia de `getCurrentSsId()`. Todo `ssId` se pasa explícitamente |
+| **CRUD protegido** | Todas las operaciones de escritura requieren sesión válida + permisos RBAC |
+| **Funciones eliminadas** | `disableTOTP`, `deleteAccount`, `updateAuthConfig`, `getPerfiles`, `getPermisos`, `checkPermission`, `createProfile`, `updateProfile`, `deleteProfile` |
+| **Optimización** | `softDeleteRow` usa 1× `setValues()` en lugar de 3× `setValue()` |
+| **~43% reducción** | De 3,053 a ~1,750 líneas de código |
+
 ### Características Principales
 
 | Característica | Implementación |
 |----------------|----------------|
-| **Autenticación** | Username + Password (SHA-256) + TOTP (Google Authenticator) |
-| **Gestión de Sesiones** | Token JWT con índice híbrido (memoria + caché) |
+| **Autenticación** | Username + Password (SHA-256) + TOTP / Email OTP / Passkey |
+| **Gestión de Sesiones** | Token UUID con índice híbrido (memoria + caché) |
 | **Permisos** | RBAC basado en perfiles con permisos por módulo |
 | **Versionado** | Last Write Wins con detección de conflictos |
 | **Borrado** | Soft Delete (borrado lógico) |
-| **Caché** | CacheService con TTL configurable |
-| **Rate Limiting** | Por usuario/IP en acciones de autenticación |
+| **Caché** | CacheService con TTL configurable + caché intra-batch |
+| **Rate Limiting** | Por usuario en acciones de autenticación |
 | **TOTP** | Implementación nativa GAS (sin librerías externas) |
+| **Batch Orchestration** | `batchExecute` con modos `continue` y `fail-fast` |
+| **Drive Folder** | Carpeta Drive por instalación con subfolders y gestión de archivos |
+| **Batch File Ops** | File operations (upload, download, list, delete, share, move) available inside `batchExecute` |
 
 ---
 
@@ -48,7 +62,7 @@ Almacena las credenciales y configuración de usuarios.
 | `_ts` | ISO 8601 | Timestamp de última modificación |
 | `_deleted` | boolean | Borrado lógico |
 
-> **Nota:** La contraseña se verifica comparando el hash SHA-256 del input con `password_hash` dentro de `auth_config`. El TOTP se verifica usando HMAC-SHA1 nativo de GAS. Los passkeys se almacenan en el array `passkeys` dentro de `auth_config`.
+> **Nota:** La contraseña se verifica comparando el hash SHA-256 del input con `password_hash` dentro de `auth_config`. Los passkeys se almacenan en el array `passkeys` dentro de `auth_config`.
 
 ##### Estructura del campo `auth_config`
 
@@ -152,6 +166,17 @@ Registra las migraciones de esquema ejecutadas.
 | `_v` | número | Versión del registro |
 | `_ts` | ISO 8601 | Timestamp de última modificación |
 
+#### Tabla: `Logs_Accesos`
+Registra todos los intentos de acceso (auto-creada por `logAccess`).
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `timestamp` | ISO 8601 | Fecha y hora |
+| `username` | string | Usuario |
+| `success` | YES/NO | Si fue exitoso |
+| `details` | string | Detalles adicionales |
+| `ip` | string | IP del cliente |
+
 ---
 
 ## 3. Referencia de la API
@@ -163,207 +188,210 @@ Todas las peticiones se envían vía `POST` al endpoint del GAS:
 ```json
 {
   "action": "nombre_de_accion",
-  "ssId": "ID_DEL_SPREADSHEET",
+  "payload": {
+    "ssId": "ID_DEL_SPREADSHEET",
+    "sessionToken": "TOKEN_DE_SESION"
+  },
   "sheet": "NOMBRE_DE_HOJA",
-  "sessionToken": "TOKEN_DE_SESION",
-  "payload": { },
   "expectedVersion": NUMERO
 }
 ```
 
+> **Nota v2.0:** `ssId` y `sessionToken` pueden estar en `payload` o al nivel superior de la petición. El backend los extrae de ambos lugares.
+
 ### 3.2 Acciones Disponibles
 
-#### A. Acciones de Datos
+#### A. Acciones de Datos (Requieren sesión + RBAC para escritura)
 
-##### `getData` (GET)
-Obtiene datos de una hoja específica.
+##### `getData`
+Obtiene datos de una hoja específica. Valida permisos si se proporciona sessionToken.
 
 ```javascript
-// GET request
-?action=getData&sheet=NombreHoja&ssId=ID_SPREADSHEET
+{
+  "action": "getData",
+  "payload": { "ssId": "ID_SPREADSHEET" },
+  "sheet": "Personas"
+}
 
 // Response
 {
   "success": true,
   "data": [
-    { "id": "uuid-1", "nombre": "Valor", ... },
-    { "id": "uuid-2", "nombre": "Otro", ... }
+    { "id": "uuid-1", "nombre": "Valor", "_v": 1, "_ts": "...", "_deleted": false },
+    { "id": "uuid-2", "nombre": "Otro", "_v": 3, "_ts": "...", "_deleted": false }
   ]
 }
 ```
 
-##### `batchGetData` (GET)
-Obtiene múltiples hojas en una sola petición.
+##### `batchExecute` (NUEVO — v2.0)
+Ejecuta múltiples operaciones en una sola llamada API. Reemplaza `batchGetData`, `batchSaveData`, `batchDeleteData`, `batchInitSheet`.
+
+**Operaciones de hoja:** `read`, `readById`, `save`, `delete`, `hardDelete`, `restore`, `initSheet`
+
+**Operaciones de archivo (Drive):** `uploadFile`, `downloadFile`, `listFolderFiles`, `deleteFile`, `setFileSharing`, `moveFileToFolder`
+
+**Modos de ejecución:**
+- `continue` (default): Ejecuta todas las operaciones, retorna éxito parcial
+- `fail-fast`: Detiene al primer error
 
 ```javascript
-// GET request
-?action=batchGetData&sheets=Hoja1,Hoja2,Hoja3&ssId=ID_SPREADSHEET
+{
+  "action": "batchExecute",
+  "payload": {
+    "ssId": "ID_SPREADSHEET",
+    "folderId": "DRIVE_FOLDER_ID",
+    "sessionToken": "TOKEN",
+    "mode": "continue",
+    "operations": [
+      { "op": "read", "sheet": "Configuracion" },
+      { "op": "read", "sheet": "Perfiles" },
+      { "op": "save", "sheet": "Personas", "data": { "id": "p_001", "nombre": "Juan" } },
+      { "op": "delete", "sheet": "Registros", "id": "r_045" },
+      { "op": "initSheet", "sheet": "NuevaHoja", "headers": ["id", "nombre", "_v", "_ts", "_deleted"] },
+      { "op": "uploadFile", "subfolder": "documentos", "fileName": "reporte.pdf", "mimeType": "application/pdf", "content": "base64..." },
+      { "op": "listFolderFiles", "subfolder": "documentos" },
+      { "op": "setFileSharing", "fileId": "drive_file_id", "access": "ANYONE_WITH_LINK", "permission": "VIEW" }
+    ]
+  }
+}
 
 // Response
 {
   "success": true,
-  "Hoja1": [ ... ],
-  "Hoja2": [ ... ],
-  "Hoja3": [ ... ]
+  "results": [
+    { "index": 0, "op": "read", "sheet": "Configuracion", "success": true, "data": [...] },
+    { "index": 1, "op": "read", "sheet": "Perfiles", "success": true, "data": [...] },
+    { "index": 2, "op": "save", "sheet": "Personas", "success": true },
+    { "index": 3, "op": "delete", "sheet": "Registros", "success": true },
+    { "index": 4, "op": "initSheet", "sheet": "NuevaHoja", "success": true }
+  ],
+  "totalOps": 5,
+  "succeeded": 5,
+  "failed": 0
 }
 ```
 
+**Migración desde funciones batch anteriores:**
+
+| Antes (v1.x) | Ahora (v2.0) |
+|-------------|-------------|
+| `batchGetData` con `sheets: ["A","B"]` | `batchExecute` con ops `[{op:"read",sheet:"A"},{op:"read",sheet:"B"}]` |
+| `batchSaveData` con `rows: [...]` | `batchExecute` con ops `[{op:"save",sheet:"X",data:{...}}, ...]` |
+| `batchDeleteData` con `ids: [...]` | `batchExecute` con ops `[{op:"delete",sheet:"X",id:"..."}, ...]` |
+| `batchInitSheet` con `tables: [...]` | `batchExecute` con ops `[{op:"initSheet",sheet:"X",headers:[...]}, ...]` |
+
+**Límites:**
+- Máximo 50 operaciones por llamada (`ERR_BATCH_TOO_LARGE`) — incluye ops de hoja y archivo combinadas
+- Todas las operaciones apuntan al mismo `ssId` y `folderId`
+- RBAC se valida antes de ejecutar cualquier operación (pre-check)
+- Caché intra-batch: cada hoja se lee una vez y se reutiliza
+- Archivos: max 37MB por upload, MIME type debe estar en whitelist
+
+**Operaciones de archivo en batch:**
+
+| Op | Parámetros | RBAC | Response data |
+|----|-----------|------|---------------|
+| `uploadFile` | `subfolder`, `fileName`, `mimeType`, `content` (base64) | `write` en `core` | `{ fileId, fileUrl, fileName, size }` |
+| `downloadFile` | `fileId` | `read` en `core` | `{ fileName, mimeType, size, content }` |
+| `listFolderFiles` | `subfolder` (opcional) | `read` en `core` | `{ files: [...] }` |
+| `deleteFile` | `fileId` | `write` en `core` | — |
+| `setFileSharing` | `fileId`, `access`, `permission` | `write` en `core` | `{ fileId, access, permission, shareUrl }` |
+| `moveFileToFolder` | `fileId`, `subfolder` | `write` en `core` | `{ fileId, fileName, folderId, fileUrl }` |
+
 ##### `saveData`
-Guarda o actualiza un registro (operación upsert).
+Guarda o actualiza un registro (operación upsert). Requiere sesión + permiso `write`.
 
 ```javascript
-// POST request
 {
   "action": "saveData",
   "sheet": "Personas",
-  "ssId": "ID_SPREADSHEET",
+  "payload": { "ssId": "ID_SPREADSHEET", "sessionToken": "TOKEN" },
   "payload": {
     "id": "uuid-o-nuevo",
-    "nombre": "Juan Pérez",
-    "_v": 1
+    "nombre": "Juan Pérez"
   },
-  "expectedVersion": 1,
-  "onlyIfNew": false
+  "expectedVersion": 1
 }
 
 // Response - Éxito
-{
-  "success": true
-}
+{ "success": true, "message": "Datos guardados" }
 
 // Response - Conflicto de versión
-{
-  "success": false,
-  "error": "ERR_VERSION_CONFLICT",
-  "message": "El registro fue modificado por otro usuario",
-  "currentVersion": 3
-}
+{ "success": false, "error": "ERR_VERSION_CONFLICT" }
 ```
 
-**Parámetros:**
-- `payload.id`: ID del registro (si es nuevo, se genera UUID automáticamente)
-- `expectedVersion`: Versión esperada para detección de conflictos
-- `onlyIfNew`: Si `true`, solo inserta si no existe
-
 ##### `deleteData`
-Marca un registro como borrado (soft delete).
+Marca un registro como borrado (soft delete). Requiere sesión + permiso `write`.
 
 ```javascript
-// POST request
 {
   "action": "deleteData",
   "sheet": "Personas",
-  "ssId": "ID_SPREADSHEET",
-  "id": "UUID_DEL_REGISTRO"
+  "payload": { "ssId": "ID_SPREADSHEET", "sessionToken": "TOKEN", "id": "UUID" }
 }
 
 // Response
-{
-  "success": true,
-  "message": "Borrado lógico realizado"
-}
+{ "success": true, "message": "Borrado lógico realizado" }
 ```
 
 ##### `hardDelete`
-Borrado físico (definitivo).
+Borrado físico (definitivo). Requiere sesión + permiso `write`.
 
 ```javascript
-// POST request
 {
   "action": "hardDelete",
   "sheet": "Personas",
-  "ssId": "ID_SPREADSHEET",
-  "id": "UUID_DEL_REGISTRO"
+  "payload": { "ssId": "ID_SPREADSHEET", "sessionToken": "TOKEN", "id": "UUID" }
 }
 ```
 
 ##### `restoreData`
-Restaura un registro borrado lógicamente.
+Restaura un registro borrado lógicamente. Requiere sesión + permiso `write`.
 
 ```javascript
-// POST request
 {
   "action": "restoreData",
   "sheet": "Personas",
-  "ssId": "ID_SPREADSHEET",
-  "id": "UUID_DEL_REGISTRO"
+  "payload": { "ssId": "ID_SPREADSHEET", "sessionToken": "TOKEN", "id": "UUID" }
 }
 ```
-
-##### `getHistory`
-Obtiene el historial de versiones de un registro.
-
-```javascript
-// POST request
-{
-  "action": "getHistory",
-  "sheet": "Personas",
-  "ssId": "ID_SPREADSHEET",
-  "id": "UUID_DEL_REGISTRO",
-  "sessionToken": "TOKEN_DE_SESION"
-}
-
-// Response
-{
-  "success": true,
-  "history": [
-    { "_v": 3, "_ts": "2026-03-24T10:00:00Z", "nombre": "Juan" },
-    { "_v": 2, "_ts": "2026-03-23T15:30:00Z", "nombre": "J" },
-    { "_v": 1, "_ts": "2026-03-22T09:00:00Z", "nombre": "J." }
-  ]
-}
-```
-
-#### B. Acciones de Estructura
 
 ##### `initSheet`
-Inicializa una hoja con cabeceras.
+Inicializa una hoja con cabeceras. Requiere sesión + permiso `write`.
 
 ```javascript
 {
   "action": "initSheet",
-  "ssId": "ID_SPREADSHEET",
   "sheet": "NuevaHoja",
-  "headers": ["id", "nombre", "descripcion", "_v", "_ts"],
+  "payload": { "ssId": "ID_SPREADSHEET", "sessionToken": "TOKEN" },
+  "headers": ["id", "nombre", "_v", "_ts", "_deleted"],
   "preserveExisting": false
 }
 ```
 
 ##### `clearSheet`
-Limpia el contenido de una hoja manteniendo las cabeceras.
+Limpia el contenido de una hoja manteniendo las cabeceras. Requiere sesión + permiso `write`.
 
-##### `deleteSheet`
-Elimina una hoja del spreadsheet.
-
----
-
-## 4. Autenticación y Seguridad
-
-### 4.1 Flujo de Autenticación
-
-```
-1. Usuario envía username + password (siempre requerido como primer paso)
-2. Servidor verifica password
-3. Servidor detecta métodos de auth habilitados (totp, email_otp, passkey)
-4. Si un solo método está habilitado: avanza automáticamente
-   Si múltiples métodos: retorna paso 'method' para que usuario elija
-5. Usuario completa segundo factor (código TOTP/email, o credencial passkey)
-6. Servidor genera sessionToken
-7. Cliente usa sessionToken en peticiones subsiguientes
+```javascript
+{
+  "action": "clearSheet",
+  "sheet": "Personas",
+  "payload": { "ssId": "ID_SPREADSHEET", "sessionToken": "TOKEN" }
+}
 ```
 
-**Importante:** La contraseña SIEMPRE es requerida como primer paso. El sistema verifica la contraseña antes de solicitar el segundo factor.
+#### B. Acciones de Autenticación
 
-### 4.2 Acciones de Autenticación
-
-#### `register`
-Crea un nuevo usuario (requiere configuración de contraseña + TOTP posterior).
+##### `register`
+Crea un nuevo usuario.
 
 ```javascript
 {
   "action": "register",
   "payload": {
+    "ssId": "CORE_SS_ID",
     "username": "admin",
+    "email": "admin@congregacion.com",
     "password": "MiContraseña123!",
     "wrapped_mk": "MASTER_KEY_CIFRADA",
     "perfilId": "p_admin"
@@ -371,27 +399,21 @@ Crea un nuevo usuario (requiere configuración de contraseña + TOTP posterior).
 }
 ```
 
-#### `login`
-Autentica al usuario. Soporta múltiples métodos de autenticación:
-- **Password + TOTP** (Google Authenticator) - Método recomendado
-- **Password + Email OTP** (código por email)
-- **Password + Passkey** (WebAuthn)
-
-**Importante:** La contraseña siempre es requerida como primer paso. El backend requiere que el payload incluya `password` incluso cuando se usa TOTP, email OTP o Passkey como segundo factor.
-
-##### Flujo 1: Password + TOTP (Google Authenticator)
+##### `login`
+Autentica al usuario. La contraseña siempre es el primer paso.
 
 ```javascript
 // Paso 1: username + password
 {
   "action": "login",
   "payload": {
+    "ssId": "CORE_SS_ID",
     "username": "admin",
     "password": "MiContraseña123!"
   }
 }
 
-// Response: requiere verificar TOTP
+// Response: requiere segundo factor
 {
   "success": false,
   "step": "totp",
@@ -399,111 +421,60 @@ Autentica al usuario. Soporta múltiples métodos de autenticación:
   "message": "Ingrese su código"
 }
 
-// Paso 2: Con código TOTP
+// Paso 2: Con segundo factor
 {
   "action": "login",
   "payload": {
+    "ssId": "CORE_SS_ID",
     "username": "admin",
     "password": "MiContraseña123!",
     "method": "totp",
     "code": "123456"
   }
 }
-```
 
-##### Flujo 2: Password + Email OTP
-
-```javascript
-// Paso 1: username + password
-{
-  "action": "login",
-  "payload": {
-    "username": "admin",
-    "password": "MiContraseña123!"
-  }
-}
-
-// Response: requiere verificar email OTP
-{
-  "success": false,
-  "step": "email_otp",
-  "availableMethods": ["passkey", "totp", "email_otp"],
-  "message": "Código enviado automáticamente"
-}
-
-// Paso 2: Con código OTP
-{
-  "action": "login",
-  "payload": {
-    "username": "admin",
-    "password": "MiContraseña123!",
-    "method": "email_otp",
-    "code": "123456"
-  }
-}
-```
-
-##### Flujo 3: Passkey (WebAuthn)
-
-```javascript
-// Paso 1: Solicitar desafío
-{
-  "action": "login",
-  "payload": {
-    "username": "admin",
-    "method": "passkey"
-  }
-}
-
-// Response: retorna desafío del backend
-// El frontend usa navigator.credentials.get() para completar la autenticación
-{
-  "success": false,
-  "step": "passkey",
-  "challenge": "base64_challenge",
-  "rpId": "dominio.com"
-}
-
-// Paso 2: Enviar aserción del passkey (incluye password del paso 1)
-{
-  "action": "login",
-  "payload": {
-    "username": "admin",
-    "password": "MiContraseña123!",
-    "method": "passkey",
-    "passkeyAssertion": {
-      "credentialId": "credential_id",
-      "clientDataJSON": "base64_data",
-      "signature": "base64_signature",
-      "authenticatorData": "base64_data"
-    }
-  }
-}
-```
-
-##### Response (login exitoso)
-
-```javascript
+// Response exitoso
 {
   "success": true,
   "sessionToken": "uuid_token",
   "wrapped_mk": "MASTER_KEY_CIFRADA",
-  "expiresAt": "2026-03-27T10:00:00Z",
-  "user": {
-    "id": "uuid-usuario",
-    "username": "admin",
-    "perfilId": "p_admin"
-  }
+  "expiresAt": "2026-04-04T10:00:00Z",
+  "user": { "id": "uuid", "username": "admin", "perfilId": "p_admin" }
 }
 ```
 
-#### `setupTOTP`
-Genera código QR para configurar Google Authenticator (sin sesión activa).
+##### `challenge`
+Genera un desafío para Passkey/WebAuthn durante el login.
+
+```javascript
+{
+  "action": "challenge",
+  "payload": {
+    "ssId": "CORE_SS_ID",
+    "username": "admin",
+    "origin": "https://congre-admin.github.io"
+  }
+}
+
+// Response
+{
+  "success": true,
+  "challenge": "base64_encoded_challenge",
+  "rpId": "congre-admin.github.io",
+  "timeout": 60000,
+  "allowCredentials": [{ "id": "credential_id", "type": "public-key" }],
+  "userVerification": "preferred"
+}
+```
+
+##### `setupTOTP`
+Genera secreto TOTP para configurar Google Authenticator.
 
 ```javascript
 {
   "action": "setupTOTP",
   "payload": {
+    "ssId": "CORE_SS_ID",
     "username": "admin",
     "password": "MiContraseña123!"
   }
@@ -517,182 +488,92 @@ Genera código QR para configurar Google Authenticator (sin sesión activa).
 }
 ```
 
-#### `confirmTOTP`
-Confirma la configuración de TOTP y guarda el secreto.
+##### `confirmTOTP`
+Confirma la configuración de TOTP.
 
 ```javascript
 {
   "action": "confirmTOTP",
   "payload": {
+    "ssId": "CORE_SS_ID",
     "username": "admin",
     "password": "MiContraseña123!",
-    "code": "123456"  // Código de Google Authenticator
+    "code": "123456"
   }
 }
-
-// Response
-{
-  "success": true,
-  "message": "TOTP configurado correctamente"
-}
 ```
 
-#### `disableTOTP`
-Desactiva TOTP para un usuario (requiere sesión activa).
+##### `setupPasskey`
+Genera un desafío para registrar un nuevo passkey.
 
 ```javascript
-{
-  "action": "disableTOTP",
-  "payload": {}
-}
-
-// Headers
-{
-  "sessionToken": "TOKEN_SESION"
-}
-
-// Response
-{
-  "success": true,
-  "message": "TOTP desactivado"
-}
-```
-
-#### `challenge`
-Genera un desafío para Passkey/WebAuthn durante el login. El frontend envía el origen para calcular el `rpId` correcto.
-
-**Nota importante:** El flujo de Passkey requiere que el frontend先用 `challenge` acción para obtener el desafío, luego use `navigator.credentials.get()` para completar la autenticación, y finalmente envíe el resultado en el login payload junto con la password del primer paso.
-
-```javascript
-{
-  "action": "challenge",
-  "payload": {
-    "username": "admin",
-    "origin": "https://congre-admin.github.io"
-  }
-}
-
-// Response
-{
-  "success": true,
-  "challenge": "base64_encoded_challenge",
-  "rpId": "congre-admin.github.io",
-  "timeout": 60000,
-  "allowCredentials": [
-    { "id": "base64url_credential_id", "type": "public-key" }
-  ],
-  "userVerification": "preferred"
-}
-```
-
-#### `setupPasskey`
-Genera un desafío para registrar un nuevo passkey. Puede usar sessionToken (si está autenticado) o username/password.
-
-```javascript
-// Con sesión activa
 {
   "action": "setupPasskey",
   "payload": {
+    "ssId": "CORE_SS_ID",
     "username": "admin",
+    "password": "MiContraseña123!",
     "deviceName": "Windows PC",
-    "sessionToken": "TOKEN_SESION",
     "origin": "https://congre-admin.github.io"
   }
-}
-
-// Sin sesión (desde login)
-{
-  "action": "setupPasskey",
-  "payload": {
-    "username": "admin",
-    "password": "MiContraseña123!",
-    "deviceName": "iPhone",
-    "origin": "https://congre-admin.github.io"
-  }
-}
-
-// Response
-{
-  "success": true,
-  "challenge": "base64_encoded_challenge",
-  "rpId": "congre-admin.github.io",
-  "timeout": 60000,
-  "user": {
-    "id": "base64_encoded_user_id",
-    "name": "admin",
-    "displayName": "admin"
-  },
-  "pubKeyCredParams": [
-    { "type": "public-key", "alg": -7 },
-    { "type": "public-key", "alg": -257 }
-  ],
-  "attestation": "preferred",
-  "excludeCredentials": []
 }
 ```
 
-#### `confirmPasskey`
-Confirma el registro de un passkey. Guarda la credencial en `auth_config.passkeys`.
+##### `confirmPasskey`
+Confirma el registro de un passkey.
 
 ```javascript
 {
   "action": "confirmPasskey",
   "payload": {
+    "ssId": "CORE_SS_ID",
     "username": "admin",
-    "sessionToken": "TOKEN_SESION",
+    "password": "MiContraseña123!",
     "attestation": {
       "id": "credential_id_from_browser",
-      "type": "public-key",
-      "response": {
-        "clientDataJSON": "base64_client_data",
-        "attestationObject": "base64_attestation"
-      }
+      "response": { "publicKey": "" }
     }
   }
 }
-
-// Response
-{
-  "success": true,
-  "message": "Passkey configurado correctamente"
-}
 ```
 
-#### `deletePasskey`
-Elimina un passkey registrado (requiere sesión activa).
+##### `deletePasskey`
+Elimina un passkey registrado. Requiere sesión.
 
 ```javascript
 {
   "action": "deletePasskey",
   "payload": {
-    "passkeyId": "id_del_passkey_a_eliminar"
+    "ssId": "CORE_SS_ID",
+    "sessionToken": "TOKEN",
+    "passkeyId": "id_del_passkey"
   }
-}
-
-// Headers
-{
-  "sessionToken": "TOKEN_SESION"
-}
-
-// Response
-{
-  "success": true,
-  "message": "Passkey eliminado"
 }
 ```
 
-#### `getAuthMethods`
-Obtiene los métodos de autenticación habilitados para el usuario.
+##### `requestOTP`
+Envía código OTP por email.
+
+```javascript
+{
+  "action": "requestOTP",
+  "payload": {
+    "ssId": "CORE_SS_ID",
+    "username": "admin"
+  }
+}
+```
+
+##### `getAuthMethods`
+Obtiene métodos de autenticación habilitados. Requiere sesión.
 
 ```javascript
 {
   "action": "getAuthMethods",
-  "payload": {}
-}
-
-// Headers
-{
-  "sessionToken": "TOKEN_SESION"
+  "payload": {
+    "ssId": "CORE_SS_ID",
+    "sessionToken": "TOKEN"
+  }
 }
 
 // Response
@@ -700,131 +581,137 @@ Obtiene los métodos de autenticación habilitados para el usuario.
   "success": true,
   "methods": ["passkey", "totp", "email_otp"],
   "defaultMethod": "passkey",
-  "passkeys": [
-    { "id": "credential_id", "deviceName": "Windows PC", "createdAt": "2026-03-30T..." }
-  ],
+  "passkeys": [...],
   "totp": { "enabled": true },
   "email_otp": { "enabled": true },
   "recovery_enabled": true
 }
 ```
 
-#### `updateAuthConfig`
-Actualiza la configuración de autenticación.
+##### `setDefaultAuthMethod` (NUEVO — v2.0)
+Establece el método de autenticación predeterminado. Requiere sesión.
 
 ```javascript
 {
-  "action": "updateAuthConfig",
+  "action": "setDefaultAuthMethod",
   "payload": {
-    "default_method": "passkey",
-    "recovery_enabled": false
+    "ssId": "CORE_SS_ID",
+    "sessionToken": "TOKEN",
+    "method": "totp"
   }
-}
-
-// Headers
-{
-  "sessionToken": "TOKEN_SESION"
-}
-
-// Response
-{
-  "success": true
 }
 ```
 
-#### `changePassword`
-Cambia la contraseña del usuario.
+##### `changePassword`
+Cambia la contraseña del usuario. Requiere sesión.
 
 ```javascript
 {
   "action": "changePassword",
   "payload": {
-    "old_password": "contraseña_actual",
-    "new_password": "nueva_contraseña"
+    "ssId": "CORE_SS_ID",
+    "sessionToken": "TOKEN",
+    "old_password": "actual",
+    "new_password": "nueva"
   }
-}
-
-// Headers
-{
-  "sessionToken": "TOKEN_SESION"
-}
-
-// Response
-{
-  "success": true,
-  "message": "Contraseña cambiada correctamente"
 }
 ```
 
-#### `deleteAccount`
-Elimina la cuenta del usuario.
+##### `requestPasswordReset`
+Solicita email de restablecimiento de contraseña.
 
 ```javascript
 {
-  "action": "deleteAccount",
+  "action": "requestPasswordReset",
   "payload": {
-    "password": "contraseña_del_usuario"
+    "ssId": "CORE_SS_ID",
+    "username": "admin"
   }
-}
-
-// Headers
-{
-  "sessionToken": "TOKEN_SESION"
-}
-
-// Response
-{
-  "success": true,
-  "message": "Cuenta eliminada"
 }
 ```
 
-#### `logout`
-Cierra la sesión actual.
+##### `confirmPasswordReset` (NUEVO — v2.0, renombrada de `resetPassword`)
+Restablece la contraseña con un token de recuperación.
 
 ```javascript
 {
-  "action": "logout",
+  "action": "confirmPasswordReset",
   "payload": {
-    "sessionToken": "TOKEN_A_CERRAR"
+    "ssId": "CORE_SS_ID",
+    "userId": "uuid-usuario",
+    "token": "reset_token",
+    "newPassword": "NuevaContraseña123!"
   }
 }
 ```
 
-#### `validateSession`
+##### `validateSession`
 Valida un token de sesión.
 
 ```javascript
 {
   "action": "validateSession",
-  "sessionToken": "TOKEN_A_VALIDAR"
+  "payload": {
+    "ssId": "CORE_SS_ID",
+    "sessionToken": "TOKEN"
+  }
+}
+
+// Response
+{ "valid": true, "userId": "uuid-usuario" }
+```
+
+##### `refreshSession`
+Renueva el token de sesión.
+
+```javascript
+{
+  "action": "refreshSession",
+  "payload": { "sessionToken": "TOKEN" }
+}
+```
+
+##### `logout`
+Cierra la sesión actual.
+
+```javascript
+{
+  "action": "logout",
+  "payload": { "sessionToken": "TOKEN" }
+}
+```
+
+#### C. Acción de Instalación
+
+##### `install`
+Crea los spreadsheets Core y Público.
+
+```javascript
+{
+  "action": "install",
+  "payload": {
+    "nombreCongregacion": "Congregación Central",
+    "nombreMostrar": "Co. Central"
+  }
 }
 
 // Response
 {
-  "valid": true,
-  "userId": "uuid-usuario",
-  "username": "usuario@email.com",
-  "expiresAt": "2026-03-25T10:00:00Z"
+  "success": true,
+  "ssId": "CORE_SS_ID",
+  "ssUrl": "https://docs.google.com/spreadsheets/d/...",
+  "publicSsId": "PUBLIC_SS_ID",
+  "publicSsUrl": "https://docs.google.com/spreadsheets/d/...",
+  "nombreCongregacion": "Congregación Central",
+  "nombreMostrar": "Co. Central"
 }
 ```
 
-#### `refreshSession`
-Renueva el token de sesión.
-
-#### `getActiveSessions`
-Obtiene las sesiones activas de un usuario.
-
-#### `invalidateAllSessions`
-Cierra todas las sesiones de un usuario.
-
 ---
 
-## 5. Sistema de Permisos RBAC
+## 4. Sistema de Permisos RBAC
 
-### 5.1 Estructura de Perfiles
-
-El sistema implementa Control de Acceso Basado en Roles (RBAC) con los siguientes perfiles predefinidos:
+### 4.1 Estructura de Perfiles
 
 | Perfil ID | Nombre | Permisos |
 |-----------|--------|----------|
@@ -835,226 +722,281 @@ El sistema implementa Control de Acceso Basado en Roles (RBAC) con los siguiente
 | `p_siervo_territorios` | Siervo de Territorios | RW en predicación |
 | `p_publicador` | Publicador | R en reuniones, predicación |
 
-### 5.2 Acciones de Permisos
+### 4.2 Validación de Permisos
 
-#### `getPerfiles`
-Obtiene todos los perfiles disponibles.
+> **Nota v2.0:** Las funciones `getPerfiles`, `getPermisos`, `checkPermission`, `createProfile`, `updateProfile`, `deleteProfile` han sido **eliminadas**. El frontend gestiona perfiles directamente mediante `batchExecute` con operaciones `read`/`save`/`delete` en las hojas `Perfiles` y `Usuarios`.
+
+Los permisos se validan internamente en el backend para cada operación de escritura. El frontend puede leer la tabla `Perfiles` directamente para mostrar la matriz de permisos en la UI.
+
+### 4.3 Mapeo de Acciones a Permisos
+
+| Acción requerida | Permiso necesario |
+|-----------------|-------------------|
+| `read` | `R` o `RW` |
+| `write` | `W` o `RW` |
+| `delete` | `RW` |
+
+---
+
+## 5. Instalación
+
+### 5.1 Flujo de Instalación (v2.0)
+
+```javascript
+// Paso 1: Crear spreadsheets
+{
+  "action": "install",
+  "payload": { "nombreCongregacion": "Congregación Central" }
+}
+// Response: { ssId, ssUrl, publicSsId, publicSsUrl, folderId, folderUrl }
+
+// Paso 2: Inicializar tablas y datos con batchExecute
+{
+  "action": "batchExecute",
+  "payload": {
+    "ssId": "CORE_SS_ID",
+    "operations": [
+      { "op": "initSheet", "sheet": "Usuarios", "headers": ["id","username","email","wrapped_mk","perfilId","auth_config","metadata","created_at","_v","_ts","_deleted"] },
+      { "op": "initSheet", "sheet": "Perfiles", "headers": ["id","nombre","permisos","descripcion","_v","_ts","_deleted"] },
+      { "op": "initSheet", "sheet": "Configuracion", "headers": ["clave","valor","is_public","_v","_ts","_deleted"] },
+      { "op": "initSheet", "sheet": "Registro_Plugins", "headers": ["plugin_id","ssId","status","config","_v","_ts","_deleted"] },
+      { "op": "initSheet", "sheet": "Sistema_Migraciones", "headers": ["id","nombre","version","ejecutada_en","estado","error","_v","_ts","_deleted"] },
+      { "op": "initSheet", "sheet": "Logs_Accesos", "headers": ["timestamp","username","success","details","ip"] },
+      { "op": "save", "sheet": "Perfiles", "data": { "id": "p_admin", "nombre": "Super-Admin", "permisos": {"core":"RW","personas":"RW","registros":"RW","reuniones":"RW","predicacion":"RW","anuncios":"RW"}, "descripcion": "Administrador total" } },
+      { "op": "save", "sheet": "Perfiles", "data": { "id": "p_secretario", "nombre": "Secretario", "permisos": {"core":"R","personas":"RW","registros":"RW","reuniones":"R","predicacion":"R","anuncios":"RW"}, "descripcion": "Secretario de congregación" } }
+    ]
+  }
+}
+```
+
+### 5.2 Funciones Eliminadas
+
+| Función Eliminada | Reemplazo |
+|-------------------|-----------|
+| `initCoreTables` | `batchExecute` con ops `initSheet` |
+| `seedPerfiles` | `batchExecute` con ops `save` en `Perfiles` |
+| `seedConfiguracion` | `batchExecute` con ops `save` en `Configuracion` |
+| `batchInitSheet` | `batchExecute` con ops `initSheet` |
+| `batchSaveData` | `batchExecute` con ops `save` |
+| `batchDeleteData` | `batchExecute` con ops `delete` |
+| `batchGetData` | `batchExecute` con ops `read` |
+| `getHistory` | `batchExecute` con op `read` (frontend filtra) |
+| `getPerfiles` | `batchExecute` con op `read` en `Perfiles` |
+| `getPermisos` | `batchExecute` con op `read` en `Usuarios` + `Perfiles` |
+| `checkPermission` | Validación directa en frontend |
+| `createProfile` | `batchExecute` con op `save` en `Perfiles` |
+| `updateProfile` | `batchExecute` con op `save` en `Perfiles` |
+| `deleteProfile` | `batchExecute` con op `delete` en `Perfiles` |
+| `disableTOTP` | `batchExecute` con op `save` en `Usuarios` (actualizar auth_config.totp.enabled = false) |
+| `deleteAccount` | `batchExecute` con op `delete` en `Usuarios` |
+| `updateAuthConfig` | `batchExecute` con op `save` en `Usuarios` |
+| `deleteSheet` | No disponible (usar Google Sheets UI) |
+| `actionResetPassword` | Renombrada a `confirmPasswordReset` |
+
+---
+
+## 6. Gestión de Archivos — Drive Folder System
+
+### 6.1 Estructura de Carpeta
+
+Cada instalación tiene una carpeta Drive dedicada con subfolders:
+
+```
+CongreAdmin-[Nombre]/
+├── CongreAdmin-[Nombre]-Core.gsheet
+├── CongreAdmin-[Nombre]-Public.gsheet
+├── backups/          ← Backups manuales, archivos de exportación
+├── documentos/       ← Documentos subidos (PDFs, imágenes, etc.)
+└── exportaciones/    ← Reportes generados, exportaciones
+```
+
+### 6.2 Acciones de Archivo (Standalone)
+
+Las siguientes acciones están disponibles como endpoints independientes. Usan la misma lógica interna que las operaciones de `batchExecute`.
+
+> **Nota:** Todas requieren sesión válida + permiso `write` en `core`. Max 37MB por upload. MIME types permitidos: PDF, imágenes (JPEG, PNG, GIF, SVG, WebP), texto (TXT, CSV, HTML), JSON, ZIP, Office (DOCX, XLSX, DOC, XLS), ODF (ODT, ODS), audio (MP3, WAV, OGG), video (MP4, WebM).
+
+#### `uploadFile`
+Sube un archivo codificado en base64 a la carpeta Drive.
 
 ```javascript
 {
-  "action": "getPerfiles"
+  "action": "uploadFile",
+  "payload": {
+    "ssId": "CORE_SS_ID",
+    "sessionToken": "TOKEN",
+    "folderId": "DRIVE_FOLDER_ID",
+    "subfolder": "documentos",
+    "fileName": "reporte.pdf",
+    "mimeType": "application/pdf",
+    "content": "base64_encoded_content"
+  }
 }
 
 // Response
 {
   "success": true,
-  "perfiles": [
-    { "id": "p_admin", "nombre": "Super-Admin", "permisos": {...} },
-    ...
+  "fileId": "new_file_id",
+  "fileUrl": "https://drive.google.com/file/d/.../view",
+  "fileName": "reporte.pdf",
+  "size": 1024000
+}
+```
+
+#### `downloadFile`
+Descarga un archivo de Drive como contenido base64.
+
+```javascript
+{
+  "action": "downloadFile",
+  "payload": {
+    "ssId": "CORE_SS_ID",
+    "sessionToken": "TOKEN",
+    "fileId": "FILE_ID"
+  }
+}
+
+// Response
+{
+  "success": true,
+  "fileName": "reporte.pdf",
+  "mimeType": "application/pdf",
+  "size": 1024000,
+  "content": "base64_encoded_content"
+}
+```
+
+#### `listFolderFiles`
+Lista archivos en la carpeta de instalación (opcionalmente filtrado por subfolder).
+
+```javascript
+{
+  "action": "listFolderFiles",
+  "payload": {
+    "ssId": "CORE_SS_ID",
+    "sessionToken": "TOKEN",
+    "folderId": "DRIVE_FOLDER_ID",
+    "subfolder": "documentos"
+  }
+}
+
+// Response
+{
+  "success": true,
+  "files": [
+    {
+      "id": "file_id",
+      "name": "reporte.pdf",
+      "mimeType": "application/pdf",
+      "size": 1024000,
+      "created": "2026-04-03T...",
+      "modified": "2026-04-03T...",
+      "url": "https://drive.google.com/file/d/.../view",
+      "shared": true,
+      "access": "ANYONE_WITH_LINK",
+      "permission": "VIEW"
+    }
   ]
 }
 ```
 
-#### `getPermisos`
-Obtiene los permisos de un usuario específico.
+#### `deleteFile`
+Elimina (envía a papelera) un archivo de Drive.
 
 ```javascript
 {
-  "action": "getPermisos",
+  "action": "deleteFile",
   "payload": {
-    "userId": "UUID_USUARIO"
-  }
-}
-```
-
-#### `checkPermission`
-Verifica si un usuario tiene permiso para una acción.
-
-```javascript
-{
-  "action": "checkPermission",
-  "payload": {
-    "userId": "UUID_USUARIO",
-    "username": "usuario@email.com",
-    "action": "read",  // read, write, delete
-    "modulo": "personas"
+    "ssId": "CORE_SS_ID",
+    "sessionToken": "TOKEN",
+    "fileId": "FILE_ID"
   }
 }
 
 // Response
-{
-  "allowed": true
-}
-
-// O
-{
-  "allowed": false,
-  "error": "ERR_PERMISSION_DENIED"
-}
+{ "success": true, "message": "Archivo eliminado" }
 ```
 
-### 5.3 Gestión de Perfiles (CRUD)
-
-> **Requiere sesión válida** + permiso `core: RW`
-
-Los perfiles se cargan desde el archivo `backend/data/seed_perfiles.json` durante la instalación, pero también pueden gestionarse dinámicamente.
-
-#### `createProfile`
-Crea un nuevo perfil.
+#### `setFileSharing`
+Establece permisos de compartición en un archivo.
 
 ```javascript
 {
-  "action": "createProfile",
-  "sessionToken": "TOKEN_DE_SESIÓN",
+  "action": "setFileSharing",
   "payload": {
-    "id": "p_nuevo_perfil",
-    "nombre": "Nombre del Perfil",
-    "permisos": {
-      "personas": "RW",
-      "reuniones": "R"
-    },
-    "descripcion": "Descripción del perfil"
+    "ssId": "CORE_SS_ID",
+    "sessionToken": "TOKEN",
+    "fileId": "FILE_ID",
+    "access": "ANYONE_WITH_LINK",
+    "permission": "VIEW"
   }
 }
 
 // Response
 {
   "success": true,
-  "message": "Perfil creado",
-  "perfilId": "p_nuevo_perfil"
-}
-
-// Error
-{
-  "success": false,
-  "error": "ERR_PROFILE_EXISTS: El perfil ya existe"
+  "fileId": "FILE_ID",
+  "access": "ANYONE_WITH_LINK",
+  "permission": "VIEW",
+  "shareUrl": "https://drive.google.com/file/d/.../view?usp=sharing"
 }
 ```
 
-#### `updateProfile`
-Actualiza un perfil existente.
+**Valores de `access`:** `PRIVATE`, `ANYONE_WITH_LINK`, `DOMAIN`, `ANYONE`
+**Valores de `permission`:** `VIEW`, `COMMENT`, `EDIT`
+
+#### `moveFileToFolder`
+Mueve un archivo a la carpeta de instalación (o subfolder).
 
 ```javascript
 {
-  "action": "updateProfile",
-  "sessionToken": "TOKEN_DE_SESIÓN",
+  "action": "moveFileToFolder",
   "payload": {
-    "id": "p_admin",
-    "nombre": "Super-Admin Actualizado",
-    "permisos": {
-      "core": "RW",
-      "personas": "RW",
-      "registros": "RW"
-    }
+    "ssId": "CORE_SS_ID",
+    "sessionToken": "TOKEN",
+    "folderId": "DRIVE_FOLDER_ID",
+    "subfolder": "backups",
+    "fileId": "FILE_ID"
   }
 }
 
 // Response
 {
   "success": true,
-  "message": "Perfil actualizado"
-}
-
-// Error
-{
-  "success": false,
-  "error": "ERR_PROFILE_NOT_FOUND"
+  "fileId": "FILE_ID",
+  "fileName": "backup.zip",
+  "folderId": "subfolder_id",
+  "fileUrl": "https://drive.google.com/file/d/.../view"
 }
 ```
 
-#### `deleteProfile`
-Elimina un perfil (borrado lógico). No permite eliminar perfiles que tengan usuarios asignados.
+### 6.3 Operaciones de Archivo en `batchExecute`
 
-```javascript
-{
-  "action": "deleteProfile",
-  "sessionToken": "TOKEN_DE_SESIÓN",
-  "payload": {
-    "id": "p_perfil_a_eliminar"
-  }
-}
+Las mismas operaciones de archivo están disponibles dentro de `batchExecute`, permitiendo mezclar operaciones de hoja y archivo en una sola llamada API. Ver sección 3.2 para detalles completos.
 
-// Response
-{
-  "success": true,
-  "message": "Perfil eliminado"
-}
+### 6.4 Códigos de Error de Archivo
 
-// Error - Perfil en uso
-{
-  "success": false,
-  "error": "ERR_PROFILE_IN_USE: Hay usuarios con este perfil",
-  "usuarios": 3
-}
-
-// Error - Perfil no encontrado
-{
-  "success": false,
-  "error": "ERR_PROFILE_NOT_FOUND"
-}
-```
-
----
-
-## 6. Instalación
-
-### 6.1 Proceso de Instalación
-
-> **Nota:** Los perfiles base se cargan desde el archivo `backend/data/seed_perfiles.json` y se envían en el payload de instalación desde el frontend.
-
-#### `install`
-Inicializa el sistema completo creando el Core Spreadsheet.
-
-```javascript
-{
-  "action": "install",
-  "payload": {
-    "nombreCongregacion": "Congregación Central",
-    "perfiles": [
-      {
-        "id": "p_admin",
-        "nombre": "Super-Admin",
-        "permisos": { "core": "RW", "personas": "RW", "registros": "RW" },
-        "descripcion": "Acceso total al sistema"
-      },
-      // ... más perfiles del archivo seed_perfiles.json
-    ]
-  }
-}
-
-// Response
-{
-  "success": true,
-  "ssId": "ID_DEL_SPREADSHEET_CREADO",
-  "ssUrl": "https://docs.google.com/spreads/d/...",
-  "message": "Instalación completada exitosamente"
-}
-```
-
-#### `createSpreadsheet`
-Crea un nuevo Google Spreadsheet.
-
-#### `initCoreTables`
-Inicializa las tablas del Core.
-
-#### `seedPerfiles`
-Inyecta los perfiles base.
-
-#### `seedConfiguracion`
-Inyecta la configuración inicial.
+| Código | Descripción |
+|--------|-------------|
+| `ERR_FOLDER_NOT_FOUND` | La carpeta Drive no existe |
+| `ERR_SUBFOLDER_NOT_FOUND` | El subfolder solicitado no existe |
+| `ERR_FILE_NOT_FOUND` | El archivo no existe |
+| `ERR_FILE_TOO_LARGE` | El archivo excede 37MB |
+| `ERR_INVALID_MIMETYPE` | Tipo de archivo no permitido |
+| `ERR_INVALID_BASE64` | El contenido no es base64 válido |
 
 ---
 
 ## 7. Sistema de Caché
 
-### 7.1 TTL Configurable
+### 6.1 TTL Configurable
 
 | Constante | Valor | Uso |
 |-----------|-------|-----|
-| `CACHE_TTL_DATA` | 600s (10 min) | Datos de hojas (batch) |
+| `CACHE_TTL_DATA` | 600s (10 min) | Datos de hojas |
 | `CACHE_TTL_LOOKUP` | 300s (5 min) | Búsquedas de usuarios/perfiles |
 
-### 7.2 Funciones de Caché
+### 6.2 Funciones de Caché
 
 ```javascript
 // Obtener datos cacheados
@@ -1063,13 +1005,18 @@ getCachedSheetData(ss, sheetName)
 // Invalidar caché específico
 clearCache(ssId, sheetName)
 
-// Invalidar por patrón
-invalidateCache('u:')    // Todos los usuarios
-invalidateCache('p:')    // Todos los perfiles
-invalidateCache('p:all') // Cache de perfiles completo
+// Invalidar por patrón (no-op — expira automáticamente)
+invalidateCache('u:')    // Solo log, no invalida realmente
 ```
 
-### 7.3 Funciones TOTP (Implementación Nativa GAS)
+> **Nota v2.0:** `invalidateCache(pattern)` es un no-op. GAS CacheService no soporta invalidación por patrón. La expiración es automática por TTL.
+
+### 6.3 Caché Intra-Batch (NUEVO)
+`batchExecute` implementa un caché en memoria dentro de una sola ejecución: cada hoja se carga una vez y se reutiliza para todas las operaciones del lote. Las hojas modificadas se escriben al final de la ejecución en un solo `setValues()`.
+
+---
+
+## 8. Funciones TOTP (Implementación Nativa GAS)
 
 El sistema implementa TOTP sin librerías externas usando `Utilities.computeHmacSignature()`.
 
@@ -1102,7 +1049,7 @@ verifyPassword(password, hash)
 
 ---
 
-## 8. Versionado y Conflictos
+## 9. Versionado y Conflictos
 
 ### 8.1 Campos de Sistema
 
@@ -1114,38 +1061,18 @@ verifyPassword(password, hash)
 
 ### 8.2 Last Write Wins
 
-El sistema implementa detección de conflictos:
-
-1. El cliente envía `expectedVersion` con el payload
-2. El servidor compara con la versión actual
-3. Si la versión del servidor es mayor, retorna error `ERR_VERSION_CONFLICT`
-4. El cliente debe reintentar con los datos actualizados
-
-```javascript
-// Response cuando hay conflicto
-{
-  "success": false,
-  "error": "ERR_VERSION_CONFLICT",
-  "message": "El registro fue modificado por otro usuario",
-  "currentVersion": 5
-}
-```
+El sistema incrementa `_v` automáticamente en cada escritura. El cliente puede enviar `expectedVersion` para detección de conflictos.
 
 ---
 
-## 9. Rate Limiting
-
-### 9.1 Implementación
-
-El sistema implementa rate limiting usando CacheService:
+## 10. Rate Limiting
 
 ```javascript
 // Máximo 5 intentos por minuto por username
 checkRateLimit('login:usuario@email.com', 5, 60)
 ```
 
-### 9.2 Respuesta cuando está bloqueado
-
+**Respuesta cuando está bloqueado:**
 ```javascript
 {
   "success": false,
@@ -1156,7 +1083,7 @@ checkRateLimit('login:usuario@email.com', 5, 60)
 
 ---
 
-## 10. Códigos de Error
+## 11. Códigos de Error
 
 | Código | Descripción |
 |--------|-------------|
@@ -1170,121 +1097,86 @@ checkRateLimit('login:usuario@email.com', 5, 60)
 | `ERR_SESSION_EXPIRED` | Sesión expirada |
 | `ERR_SESSION_NOT_FOUND` | Sesión no encontrada |
 | `ERR_RESOURCE_NOT_FOUND` | Hoja o recurso no encontrado |
-| `ERR_TOTP_REQUIRED` | Se requiere código TOTP |
-| `ERR_TOTP_INVALID` | Código TOTP inválido |
-| `ERR_TOTP_NOT_CONFIGURED` | TOTP no configurado para el usuario |
+| `ERR_TOTP_NOT_CONFIGURED` | TOTP no configurado |
 | `ERR_TOTP_EXPIRED` | Configuración TOTP expirada |
 | `ERR_NO_PENDING_TOTP` | No hay configuración TOTP pendiente |
 | `ERR_CODE_REQUIRED` | Se requiere código de verificación |
-| `ERR_EMAIL_OTP_NOT_CONFIGURED` | Email OTP no configurado para el usuario |
-| `ERR_EMAIL_SEND` | Error al enviar email (ver `debug.error` para detalles) |
-| `ERR_PASSKEY_NOT_CONFIGURED` | Passkey no configurado para el usuario |
+| `ERR_EMAIL_OTP_NOT_CONFIGURED` | Email OTP no configurado |
+| `ERR_EMAIL_SEND` | Error al enviar email |
+| `ERR_PASSKEY_NOT_CONFIGURED` | Passkey no configurado |
 | `ERR_PASSKEY_REQUIRED` | Se requiere autenticación con passkey |
+| `ERR_PASSKEY_NOT_FOUND` | Passkey no encontrado |
+| `ERR_PASSKEY_SETUP_EXPIRED` | Configuración de passkey expirada |
+| `ERR_FOLDER_NOT_FOUND` | Carpeta Drive no encontrada |
+| `ERR_SUBFOLDER_NOT_FOUND` | Subfolder no encontrado |
+| `ERR_FILE_NOT_FOUND` | Archivo no encontrado |
+| `ERR_FILE_TOO_LARGE` | Archivo excede 37MB |
+| `ERR_INVALID_MIMETYPE` | Tipo de archivo no permitido |
+| `ERR_INVALID_BASE64` | Contenido no es base64 válido |
 | `ERR_INVALID_CREDENTIALS` | Usuario o contraseña incorrectos |
 | `ERR_PASSWORD_REQUIRED` | Se requiere contraseña |
-| `ERR_PASSWORD_WEAK` | Contraseña no cumple requisitos de complejidad |
-
-### 10.1 Respuestas de Error con Debug Info
-
-Algunas acciones incluyen información de debug en la respuesta para facilitar la resolución de problemas:
-
-```javascript
-// requestOTP - Error
-{
-  "success": false,
-  "error": "ERR_EMAIL_SEND",
-  "debug": {
-    "username": "admin",
-    "email": "admin@congregacion.com",
-    "error": "MailApp quota exceeded"
-  }
-}
-
-// requestOTP - Éxito
-{
-  "success": true,
-  "message": "Código enviado por email",
-  "debug": {
-    "email": "admin@congregacion.com"
-  }
-}
-```
+| `ERR_PASSWORD_WEAK` | Contraseña no cumple requisitos |
+| `ERR_SS_ID_REQUIRED` | Se requiere ssId |
+| `ERR_INVALID_TOKEN` | Token inválido o expirado |
+| `ERR_TOKEN_EXPIRED` | Token expirado |
+| `ERR_INVALID_REQUEST` | Datos incompletos |
+| `ERR_BATCH_EMPTY` | No se proporcionaron operaciones |
+| `ERR_BATCH_TOO_LARGE` | Máximo 50 operaciones por llamada |
+| `ERR_SKIPPED` | Operación omitida (fail-fast mode) |
+| `ERR_UNKNOWN_OP` | Operación desconocida |
 
 ---
 
-## 11. Índice Híbrido de Sesiones
+## 12. Índice Híbrido de Sesiones
 
 ### 11.1 Arquitectura
 
-El sistema usa un índice híbrido para validar sesiones:
-
-1. **Nivel 1 (Memoria):** Variable global `_sessionIndex` - acceso instantáneo
-2. **Nivel 2 (Caché):** ScriptCache - persiste entre ejecuciones
-3. **Nivel 3 (Backup):** UserProperties - almacenamiento persistente
+1. **Nivel 1 (Memoria):** Variable global `_sessionIndex` — acceso instantáneo
+2. **Nivel 2 (Caché):** ScriptCache — persiste entre ejecuciones
+3. **Nivel 3 (Backup):** UserProperties — almacenamiento persistente
 
 ### 11.2 Funciones
 
 ```javascript
-_loadSessionIndex()     // Carga el índice
-_saveSessionIndex()     // Persiste el índice
-_addToSessionIndex()   // Agrega sesión
+_loadSessionIndex()       // Carga el índice
+_saveSessionIndex()       // Persiste el índice
+_addToSessionIndex()      // Agrega sesión
 _removeFromSessionIndex() // Elimina sesión
+_findSessionInProperties() // Fallback: busca en PropertiesService
 ```
-
----
-
-## 12. Tablas de Sistema Adicionales
-
-### 12.1 Logs_Accesos
-
-Registra todos los intentos de acceso.
-
-| Campo | Tipo | Descripción |
-|-------|------|-------------|
-| `timestamp` | ISO 8601 | Fecha y hora |
-| `username` | string | Usuario |
-| `success` | YES/NO | Si fue exitoso |
-| `details` | string | Detalles adicionales |
-| `ip` | string | IP del cliente |
 
 ---
 
 ## 13. Notas de Implementación
 
-### 13.1 Optimizaciones de Quota
+### 12.1 Optimizaciones de Quota (v2.0)
 
-- **Lectura única:** `saveData` pasa filas existentes a `updateOrInsert` para evitar doble lectura
-- **Caché de Spreadsheet:** El objeto Spreadsheet se cachea en memoria
-- **Índice de sesiones:** Validación O(1) en lugar de O(n)
-- **TTL diferenciado:** Datos de hojas (10 min) vs búsquedas (5 min)
+- **`batchExecute` con caché intra-batch:** Cada hoja se lee una vez por lote, se acumulan cambios y se escriben con un solo `setValues()`
+- **`softDeleteRow` optimizado:** Usa 1× `setValues()` en lugar de 3× `setValue()` (reducción de 4 a 2 llamadas API)
+- **Dispatch map:** Router basado en mapa en lugar de cadena if-else
+- **Código reducido:** ~1,750 líneas (de 3,053) — 43% menos
 
-### 13.2 Validaciones
+### 12.2 Validaciones
 
 - Las validaciones de esquema se ejecutan en el **Frontend** mediante JSONata
 - El backend solo persiste los datos recibidos
-- Se aplica sanitización básica (eliminación de campos `enc_` si es necesario)
+- Todas las operaciones de escritura validan sesión + RBAC
 
-### 13.3 Configuración Requerida
+### 12.3 Multi-Tenancy
 
-El script debe tener configurada la propiedad:
+> **Importante v2.0:** El backend **NO usa Script Properties** para estado de la aplicación. El `ssId` se pasa explícitamente en cada petición. Esto permite múltiples instalaciones independientes sin conflicto.
 
-```
-CORE_SS_ID = "ID_DEL_SPREADSHEET_CORE"
-```
+Las únicas propiedades almacenadas en `PropertiesService` son:
+- **Sesiones:** `sessions_<userId>` — efímeras, por diseño
+- **Tokens temporales:** `totp_pending_<username>`, `passkey_challenge_<username>`, `passkey_setup_<username>`, `otp_<username>`, `pwd_reset_<userId>` — todos con expiración automática
 
-### 13.4 Email con MailApp
+### 12.4 Email con MailApp
 
-El sistema utiliza `MailApp.sendEmail()` para enviar códigos OTP por email y emails de recuperación de contraseña.
-
-**Notas importantes:**
-- MailApp tiene un límite de 100 emails/día para cuentas gratuitas de Google
-- Para cuentas Google Workspace, el límite es mayor
+- Límite: 100 emails/día (cuentas gratuitas), mayor para Workspace
 - El email se envía desde la cuenta del propietario del script
-- La dirección de destino se resuelve del campo `email` del usuario, o usa el `username` como fallback
+- La dirección de destino se resuelve del campo `email` del usuario, o usa `username` como fallback
 
-### 13.5 CORS y Configuración de Fetch
-
-Google Apps Script no permiteheaders CORS personalizados. El frontend debe usar esta configuración:
+### 12.5 CORS y Configuración de Fetch
 
 ```javascript
 fetch(url, {
@@ -1300,73 +1192,58 @@ fetch(url, {
 
 ## 14. Ejemplo de Uso Completo
 
-### 14.1 Inicialización
+### 13.1 Inicialización
 
 ```javascript
 // 1. Instalar el sistema
+{ "action": "install", "payload": { "nombreCongregacion": "Mi Congregación" } }
+
+// 2. Inicializar tablas y datos con batchExecute
 {
-  "action": "install",
+  "action": "batchExecute",
   "payload": {
-    "nombreCongregacion": "Mi Congregación"
+    "ssId": "CORE_SS_ID",
+    "operations": [
+      { "op": "initSheet", "sheet": "Usuarios", "headers": ["id","username","email","wrapped_mk","perfilId","auth_config","metadata","created_at","_v","_ts","_deleted"] },
+      { "op": "initSheet", "sheet": "Perfiles", "headers": ["id","nombre","permisos","descripcion","_v","_ts","_deleted"] },
+      { "op": "initSheet", "sheet": "Configuracion", "headers": ["clave","valor","is_public","_v","_ts","_deleted"] },
+      { "op": "save", "sheet": "Perfiles", "data": { "id": "p_admin", "nombre": "Super-Admin", "permisos": {"core":"RW","personas":"RW"}, "descripcion": "Admin" } },
+      { "op": "save", "sheet": "Configuracion", "data": { "clave": "nombre_congregacion", "valor": "Mi Congregación", "is_public": true } }
+    ]
   }
 }
-
-// 2. Resultado: Core Spreadsheet creado con todas las tablas
 ```
 
-### 14.2 Autenticación
+### 13.2 Autenticación
 
 ```javascript
-// 1. Solicitar código OTP (método manual)
-{
-  "action": "requestOTP",
-  "payload": {
-    "username": "admin@congregacion.com"
-  }
-}
-
-// 2. El usuario recibe el código por email
-//    La respuesta incluye debug info con el email usado:
-//    { "success": true, "debug": { "email": "admin@congregacion.com" } }
-
-// 3. Iniciar sesión (siempre incluir password)
+// Login
 {
   "action": "login",
   "payload": {
+    "ssId": "CORE_SS_ID",
     "username": "admin@congregacion.com",
     "password": "MiContraseña123!",
     "method": "email_otp",
     "code": "123456"
   }
 }
-
-// 4. Response: sessionToken para usar en peticiones subsecuentes
 ```
 
-### 14.3 Lectura de Datos
+### 13.3 Lectura y Escritura con batchExecute
 
 ```javascript
-// Obtener datos de personas
+// Leer múltiples hojas + guardar datos en una sola llamada
 {
-  "action": "getData",
-  "sheet": "Personas",
-  "ssId": "ID_DEL_SPREADSHEET"
-}
-```
-
-### 14.4 Guardar Datos
-
-```javascript
-// Guardar nueva persona
-{
-  "action": "saveData",
-  "sheet": "Personas",
-  "ssId": "ID_DEL_SPREADSHEET",
-  "sessionToken": "TOKEN",
+  "action": "batchExecute",
   "payload": {
-    "id": "nuevo-uuid",
-    "nombre": "Juan Pérez",
-    "telefono": "+1234567890"
+    "ssId": "CORE_SS_ID",
+    "sessionToken": "TOKEN",
+    "operations": [
+      { "op": "read", "sheet": "Configuracion" },
+      { "op": "read", "sheet": "Perfiles" },
+      { "op": "save", "sheet": "Personas", "data": { "id": "nuevo-uuid", "nombre": "Juan Pérez" } }
+    ]
   }
 }
 ```
@@ -1383,27 +1260,28 @@ fetch(url, {
 | **TOTP** | Time-based One-Time Password |
 | **OTP** | One-Time Password |
 | **MK** | Master Key (clave maestra del usuario) |
-| **Wrapped MK** | MK cifrada con TOTP |
+| **Wrapped MK** | MK cifrada con la contraseña del usuario |
 | **Soft Delete** | Borrado lógico (marcar como eliminado) |
 | **Last Write Wins** | Estrategia de resolución de conflictos |
 | **TTL** | Time To Live (tiempo de vida del caché) |
+| **ssId** | Spreadsheet ID — identificador de un Google Sheet |
 
 ---
 
 ## 16. Archivos Relacionados
 
-- `backend/src/api.gs` - Implementación fuente
-- `backend/data/seed_perfiles.json` - Perfiles base para instalación
-- `docs/architecture/Backend.md` - Especificación original
-- `docs/architecture/Core.md` - Arquitectura del núcleo del sistema
-- `docs/architecture/Autenticacion.md` - Sistema de autenticación y flujos
-- `docs/architecture/Arquitectura.md` - Arquitectura general
-- `docs/architecture/Tecnologia.md` - Especificación tecnológica
-- `docs/architecture/DataService.md` - Cliente frontend (DataService, JSONata, TanStack Query)
-- `docs/architecture/Instalacion.md` - Guía de instalación
-- `docs/PLAN_DESARROLLO.md` - Plan de desarrollo
-- `docs/CHANGELOG.md` - Historial de cambios
+- `backend/src/api.gs` — Implementación fuente (~1,750 líneas)
+- `backend/data/seed_perfiles.json` — Perfiles base para instalación
+- `docs/architecture/Backend.md` — Especificación de la interfaz
+- `docs/architecture/Core.md` — Arquitectura del núcleo del sistema
+- `docs/architecture/Autenticacion.md` — Sistema de autenticación y flujos
+- `docs/architecture/Arquitectura.md` — Arquitectura general
+- `docs/architecture/Tecnologia.md` — Especificación tecnológica
+- `docs/architecture/DataService.md` — Cliente frontend (DataService, JSONata, TanStack Query)
+- `docs/architecture/Instalacion.md` — Guía de instalación
+- `docs/PLAN_DESARROLLO.md` — Plan de desarrollo
+- `docs/CHANGELOG.md` — Historial de cambios
 
 ---
 
-*Documento generado automáticamente el 2026-03-31*
+*Documento actualizado el 2026-04-03 — v2.0.0*

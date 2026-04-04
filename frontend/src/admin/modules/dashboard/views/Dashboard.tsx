@@ -1,6 +1,11 @@
 import { Box, Typography, Grid, Card, CardContent, CardHeader, CircularProgress } from '@mui/material';
 import { People, EventNote, Campaign, Map } from '@mui/icons-material';
-import { usePerfiles } from '../../../../hooks/usePerfiles';
+import { useQuery } from '@tanstack/react-query';
+import { dataService } from '@/services/dataService';
+import { useCongregacion } from '@/hooks/useCongregacion';
+import { QUERY_OPTIONS } from '@/hooks/queryConfig';
+
+const ADMIN_SS_ID_KEY = 'congre_admin_ss_id';
 
 interface StatCardProps {
   title: string;
@@ -37,7 +42,15 @@ function StatCard({ title, value, icon, color }: StatCardProps) {
 }
 
 export default function Dashboard() {
-  const { data: perfiles, isLoading } = usePerfiles();
+  const adminSsId = localStorage.getItem(ADMIN_SS_ID_KEY) || '';
+  const { data: perfiles, isLoading } = useQuery({
+    queryKey: ['perfiles', adminSsId],
+    queryFn: () => dataService.getPerfiles(adminSsId),
+    enabled: !!adminSsId,
+    ...QUERY_OPTIONS,
+  });
+  const { data: congregacion } = useCongregacion();
+  const congregationName = congregacion?.nombre || 'CongreAdmin';
 
   return (
     <Box>
@@ -45,7 +58,7 @@ export default function Dashboard() {
         Dashboard
       </Typography>
       <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
-        Bienvenido a Congre-Admin
+        Bienvenido a {congregationName}
       </Typography>
 
       <Grid container spacing={3}>

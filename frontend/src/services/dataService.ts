@@ -84,6 +84,9 @@ export class DataService {
   }
 
   async request<T = any>(action: string, payload: Record<string, any> = {}): Promise<T> {
+    // Always read fresh from localStorage
+    this.apiUrl = localStorage.getItem('congre_admin_api_url') || this.apiUrl;
+    
     if (!this.apiUrl) {
       throw new Error('API URL not configured');
     }
@@ -100,8 +103,8 @@ export class DataService {
       body.sessionToken = sessionToken;
     }
 
-    if (coreSsId && !body.ssId) {
-      body.ssId = coreSsId;
+    if (coreSsId && !body.payload?.ssId) {
+      body.payload = { ...body.payload, ssId: coreSsId };
     }
 
     const url = this.normalizeUrl(this.apiUrl);
@@ -146,15 +149,11 @@ export class DataService {
   }
 
   async getData<T = any[]>(sheet: string, ssId: string, options?: GetDataOptions): Promise<T> {
+    // Flatten payload for backend - getData expects sheet/ssId at top level
     const result = await this.request<GetDataResponse<T>>('getData', {
+      ...options,
       sheet,
       ssId,
-      filter: options?.filter,
-      map: options?.map,
-      sanitize: options?.sanitize,
-      sort: options?.sort,
-      limit: options?.limit,
-      offset: options?.offset,
     });
 
     return result.data;
@@ -219,20 +218,48 @@ export class DataService {
     return this.request<ApiResponse & { sessionToken: string }>('refreshSession', { sessionToken });
   }
 
-  async getPerfiles(): Promise<GetPerfilesResponse> {
-    return this.request<GetPerfilesResponse>('getPerfiles');
+  async getPerfiles(ssId: string): Promise<Perfil[]> {
+    return this.getData<Perfil>('Perfiles', ssId);
   }
 
-  async createProfile(payload: Partial<Perfil>): Promise<ApiResponse> {
-    return this.request<ApiResponse>('createProfile', payload);
+  async createProfile(ssId: string, payload: Partial<Perfil>): Promise<ApiResponse> {
+    return this.saveData('Perfiles', ssId, {
+      ...payload,
+      _v: 1,
+      _ts: new Date().toISOString(),
+      _deleted: false,
+    });
   }
 
-  async updateProfile(payload: Partial<Perfil>): Promise<ApiResponse> {
-    return this.request<ApiResponse>('updateProfile', payload);
+  async updateProfile(ssId: string, payload: Partial<Perfil>): Promise<ApiResponse> {
+    return this.saveData('Perfiles', ssId, payload);
   }
 
-  async deleteProfile(profileId: string): Promise<ApiResponse> {
-    return this.request<ApiResponse>('deleteProfile', { profileId });
+  async deleteProfile(ssId: string, profileId: string): Promise<ApiResponse> {
+    return this.deleteData('Perfiles', ssId, profileId);
+  }
+
+  async batchInitSheet(ssId: string, tables: { name: string; headers: string[]; preserveExisting?: boolean }[]): Promise<{ success: boolean; results: { name: string; status: string }[] }> {
+    return this.request<{ success: boolean; results: { name: string; status: string }[] }>('batchInitSheet', {
+      ssId: ssId,
+      tables: tables,
+    });
+  }
+
+  async batchSaveData(ssId: string, sheet: string, rows: any[]): Promise<{ success: boolean; results: { id: string; status: string }[] }> {
+    return this.request<{ success: boolean; results: { id: string; status: string }[] }>('batchSaveData', {
+      ssId: ssId,
+      sheet: sheet,
+      rows: rows,
+    });
+  }
+
+  async batchDeleteData(ssId: string, sheet: string, ids: string[]): Promise<{ success: boolean; results: { id: string; status: string }[] }> {
+    return this.request<{ success: boolean; results: { id: string; status: string }[] }>('batchDeleteData', {
+      ssId: ssId,
+      sheet: sheet,
+      ids: ids,
+    });
   }
 
   async getConfig(key: string, ssId: string): Promise<{ clave: string; valor: string } | null> {

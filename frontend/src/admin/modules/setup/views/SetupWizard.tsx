@@ -42,6 +42,7 @@ import {
   Email
 } from '@mui/icons-material';
 import { wrapMasterKey, generateMasterKey, createMasterKeyBackup } from '@/core/crypto/cryptoUtils';
+import { dataService } from '@/services/dataService';
 
 const API_URL_KEY = 'congre_admin_api_url';
 
@@ -71,6 +72,15 @@ interface SeedData {
   perfiles: Perfil[];
 }
 
+interface SeedConfig {
+  version: string;
+  config: Array<{
+    clave: string;
+    valor: string;
+    is_public: boolean;
+  }>;
+}
+
 const steps = [
   { label: 'Configuración', icon: Security },
   { label: 'Perfiles y Admin', icon: Business },
@@ -90,6 +100,7 @@ export default function SetupWizard() {
   const [numeroCongregacion, setNumeroCongregacion] = useState('');
   const [nombreMostrar, setNombreMostrar] = useState('');
   const [perfiles, setPerfiles] = useState<Perfil[]>([]);
+  const [defaultConfig, setDefaultConfig] = useState<Array<{ clave: string; valor: string; is_public: boolean }>>([]);
   const [adminUsername, setAdminUsername] = useState('');
   const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
@@ -107,6 +118,14 @@ export default function SetupWizard() {
   const [loadingCode, setLoadingCode] = useState(false);
 
   useEffect(() => {
+    // Clear old installation data for fresh start
+    localStorage.removeItem('congre_admin_api_url');
+    localStorage.removeItem('congre_admin_ss_id');
+    localStorage.removeItem('congre_admin_session_token');
+    localStorage.removeItem('congre_perfil_id');
+    localStorage.removeItem('congre_public_ss_id');
+    localStorage.removeItem('congre_admin_user_data');
+    
     const storedApiUrl = localStorage.getItem(API_URL_KEY);
     const storedSsId = localStorage.getItem(SS_ID_KEY);
     
@@ -123,6 +142,15 @@ export default function SetupWizard() {
       .catch(err => {
         console.error('Error loading seed profiles:', err);
         setError('Error al cargar los perfiles base');
+      });
+
+    fetch('/data/seed_configuracion.json')
+      .then(res => res.json())
+      .then((data: SeedConfig) => {
+        setDefaultConfig(data.config);
+      })
+      .catch(err => {
+        console.error('Error loading seed config:', err);
       });
 
     setLoadingCode(true);
@@ -171,6 +199,7 @@ export default function SetupWizard() {
 
     try {
       localStorage.setItem(API_URL_KEY, apiUrl);
+      dataService.setApiUrl(apiUrl);
       
       const nombreDisplay = nombreMostrar.trim() || `Co. ${nombreCongregacion}`;
       
@@ -182,7 +211,6 @@ export default function SetupWizard() {
             nombreCongregacion,
             numeroCongregacion,
             nombreMostrar: nombreDisplay,
-            perfiles,
             gasUrl: apiUrl
           }
         })
@@ -193,6 +221,89 @@ export default function SetupWizard() {
       }
 
       localStorage.setItem(SS_ID_KEY, data.ssId);
+      
+      // Now orchestrate from frontend using batch operations
+      const coreSsId = data.ssId;
+      const publicSsId = data.publicSsId;
+      
+      // Load schemas
+      const [coreSchema, publicSchema, perfilesSeed, configSeed] = await Promise.all([
+        fetch('/data/schemas/core.json').then(r => r.json()),
+        fetch('/data/schemas/public.json').then(r => r.json()),
+        fetch('/data/seed_perfiles.json').then(r => r.json()),
+        fetch('/data/seed_configuracion.json').then(r => r.json())
+      ]);
+      
+      // Initialize Core tables
+      const coreTables = Object.entries(coreSchema.tables).map(([name, table]: [string, any]) => ({
+        name,
+        headers: table.headers,
+        preserveExisting: false
+      }));
+      
+      const initResult = await dataService.batchInitSheet(coreSsId, coreTables);
+      
+      // Seed Perfiles
+      const perfilesWithMeta = perfilesSeed.perfiles.map((p: Perfil) => ({
+        ...p,
+        _v: 1,
+        _ts: new Date().toISOString(),
+        _deleted: false
+      }));
+      await dataService.batchSaveData(coreSsId, 'Perfiles', perfilesWithMeta);
+      
+      // Store perfiles for display in step 1
+      setPerfiles(perfilesSeed.perfiles);
+      
+      // Seed Configuracion (Core)
+      const configWithMeta = configSeed.config.map((c: any) => ({
+        ...c,
+        clave: c.clave,
+        valor: c.valor,
+        is_public: c.is_public,
+        _v: 1,
+        _ts: new Date().toISOString(),
+        _deleted: false
+      }));
+      
+      // Override with congregation-specific values
+      const configOverrides: Record<string, string> = {
+        'nombre_congregacion': nombreCongregacion,
+        'numero_congregacion': numeroCongregacion,
+        'nombre_mostrar': nombreDisplay,
+        'ss_publico': publicSsId,
+        'linked_public_ss': publicSsId
+      };
+      
+      configWithMeta.forEach((c: any) => {
+        if (configOverrides[c.clave] !== undefined) {
+          c.valor = configOverrides[c.clave];
+        }
+      });
+      
+      await dataService.batchSaveData(coreSsId, 'Configuracion', configWithMeta);
+      
+      // Initialize Public sheet
+      const publicTables = Object.entries(publicSchema.tables).map(([name, table]: [string, any]) => ({
+        name,
+        headers: table.headers,
+        preserveExisting: false
+      }));
+      
+      await dataService.batchInitSheet(publicSsId, publicTables);
+      
+      // Seed public Configuracion (only public settings)
+      const publicConfig = configSeed.config
+        .filter((c: any) => c.is_public)
+        .map((c: any) => ({
+          ...c,
+          _v: 1,
+          _ts: new Date().toISOString(),
+          _deleted: false
+        }));
+      
+      await dataService.batchSaveData(publicSsId, 'Configuracion', publicConfig);
+      
       setActiveStep(1);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error en la instalación. Verifique la URL del backend.');
@@ -672,7 +783,7 @@ export default function SetupWizard() {
         sx={{ p: 4, maxWidth: 700, width: '100%' }}
       >
         <Typography variant="h4" align="center" gutterBottom>
-          Congre-Admin
+          {nombreMostrar.trim() || 'CongreAdmin'}
         </Typography>
         <Typography variant="subtitle1" align="center" color="text.secondary" sx={{ mb: 4 }}>
           Asistente de Instalación
@@ -693,7 +804,16 @@ export default function SetupWizard() {
         </Stepper>
 
         {error && (
-          <Alert severity="error" sx={{ mb: 3 }}>
+          <Alert 
+            severity="error" 
+            sx={{ 
+              mb: 3, 
+              overflow: 'auto',
+              maxHeight: 200,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word'
+            }}
+          >
             {error}
           </Alert>
         )}

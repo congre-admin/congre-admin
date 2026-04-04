@@ -671,7 +671,7 @@ export default function SetupWizard() {
         sx={{ p: 4, maxWidth: 700, width: '100%' }}
       >
         <Typography variant="h4" align="center" gutterBottom>
-          Congre-Admin
+          {nombreMostrar.trim() || 'CongreAdmin'}
         </Typography>
         <Typography variant="subtitle1" align="center" color="text.secondary" sx={{ mb: 4 }}>
           Asistente de Instalación

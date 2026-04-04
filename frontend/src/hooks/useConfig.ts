@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { dataService } from '../services/dataService';
+import { QUERY_OPTIONS } from './queryConfig';
 
 const QUERY_KEYS = {
   config: (key: string) => ['config', key] as const,
@@ -13,7 +14,7 @@ export function useConfig(ssId: string | undefined, key: string) {
       return dataService.getConfig(key, ssId);
     },
     enabled: !!ssId && !!key,
-    staleTime: 5 * 60 * 1000,
+    ...QUERY_OPTIONS,
   });
 }
 
