@@ -1,5 +1,5 @@
 import { get, set, del } from 'idb-keyval';
-import type { Perfil } from '../types';
+import type { Perfil, ModulePermission } from '../types';
 
 const CACHE_KEYS = {
   MODULES: 'congre_cache_modules',
@@ -20,7 +20,7 @@ interface CacheData {
   modules: Record<string, string>;
   config: Record<string, string>;
   userPerfil: Perfil | null;
-  userPermisos: Record<string, string>;
+  userPermisos: Record<string, ModulePermission>;
   publicSsId: string | null;
 }
 
@@ -38,7 +38,7 @@ class CacheService {
         get<CacheEntry<Record<string, string>>>(CACHE_KEYS.MODULES),
         get<CacheEntry<Record<string, string>>>(CACHE_KEYS.CONFIG),
         get<CacheEntry<Perfil | null>>(CACHE_KEYS.USER_PERFIL),
-        get<CacheEntry<Record<string, string>>>(CACHE_KEYS.USER_PERMISOS),
+        get<CacheEntry<Record<string, ModulePermission>>>(CACHE_KEYS.USER_PERMISOS),
         get<CacheEntry<string | null>>(CACHE_KEYS.PUBLIC_SS),
       ]);
 
@@ -115,11 +115,11 @@ class CacheService {
     this.setWithExpiry(CACHE_KEYS.USER_PERFIL, perfil);
   }
 
-  getUserPermisos(): Record<string, string> | undefined {
+  getUserPermisos(): Record<string, ModulePermission> | undefined {
     return this.memory.userPermisos;
   }
 
-  setUserPermisos(permisos: Record<string, string>): void {
+  setUserPermisos(permisos: Record<string, ModulePermission>): void {
     this.memory.userPermisos = permisos;
     this.setWithExpiry(CACHE_KEYS.USER_PERMISOS, permisos);
   }

@@ -1,28 +1,29 @@
 /**
- * Maneja solicitudes GET genéricas.
+ * Congre-Admin Backend API
+ * Zero-Knowledge congregation management system.
+ * Thin, stateless API layer: low-level DB ops + batch orchestration + auth.
+ * No script properties for app state — all state passed explicitly via ssId.
+ */
+
+// ================================================================= //
+// ENTRY POINTS
+// ================================================================= //
+
+/**
+ * Handles GET requests (public read-only).
  * @example ?action=getData&sheet=NombreDeHoja&ssId=ID_DE_HOJA
  */
 function doGet(e) {
   const action = e.parameter.action;
   const ssId = e.parameter.ssId;
-  
+
   try {
     const ss = ssId ? SpreadsheetApp.openById(ssId) : SpreadsheetApp.getActiveSpreadsheet();
-    
+
     if (action === 'getData') {
-      const sheetName = e.parameter.sheet;
-      return createResponse(getCachedSheetData(ss, sheetName));
+      return createResponse(getCachedSheetData(ss, e.parameter.sheet));
     }
-    
-    if (action === 'batchGetData') {
-      const sheets = e.parameter.sheets ? e.parameter.sheets.split(',') : [];
-      const result = {};
-      sheets.forEach(name => {
-        result[name] = getCachedSheetData(ss, name);
-      });
-      return createResponse(result);
-    }
-    
+
     return createResponse({ error: 'Acción GET no válida' });
   } catch (err) {
     return createResponse({ error: err.message });
@@ -30,8 +31,8 @@ function doGet(e) {
 }
 
 /**
- * Maneja solicitudes POST genéricas.
- * All config stored in GSheet, no script properties.
+ * Handles POST requests.
+ * Dispatch map pattern — all config from GSheet, no script properties for app state.
  */
 function doPost(e) {
   try {
@@ -41,344 +42,603 @@ function doPost(e) {
     const sessionToken = payload.sessionToken || postData.sessionToken;
     const sheetName = postData.sheet;
     const ssId = payload.ssId || postData.ssId;
-    
-    // Auth actions - no spreadsheet needed
-    if (action === 'login') {
-      return createResponse(actionLogin(payload, ssId));
-    }
-    
-    if (action === 'register') {
-      return createResponse(actionRegister(payload, ssId));
-    }
-    
-    if (action === 'challenge') {
-      return createResponse(actionChallenge(payload));
-    }
-    
-    if (action === 'requestOTP') {
-      return createResponse(actionRequestOTP(payload));
-    }
-    
-    if (action === 'setupTOTP') {
-      return createResponse(actionSetupTOTP(payload));
-    }
-    
-    if (action === 'confirmTOTP') {
-      return createResponse(actionConfirmTOTP(payload));
-    }
-    
-    if (action === 'setupPasskey') {
-      return createResponse(actionSetupPasskey(payload));
-    }
-    
-    if (action === 'confirmPasskey') {
-      return createResponse(actionConfirmPasskey(payload));
-    }
-    
-    if (action === 'deletePasskey') {
-      return createResponse(actionDeletePasskey(payload));
-    }
-    
-    if (action === 'changePassword') {
-      return createResponse(actionChangePassword(payload));
-    }
-    
-    if (action === 'requestPasswordReset') {
-      return createResponse(actionRequestPasswordReset(payload));
-    }
-    
-    if (action === 'confirmPasswordReset') {
-      return createResponse(actionConfirmPasswordReset(payload));
-    }
-    
-    if (action === 'getAuthMethods') {
-      return createResponse(actionGetAuthMethods(payload));
-    }
-    
-    if (action === 'setDefaultAuthMethod') {
-      return createResponse(actionSetDefaultAuthMethod(payload));
-    }
-    
-    if (action === 'validateSession') {
-      const session = validateSession(sessionToken);
-      return createResponse({ valid: session.valid, userId: session.userId });
-    }
-    
-    if (action === 'refreshSession') {
-      return createResponse(actionRefreshSession(payload));
-    }
-    
-    if (action === 'logout') {
-      return createResponse(actionLogout(payload));
-    }
-    
-    if (action === 'install') {
-      return createResponse(actionInstall(payload));
-    }
-    
-    // --- Data actions - require ssId and session ---
-    if (!ssId) {
-      return createResponse({ error: 'ERR_SS_ID_REQUIRED: Se requiere ssId para operaciones de datos' });
-    }
-    
+    const coreSsId = payload.coreSsId || ssId;
+    const module = payload.module || null;
+
+    // --- Auth actions (no ssId required) ---
+    const authActions = {
+      login: () => actionLogin(payload, ssId),
+      register: () => actionRegister(payload, ssId),
+      challenge: () => actionChallenge(payload, ssId),
+      requestOTP: () => actionRequestOTP(payload, ssId),
+      setupTOTP: () => actionSetupTOTP(payload, ssId),
+      confirmTOTP: () => actionConfirmTOTP(payload, ssId),
+      setupPasskey: () => actionSetupPasskey(payload, ssId),
+      confirmPasskey: () => actionConfirmPasskey(payload, ssId),
+      deletePasskey: () => actionDeletePasskey(payload, ssId),
+      changePassword: () => actionChangePassword(payload, sessionToken, ssId),
+      requestPasswordReset: () => actionRequestPasswordReset(payload, ssId),
+      confirmPasswordReset: () => actionConfirmPasswordReset(payload, sessionToken, ssId),
+      getAuthMethods: () => actionGetAuthMethods(payload, sessionToken, ssId),
+      setDefaultAuthMethod: () => actionSetDefaultAuthMethod(payload, sessionToken, ssId),
+      validateSession: () => {
+        const s = validateSession(sessionToken, ssId);
+        return { valid: s.valid, userId: s.userId };
+      },
+      refreshSession: () => refreshSessionToken(payload.sessionToken),
+      logout: () => { invalidateSession(payload.sessionToken); return { success: true }; },
+    };
+
+    if (authActions[action]) return createResponse(authActions[action]());
+
+    // --- Install (no ssId required) ---
+    if (action === 'install') return createResponse(actionInstall(payload));
+
+    // --- File actions (require session) ---
+    const fileActions = {
+      listFolderFiles: () => actionListFolderFiles(payload, sessionToken, ssId),
+      uploadFile: () => actionUploadFile(payload, sessionToken, ssId),
+      downloadFile: () => actionDownloadFile(payload, sessionToken, ssId),
+      deleteFile: () => actionDeleteFile(payload, sessionToken, ssId),
+      setFileSharing: () => actionSetFileSharing(payload, sessionToken, ssId),
+      moveFileToFolder: () => actionMoveFileToFolder(payload, sessionToken, ssId),
+    };
+
+    if (fileActions[action]) return createResponse(fileActions[action]());
+
+    // --- Data actions (require ssId) ---
+    if (!ssId) return createResponse({ error: 'ERR_SS_ID_REQUIRED: Se requiere ssId para operaciones de datos' });
+
     const ss = SpreadsheetApp.openById(ssId);
-    
-    // --- initSheet ---
-    if (action === 'initSheet') {
-      let sheet = ss.getSheetByName(sheetName);
-      if (!sheet) {
-        sheet = ss.insertSheet(sheetName);
-        sheet.appendRow(postData.headers);
-      } else if (!postData.preserveExisting) {
-        sheet.clearContents(); 
-        sheet.getRange(1, 1, 1, postData.headers.length).setValues([postData.headers]).setFontWeight('bold').setBackground('#f3f3f3');
-      } else { 
-        if (sheet.getLastRow() === 0) {
-          sheet.getRange(1, 1, 1, postData.headers.length).setValues([postData.headers]).setFontWeight('bold').setBackground('#f3f3f3');
-        }
-      }
-      clearCache(ssId, sheetName);
-      return createResponse({ success: true, message: 'Hoja inicializada' });
-    }
-    
-    // --- clearSheet ---
-    if (action === 'clearSheet') {
-      const sheet = ss.getSheetByName(sheetName);
-      if (!sheet) return createResponse({ error: 'Hoja no encontrada' });
-      const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues();
-      sheet.clearContents();
-      if (headers.length > 0 && headers[0][0]) sheet.appendRow(headers[0]);
-      clearCache(ssId, sheetName);
-      return createResponse({ success: true });
-    }
-    
-    // --- batchInitSheet ---
-    if (action === 'batchInitSheet') {
-      const tables = postData.tables || [];
-      const results = [];
-      tables.forEach(table => {
-        try {
-          let sheet = ss.getSheetByName(table.name);
-          if (!sheet) {
-            sheet = ss.insertSheet(table.name);
-            sheet.appendRow(table.headers);
-            results.push({ name: table.name, status: 'created' });
-          } else if (!table.preserveExisting) {
-            sheet.clearContents();
-            sheet.getRange(1, 1, 1, table.headers.length).setValues([table.headers]).setFontWeight('bold').setBackground('#f3f3f3');
-            results.push({ name: table.name, status: 'reinitialized' });
-          } else {
-            if (sheet.getLastRow() === 0) {
-              sheet.getRange(1, 1, 1, table.headers.length).setValues([table.headers]).setFontWeight('bold').setBackground('#f3f3f3');
-            }
-            results.push({ name: table.name, status: 'preserved' });
-          }
-          clearCache(ssId, table.name);
-        } catch (e) {
-          results.push({ name: table.name, status: 'error', error: e.message });
-        }
-      });
-      return createResponse({ success: true, results: results });
-    }
-    
-    // --- batchSaveData ---
-    if (action === 'batchSaveData') {
-      const sheet = ss.getSheetByName(sheetName);
-      if (!sheet) return createResponse({ error: 'Hoja no encontrada: ' + sheetName });
-      const rows = postData.rows || [];
-      const results = [];
-      rows.forEach(item => {
-        try {
-          updateOrInsert(sheet, item, false, {});
-          results.push({ id: item.id, status: 'saved' });
-        } catch (e) {
-          results.push({ id: item.id, status: 'error', error: e.message });
-        }
-      });
-      clearCache(ssId, sheetName);
-      return createResponse({ success: true, results: results });
-    }
-    
-    // --- batchDeleteData ---
-    if (action === 'batchDeleteData') {
-      const sheet = ss.getSheetByName(sheetName);
-      if (!sheet) return createResponse({ error: 'Hoja no encontrada' });
-      const ids = postData.ids || [];
-      const results = [];
-      ids.forEach(id => {
-        const result = softDeleteRow(sheet, id);
-        results.push({ id: id, status: result ? 'deleted' : 'not_found' });
-      });
-      clearCache(ssId, sheetName);
-      return createResponse({ success: true, results: results });
-    }
-    
-    // --- saveData ---
-    if (action === 'saveData') {
-      const sheet = ss.getSheetByName(sheetName);
-      if (!sheet) return createResponse({ error: 'Hoja no encontrada: ' + sheetName });
-      let existingRows = null;
-      if (postData.expectedVersion !== undefined) {
-        existingRows = sheet.getDataRange().getValues();
-      }
-      updateOrInsert(sheet, payload, false, { existingRows });
-      clearCache(ssId, sheetName);
-      return createResponse({ success: true, message: 'Datos guardados' });
-    }
-    
-    // --- deleteData ---
-    if (action === 'deleteData') {
-      const sheet = ss.getSheetByName(sheetName);
-      if (!sheet) return createResponse({ error: 'Hoja no encontrada' });
-      const result = softDeleteRow(sheet, payload.id);
-      if (!result) return createResponse({ success: false, error: 'Registro no encontrado' });
-      clearCache(ssId, sheetName);
-      return createResponse({ success: true, message: 'Borrado lógico realizado' });
-    }
-    
-    // --- hardDelete ---
-    if (action === 'hardDelete') {
-      const sheet = ss.getSheetByName(sheetName);
-      if (!sheet) return createResponse({ error: 'Hoja no encontrada' });
-      deleteRowById(sheet, payload.id);
-      clearCache(ssId, sheetName);
-      return createResponse({ success: true, message: 'Borrado físico realizado' });
-    }
-    
-    // --- restoreData ---
-    if (action === 'restoreData') {
-      const sheet = ss.getSheetByName(sheetName);
-      if (!sheet) return createResponse({ error: 'Hoja no encontrada' });
-      const result = restoreRow(sheet, payload.id);
-      if (!result) return createResponse({ success: false, error: 'Registro no encontrado' });
-      clearCache(ssId, sheetName);
-      return createResponse({ success: true, message: 'Registro restaurado' });
-    }
-    
-    // --- getHistory ---
-    if (action === 'getHistory') {
-      if (!sessionToken) return createResponse({ error: 'ERR_AUTH_REQUIRED' });
-      const session = validateSession(sessionToken);
-      if (!session.valid) return createResponse({ error: 'ERR_AUTH_INVALID' });
-      const permCheck = checkPermission(session, 'read', sheetName, ssId);
-      if (!permCheck.allowed) return createResponse({ error: permCheck.error });
-      const sheet = ss.getSheetByName(sheetName);
-      if (!sheet) return createResponse({ error: 'Hoja no encontrada' });
-      const history = getVersionHistory(sheet, payload.id);
-      return createResponse({ success: true, history: history });
-    }
-    
-    // --- getData ---
-    if (action === 'getData') {
-      if (sessionToken) {
-        const session = validateSession(sessionToken);
-        if (!session.valid) return createResponse({ error: 'ERR_AUTH_INVALID' });
-        const permCheck = checkPermission(session, 'read', sheetName, ssId);
-        if (!permCheck.allowed) return createResponse({ error: permCheck.error });
-      }
-      const data = getCachedSheetData(ss, sheetName);
-      return createResponse({ success: true, data: data });
-    }
-    
-    // --- batchGetData ---
-    if (action === 'batchGetData') {
-      if (sessionToken) {
-        const session = validateSession(sessionToken);
-        if (!session.valid) return createResponse({ error: 'ERR_AUTH_INVALID' });
-      }
-      const sheets = postData.sheets ? postData.sheets.split(',') : [];
-      const result = {};
-      sheets.forEach(name => {
-        result[name] = getCachedSheetData(ss, name);
-      });
-      return createResponse({ success: true, data: result });
-    }
-    
-    return createResponse({ error: 'Acción POST no válida: ' + action });
+    const session = sessionToken ? validateSession(sessionToken, ssId) : null;
+
+    const dataActions = {
+      getData: () => dataActionGetData(session, ss, ssId, sheetName, module),
+      batchExecute: () => batchExecute(session, ss, ssId, payload, module),
+      initSheet: () => dataActionInitSheet(session, ss, ssId, sheetName, module, postData),
+      clearSheet: () => dataActionClearSheet(session, ss, ssId, sheetName, module),
+      saveData: () => dataActionSaveData(session, ss, ssId, sheetName, module, payload, postData),
+      deleteData: () => dataActionDeleteData(session, ss, ssId, sheetName, module, payload),
+      hardDelete: () => dataActionHardDelete(session, ss, ssId, sheetName, module, payload),
+      restoreData: () => dataActionRestoreData(session, ss, ssId, sheetName, module, payload),
+    };
+
+    if (!dataActions[action]) return createResponse({ error: 'Acción POST no válida: ' + action });
+    return createResponse(dataActions[action]());
   } catch (err) {
     return createResponse({ error: err.message });
   }
 }
 
-// --- Sistema de Caché ---
-const CACHE_TTL_DATA = 600; // 10 minutos para datos de hojas
-const CACHE_TTL_LOOKUP = 300; // 5 minutos para búsquedas
+// ================================================================= //
+// BATCH EXECUTE — Unified Batch Orchestrator
+// ================================================================= //
+
+const BATCH_MAX_OPS = 50;
+
+/**
+ * Executes multiple operations in a single API call.
+ * Sheet ops: read, readById, save, delete, hardDelete, restore, initSheet.
+ * File ops: uploadFile, downloadFile, listFolderFiles, deleteFile, setFileSharing, moveFileToFolder.
+ * Modes: "continue" (all ops, partial success) or "fail-fast" (stop on first error).
+ */
+function batchExecute(session, ss, ssId, payload, module) {
+  const operations = payload.operations || [];
+  const mode = payload.mode || 'continue';
+  const isSetup = payload.isSetup === true;
+
+  if (!operations.length) return { success: false, error: 'ERR_BATCH_EMPTY: No operations provided' };
+  if (operations.length > BATCH_MAX_OPS) return { success: false, error: 'ERR_BATCH_TOO_LARGE: Max ' + BATCH_MAX_OPS + ' operations per call' };
+
+  // Setup mode: allow only initSheet and save, no session required
+  if (isSetup) {
+    const safeOps = ['initSheet', 'save'];
+    for (var i = 0; i < operations.length; i++) {
+      if (safeOps.indexOf(operations[i].op) === -1) {
+        return { success: false, error: 'ERR_SETUP_INVALID_OP: Only initSheet and save allowed in setup mode', failedAt: i };
+      }
+    }
+  }
+
+  // RBAC pre-check for write operations (skipped in setup mode)
+  if (!isSetup) {
+    for (let i = 0; i < operations.length; i++) {
+      const op = operations[i];
+      if (['save', 'delete', 'hardDelete', 'restore', 'initSheet', 'uploadFile', 'deleteFile', 'setFileSharing', 'moveFileToFolder'].includes(op.op)) {
+        if (!session || !session.valid) return { success: false, error: 'ERR_AUTH_REQUIRED', failedAt: i };
+        if (['uploadFile', 'deleteFile', 'setFileSharing', 'moveFileToFolder'].includes(op.op)) {
+          const permCheck = checkPermission(session, 'write', 'core', ssId, module);
+          if (!permCheck.allowed) return { success: false, error: permCheck.error, failedAt: i };
+        } else {
+          const permCheck = checkPermission(session, 'write', op.sheet, ssId, module);
+          if (!permCheck.allowed) return { success: false, error: permCheck.error, failedAt: i };
+        }
+      } else if (op.op === 'read' || op.op === 'readById') {
+        if (session && session.valid) {
+          const permCheck = checkPermission(session, 'read', op.sheet, ssId, module);
+          if (!permCheck.allowed) return { success: false, error: permCheck.error, failedAt: i };
+        }
+      } else if (op.op === 'downloadFile' || op.op === 'listFolderFiles') {
+        if (session && session.valid) {
+          const permCheck = checkPermission(session, 'read', 'core', ssId, module);
+          if (!permCheck.allowed) return { success: false, error: permCheck.error, failedAt: i };
+        }
+      }
+    }
+  }
+
+  // Intra-batch sheet cache: { "SheetName": { sheet, headers, rows, dirty } }
+  const sheetCache = {};
+  const results = [];
+  let succeeded = 0;
+  let failed = 0;
+
+  for (let i = 0; i < operations.length; i++) {
+    const op = operations[i];
+    const result = { index: i, op: op.op, sheet: op.sheet };
+
+    // Skip if fail-fast mode and previous op failed
+    if (mode === 'fail-fast' && failed > 0) {
+      result.success = false;
+      result.error = 'ERR_SKIPPED: Previous operation failed';
+      results.push(result);
+      continue;
+    }
+
+    try {
+      switch (op.op) {
+        case 'read': {
+          const cached = getBatchSheet(ss, op.sheet, sheetCache);
+          if (!cached) { result.success = false; result.error = 'Hoja no encontrada'; break; }
+          const data = cached.rows.map(row => {
+            const obj = {};
+            cached.headers.forEach((h, j) => {
+              let val = row[j];
+              if (typeof val === 'string' && (val.startsWith('[') || val.startsWith('{'))) {
+                try { val = JSON.parse(val); } catch (e) {}
+              }
+              obj[h] = val;
+            });
+            return obj;
+          }).filter(row => row._deleted !== true && row._deleted !== 'true');
+          result.success = true;
+          result.data = op.filter ? data.filter(r => matchFilter(r, op.filter)) : data;
+          break;
+        }
+
+        case 'readById': {
+          const cached = getBatchSheet(ss, op.sheet, sheetCache);
+          if (!cached) { result.success = false; result.error = 'Hoja no encontrada'; break; }
+          const idIndex = cached.headers.indexOf('id');
+          const row = cached.rows.find(r => r[idIndex] == op.id);
+          if (!row) { result.success = false; result.error = 'Registro no encontrado'; break; }
+          const obj = {};
+          cached.headers.forEach((h, j) => {
+            let val = row[j];
+            if (typeof val === 'string' && (val.startsWith('[') || val.startsWith('{'))) {
+              try { val = JSON.parse(val); } catch (e) {}
+            }
+            obj[h] = val;
+          });
+          result.success = true;
+          result.data = obj;
+          break;
+        }
+
+        case 'save': {
+          const cached = getBatchSheet(ss, op.sheet, sheetCache);
+          if (!cached) { result.success = false; result.error = 'Hoja no encontrada'; break; }
+          const idIndex = cached.headers.indexOf('id');
+          const vIndex = cached.headers.indexOf('_v');
+          const tsIndex = cached.headers.indexOf('_ts');
+          const data = op.data;
+
+          let rowIndex = -1;
+          let currentV = 0;
+          for (let r = 0; r < cached.rows.length; r++) {
+            if (cached.rows[r][idIndex] == data.id) {
+              rowIndex = r;
+              currentV = parseInt(cached.rows[r][vIndex]) || 0;
+              break;
+            }
+          }
+
+          const timestamp = new Date().toISOString();
+          const values = cached.headers.map(h => {
+            const val = data[h] !== undefined ? data[h] : (rowIndex >= 0 ? cached.rows[rowIndex][cached.headers.indexOf(h)] : '');
+            if (val === undefined || val === null) return '';
+            return (typeof val === 'object') ? JSON.stringify(val) : val;
+          });
+          if (vIndex >= 0) values[vIndex] = currentV + 1;
+          if (tsIndex >= 0) values[tsIndex] = timestamp;
+
+          if (rowIndex >= 0) {
+            cached.rows[rowIndex] = values;
+          } else {
+            cached.rows.push(values);
+          }
+          cached.dirty = true;
+          result.success = true;
+          break;
+        }
+
+        case 'delete': {
+          const cached = getBatchSheet(ss, op.sheet, sheetCache);
+          if (!cached) { result.success = false; result.error = 'Hoja no encontrada'; break; }
+          const idIndex = cached.headers.indexOf('id');
+          const deletedIndex = cached.headers.indexOf('_deleted');
+          const vIndex = cached.headers.indexOf('_v');
+          const tsIndex = cached.headers.indexOf('_ts');
+          let found = false;
+          for (let r = 0; r < cached.rows.length; r++) {
+            if (cached.rows[r][idIndex] == op.id) {
+              if (deletedIndex >= 0) cached.rows[r][deletedIndex] = true;
+              if (vIndex >= 0) cached.rows[r][vIndex] = (parseInt(cached.rows[r][vIndex]) || 0) + 1;
+              if (tsIndex >= 0) cached.rows[r][tsIndex] = new Date().toISOString();
+              cached.dirty = true;
+              found = true;
+              break;
+            }
+          }
+          result.success = found;
+          if (!found) result.error = 'Registro no encontrado';
+          break;
+        }
+
+        case 'hardDelete': {
+          const cached = getBatchSheet(ss, op.sheet, sheetCache);
+          if (!cached) { result.success = false; result.error = 'Hoja no encontrada'; break; }
+          const idIndex = cached.headers.indexOf('id');
+          let found = false;
+          for (let r = 0; r < cached.rows.length; r++) {
+            if (cached.rows[r][idIndex] == op.id) {
+              cached.rows.splice(r, 1);
+              cached.dirty = true;
+              found = true;
+              break;
+            }
+          }
+          result.success = found;
+          if (!found) result.error = 'Registro no encontrado';
+          break;
+        }
+
+        case 'restore': {
+          const cached = getBatchSheet(ss, op.sheet, sheetCache);
+          if (!cached) { result.success = false; result.error = 'Hoja no encontrada'; break; }
+          const idIndex = cached.headers.indexOf('id');
+          const deletedIndex = cached.headers.indexOf('_deleted');
+          let found = false;
+          for (let r = 0; r < cached.rows.length; r++) {
+            if (cached.rows[r][idIndex] == op.id) {
+              if (deletedIndex >= 0) cached.rows[r][deletedIndex] = false;
+              cached.dirty = true;
+              found = true;
+              break;
+            }
+          }
+          result.success = found;
+          if (!found) result.error = 'Registro no encontrado';
+          break;
+        }
+
+        case 'initSheet': {
+          let sheet = ss.getSheetByName(op.sheet);
+          if (!sheet) {
+            sheet = ss.insertSheet(op.sheet);
+            sheet.appendRow(op.headers);
+            sheet.getRange(1, 1, 1, op.headers.length).setFontWeight('bold').setBackground('#f3f3f3');
+          } else if (!op.preserveExisting) {
+            sheet.clearContents();
+            sheet.appendRow(op.headers);
+            sheet.getRange(1, 1, 1, op.headers.length).setFontWeight('bold').setBackground('#f3f3f3');
+          } else if (sheet.getLastRow() === 0) {
+            sheet.appendRow(op.headers);
+            sheet.getRange(1, 1, 1, op.headers.length).setFontWeight('bold').setBackground('#f3f3f3');
+          }
+          sheetCache[op.sheet] = { sheet, headers: op.headers, rows: [], dirty: false };
+          clearCache(ssId, op.sheet);
+          result.success = true;
+          break;
+        }
+
+        // --- File operations ---
+
+        case 'uploadFile': {
+          const uploadResult = _batchUploadFile(payload.folderId, op);
+          if (uploadResult.error) { result.success = false; result.error = uploadResult.error; }
+          else { result.success = true; result.data = uploadResult; }
+          break;
+        }
+
+        case 'downloadFile': {
+          if (!op.fileId) { result.success = false; result.error = 'ERR_INVALID_REQUEST: FileId is required'; break; }
+          try {
+            const file = DriveApp.getFileById(op.fileId);
+            const blob = file.getBlob();
+            const bytes = blob.getBytes();
+            result.success = true;
+            result.data = { fileName: file.getName(), mimeType: file.getMimeType(), size: bytes.length, content: Utilities.base64Encode(bytes) };
+          } catch (e) { result.success = false; result.error = 'ERR_FILE_NOT_FOUND: ' + e.message; }
+          break;
+        }
+
+        case 'listFolderFiles': {
+          const targetFolder = resolveTargetFolder(payload.folderId, op.subfolder);
+          if (!targetFolder) { result.success = false; result.error = op.subfolder ? 'ERR_SUBFOLDER_NOT_FOUND' : 'ERR_FOLDER_NOT_FOUND'; break; }
+          const files = targetFolder.getFiles();
+          const fileList = [];
+          while (files.hasNext()) {
+            const f = files.next();
+            fileList.push({ id: f.getId(), name: f.getName(), mimeType: f.getMimeType(), size: f.getSize(), created: f.getDateCreated().toISOString(), modified: f.getLastUpdated().toISOString(), url: f.getUrl(), shared: f.getSharingAccess() !== DriveApp.Access.PRIVATE, access: f.getSharingAccess(), permission: f.getSharingPermission() });
+          }
+          result.success = true;
+          result.data = { files: fileList };
+          break;
+        }
+
+        case 'deleteFile': {
+          if (!op.fileId) { result.success = false; result.error = 'ERR_INVALID_REQUEST: FileId is required'; break; }
+          try { DriveApp.getFileById(op.fileId).setTrashed(true); result.success = true; }
+          catch (e) { result.success = false; result.error = 'ERR_FILE_NOT_FOUND: ' + e.message; }
+          break;
+        }
+
+        case 'setFileSharing': {
+          if (!op.fileId) { result.success = false; result.error = 'ERR_INVALID_REQUEST: FileId is required'; break; }
+          const accessMap = { 'PRIVATE': DriveApp.Access.PRIVATE, 'ANYONE_WITH_LINK': DriveApp.Access.ANYONE_WITH_LINK, 'DOMAIN': DriveApp.Access.DOMAIN, 'ANYONE': DriveApp.Access.ANYONE };
+          const permissionMap = { 'VIEW': DriveApp.Permission.VIEW, 'COMMENT': DriveApp.Permission.COMMENT, 'EDIT': DriveApp.Permission.EDIT };
+          const access = accessMap[op.access];
+          const permission = permissionMap[op.permission || 'VIEW'];
+          if (!access) { result.success = false; result.error = 'ERR_INVALID_REQUEST: Invalid access level'; break; }
+          if (!permission) { result.success = false; result.error = 'ERR_INVALID_REQUEST: Invalid permission'; break; }
+          try {
+            const file = DriveApp.getFileById(op.fileId);
+            file.setSharing(access, permission);
+            result.success = true;
+            result.data = { fileId: file.getId(), access: op.access, permission: op.permission || 'VIEW', shareUrl: file.getUrl() + '?usp=sharing' };
+          } catch (e) { result.success = false; result.error = 'ERR_FILE_NOT_FOUND: ' + e.message; }
+          break;
+        }
+
+        case 'moveFileToFolder': {
+          if (!op.fileId) { result.success = false; result.error = 'ERR_INVALID_REQUEST: FileId is required'; break; }
+          const moveTarget = resolveTargetFolder(payload.folderId, op.subfolder);
+          if (!moveTarget) { result.success = false; result.error = op.subfolder ? 'ERR_SUBFOLDER_NOT_FOUND' : 'ERR_FOLDER_NOT_FOUND'; break; }
+          try {
+            const file = DriveApp.getFileById(op.fileId);
+            file.moveTo(moveTarget);
+            result.success = true;
+            result.data = { fileId: file.getId(), fileName: file.getName(), folderId: moveTarget.getId(), fileUrl: file.getUrl() };
+          } catch (e) { result.success = false; result.error = 'ERR_FILE_NOT_FOUND: ' + e.message; }
+          break;
+        }
+
+        default:
+          result.success = false;
+          result.error = 'ERR_UNKNOWN_OP: ' + op.op;
+      }
+    } catch (err) {
+      result.success = false;
+      result.error = err.message;
+    }
+
+    if (result.success) succeeded++; else failed++;
+    results.push(result);
+  }
+
+  // Flush all dirty sheets
+  for (const sheetName in sheetCache) {
+    const cached = sheetCache[sheetName];
+    if (cached && cached.dirty) {
+      const allRows = [cached.headers, ...cached.rows];
+      cached.sheet.getRange(1, 1, allRows.length, allRows[0].length).setValues(allRows);
+      clearCache(ssId, sheetName);
+    }
+  }
+
+  return {
+    success: failed === 0,
+    results: results,
+    totalOps: operations.length,
+    succeeded: succeeded,
+    failed: failed,
+  };
+}
+
+/**
+ * Gets or creates a cached sheet representation for batch operations.
+ */
+function getBatchSheet(ss, sheetName, sheetCache) {
+  if (sheetCache[sheetName]) return sheetCache[sheetName];
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet) return null;
+  const data = sheet.getDataRange().getValues();
+  sheetCache[sheetName] = { sheet, headers: data[0], rows: data.slice(1), dirty: false };
+  return sheetCache[sheetName];
+}
+
+/**
+ * Simple key-value filter matching for batch read operations.
+ */
+function matchFilter(row, filter) {
+  for (const key in filter) {
+    if (row[key] !== filter[key]) return false;
+  }
+  return true;
+}
+
+// ================================================================= //
+// DATA ACTIONS (thin wrappers with session + RBAC validation)
+// ================================================================= //
+
+function dataActionGetData(session, ss, ssId, sheetName, module) {
+  if (session && session.valid) {
+    const permCheck = checkPermission(session, 'read', sheetName, ssId, module);
+    if (!permCheck.allowed) return { error: permCheck.error };
+  }
+  return { success: true, data: getCachedSheetData(ss, sheetName) };
+}
+
+function dataActionInitSheet(session, ss, ssId, sheetName, module, postData) {
+  if (!session || !session.valid) return { error: 'ERR_AUTH_REQUIRED' };
+  const permCheck = checkPermission(session, 'write', sheetName, ssId, module);
+  if (!permCheck.allowed) return { error: permCheck.error };
+
+  let sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+    sheet.appendRow(postData.headers);
+  } else if (!postData.preserveExisting) {
+    sheet.clearContents();
+    sheet.getRange(1, 1, 1, postData.headers.length).setValues([postData.headers]).setFontWeight('bold').setBackground('#f3f3f3');
+  } else if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, postData.headers.length).setValues([postData.headers]).setFontWeight('bold').setBackground('#f3f3f3');
+  }
+  clearCache(ssId, sheetName);
+  return { success: true, message: 'Hoja inicializada' };
+}
+
+function dataActionClearSheet(session, ss, ssId, sheetName, module) {
+  if (!session || !session.valid) return { error: 'ERR_AUTH_REQUIRED' };
+  const permCheck = checkPermission(session, 'write', sheetName, ssId, module);
+  if (!permCheck.allowed) return { error: permCheck.error };
+
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet) return { error: 'Hoja no encontrada' };
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues();
+  sheet.clearContents();
+  if (headers.length > 0 && headers[0][0]) sheet.appendRow(headers[0]);
+  clearCache(ssId, sheetName);
+  return { success: true };
+}
+
+function dataActionSaveData(session, ss, ssId, sheetName, module, payload, postData) {
+  if (!session || !session.valid) return { error: 'ERR_AUTH_REQUIRED' };
+  const permCheck = checkPermission(session, 'write', sheetName, ssId, module);
+  if (!permCheck.allowed) return { error: permCheck.error };
+
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet) return { error: 'Hoja no encontrada: ' + sheetName };
+  let existingRows = null;
+  if (postData.expectedVersion !== undefined) {
+    existingRows = sheet.getDataRange().getValues();
+  }
+  updateOrInsert(sheet, payload, false, { existingRows });
+  clearCache(ssId, sheetName);
+  return { success: true, message: 'Datos guardados' };
+}
+
+function dataActionDeleteData(session, ss, ssId, sheetName, module, payload) {
+  if (!session || !session.valid) return { error: 'ERR_AUTH_REQUIRED' };
+  const permCheck = checkPermission(session, 'write', sheetName, ssId, module);
+  if (!permCheck.allowed) return { error: permCheck.error };
+
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet) return { error: 'Hoja no encontrada' };
+  const result = softDeleteRow(sheet, payload.id);
+  if (!result) return { success: false, error: 'Registro no encontrado' };
+  clearCache(ssId, sheetName);
+  return { success: true, message: 'Borrado lógico realizado' };
+}
+
+function dataActionHardDelete(session, ss, ssId, sheetName, module, payload) {
+  if (!session || !session.valid) return { error: 'ERR_AUTH_REQUIRED' };
+  const permCheck = checkPermission(session, 'write', sheetName, ssId, module);
+  if (!permCheck.allowed) return { error: permCheck.error };
+
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet) return { error: 'Hoja no encontrada' };
+  deleteRowById(sheet, payload.id);
+  clearCache(ssId, sheetName);
+  return { success: true, message: 'Borrado físico realizado' };
+}
+
+function dataActionRestoreData(session, ss, ssId, sheetName, module, payload) {
+  if (!session || !session.valid) return { error: 'ERR_AUTH_REQUIRED' };
+  const permCheck = checkPermission(session, 'write', sheetName, ssId, module);
+  if (!permCheck.allowed) return { error: permCheck.error };
+
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet) return { error: 'Hoja no encontrada' };
+  const result = restoreRow(sheet, payload.id);
+  if (!result) return { success: false, error: 'Registro no encontrado' };
+  clearCache(ssId, sheetName);
+  return { success: true, message: 'Registro restaurado' };
+}
+
+// ================================================================= //
+// CACHING SYSTEM
+// ================================================================= //
+
+const CACHE_TTL_DATA = 600; // 10 minutes
+const CACHE_TTL_LOOKUP = 300; // 5 minutes
 
 function getCachedSheetData(ss, sheetName) {
   const cache = CacheService.getScriptCache();
   const cacheKey = ss.getId() + '_' + sheetName;
   const cached = cache.get(cacheKey);
-  
+
   if (cached) {
-    try {
-      return JSON.parse(cached);
-    } catch (e) {
-      // Fallback si la caché está corrupta
-    }
+    try { return JSON.parse(cached); } catch (e) {}
   }
-  
+
   const sheet = ss.getSheetByName(sheetName);
   if (!sheet) return [];
-  
+
   const data = getSheetData(sheet);
-  try {
-    cache.put(cacheKey, JSON.stringify(data), CACHE_TTL_DATA);
-  } catch (e) {
-    // Si los datos son demasiado grandes para la caché, no fallar
-  }
+  try { cache.put(cacheKey, JSON.stringify(data), CACHE_TTL_DATA); } catch (e) {}
   return data;
 }
 
 function clearCache(ssId, sheetName) {
+  CacheService.getScriptCache().remove(ssId + '_' + sheetName);
+}
+
+function getCached(key, fetchFn) {
   const cache = CacheService.getScriptCache();
-  cache.remove(ssId + '_' + sheetName);
+  const cached = cache.get(key);
+  if (cached) return JSON.parse(cached);
+
+  const data = fetchFn();
+  if (data) cache.put(key, JSON.stringify(data), CACHE_TTL_LOOKUP);
+  return data;
+}
+
+function invalidateCache(pattern) {
+  // GAS CacheService doesn't support pattern-based invalidation.
+  // Cache expires automatically per TTL. This function is a no-op.
+  Logger.log('Cache invalidation requested for pattern: ' + pattern + ' (no-op — cache expires automatically)');
 }
 
 // ================================================================= //
-// VERSIONADO Y BORRADO LÓGICO
-// Fase 1.4: Implementación de _v, _ts, _deleted
+// CORE DATA PRIMITIVES
 // ================================================================= //
 
 /**
- * Obtiene datos de una hoja filtrando registros borrados
- * @param {Sheet} sheet - Hoja de cálculo
- * @param {boolean} includeDeleted - Si true, incluye registros borrados (default: false)
- * @return {array} Datos de la hoja
+ * Reads sheet data, auto-parses JSON cells, filters soft-deleted rows.
  */
-function getSheetData(sheet, includeDeleted = false) {
+function getSheetData(sheet, includeDeleted) {
   if (!sheet) return [];
   const rows = sheet.getDataRange().getValues();
   if (rows.length < 1) return [];
   const headers = rows[0];
-  const deletedIndex = headers.indexOf('_deleted');
-  
+
   return rows.slice(1).map(row => {
-    let obj = {};
+    const obj = {};
     headers.forEach((h, i) => {
       let val = row[i];
       if (typeof val === 'string' && (val.startsWith('[') || val.startsWith('{'))) {
-        try {
-          obj[h] = JSON.parse(val);
-        } catch (e) {
-          obj[h] = val;
-        }
-      } else {
-        obj[h] = val;
+        try { val = JSON.parse(val); } catch (e) {}
       }
+      obj[h] = val;
     });
     return obj;
-  }).filter(row => {
-    if (includeDeleted) return true;
-    return row._deleted !== true && row._deleted !== 'true';
-  });
+  }).filter(row => includeDeleted || (row._deleted !== true && row._deleted !== 'true'));
 }
 
 /**
- * Actualiza o inserta un registro con versionado automático
- * @param {Sheet} sheet - Hoja de cálculo
- * @param {object} item - Datos del registro
- * @param {boolean} onlyIfNew - Si true, solo inserta si no existe
- * @param {object} options - Opciones adicionales: { existingRows }
+ * Upserts a row with automatic versioning (_v, _ts).
  */
 function updateOrInsert(sheet, item, onlyIfNew, options) {
   if (!sheet) return;
@@ -386,10 +646,10 @@ function updateOrInsert(sheet, item, onlyIfNew, options) {
   const headers = rows[0];
   const idIndex = headers.indexOf('id');
   const vIndex = headers.indexOf('_v');
-  
+
   let rowIndex = -1;
   let currentV = 0;
-  
+
   for (let i = 1; i < rows.length; i++) {
     if (rows[i][idIndex] == item.id) {
       rowIndex = i + 1;
@@ -397,81 +657,56 @@ function updateOrInsert(sheet, item, onlyIfNew, options) {
       break;
     }
   }
-  
+
   if (rowIndex > 0 && onlyIfNew) return;
-  
+
   const timestamp = new Date().toISOString();
-  const newItem = {
-    ...item,
-    _v: currentV + 1,
-    _ts: timestamp
-  };
-  
+  const newItem = { ...item, _v: currentV + 1, _ts: timestamp };
+
   const values = headers.map(h => {
     const val = newItem[h];
     if (val === undefined || val === null) return '';
     return (typeof val === 'object') ? JSON.stringify(val) : val;
   });
-  
+
   if (rowIndex > 0) {
     sheet.getRange(rowIndex, 1, 1, values.length).setValues([values]);
   } else {
     sheet.appendRow(values);
   }
-  
+
+  // Invalidate lookup caches
   const sheetName = sheet.getName();
-  if (sheetName === 'Usuarios' && item.id) {
-    invalidateCache('u:');
-  } else if (sheetName === 'Perfiles' && item.id) {
-    invalidateCache('p:');
-    invalidateCache('p:all');
-  }
-  invalidateCoreSpreadsheetCache();
+  if (sheetName === 'Usuarios') invalidateCache('u:');
+  if (sheetName === 'Perfiles') { invalidateCache('p:'); invalidateCache('p:all'); }
 }
 
 /**
- * Marca un registro como borrado (borrado lógico)
- * @param {Sheet} sheet - Hoja de cálculo
- * @param {string} id - ID del registro
- * @return {boolean} true si se marcó correctamente
+ * Soft-deletes a row (sets _deleted=true, increments _v, updates _ts).
+ * Optimized: single setValues() call instead of 3x setValue().
  */
 function softDeleteRow(sheet, id) {
   if (!sheet || !id) return false;
   const rows = sheet.getDataRange().getValues();
   if (rows.length <= 1) return false;
-  const idIndex = rows[0].indexOf('id');
-  const deletedIndex = rows[0].indexOf('_deleted');
-  const vIndex = rows[0].indexOf('_v');
-  const tsIndex = rows[0].indexOf('_ts');
-  
+  const headers = rows[0];
+  const idIndex = headers.indexOf('id');
   if (idIndex < 0) return false;
-  
+
+  const deletedIndex = headers.indexOf('_deleted');
+  const vIndex = headers.indexOf('_v');
+  const tsIndex = headers.indexOf('_ts');
+
   for (let i = 1; i < rows.length; i++) {
     if (rows[i][idIndex] == id) {
       const rowNum = i + 1;
-      
-      // Marcar como borrado
-      if (deletedIndex >= 0) {
-        sheet.getRange(rowNum, deletedIndex + 1).setValue(true);
-      }
-      
-      // Incrementar versión
-      if (vIndex >= 0) {
-        const currentV = parseInt(rows[i][vIndex]) || 0;
-        sheet.getRange(rowNum, vIndex + 1).setValue(currentV + 1);
-      }
-      
-      // Actualizar timestamp
-      if (tsIndex >= 0) {
-        sheet.getRange(rowNum, tsIndex + 1).setValue(new Date().toISOString());
-      }
-      
-      const ssId = getCoreSpreadsheetId();
-      const sheetName = sheet.getName();
-      clearCache(ssId, sheetName);
-      if (sheetName === 'Usuarios') invalidateCache('u:');
-      if (sheetName === 'Perfiles') { invalidateCache('p:'); invalidateCache('p:all'); }
-      
+      const newRow = [...rows[i]];
+      if (deletedIndex >= 0) newRow[deletedIndex] = true;
+      if (vIndex >= 0) newRow[vIndex] = (parseInt(rows[i][vIndex]) || 0) + 1;
+      if (tsIndex >= 0) newRow[tsIndex] = new Date().toISOString();
+      sheet.getRange(rowNum, 1, 1, newRow.length).setValues([newRow]);
+
+      invalidateSheetCache(sheet.getName());
       return true;
     }
   }
@@ -479,34 +714,25 @@ function softDeleteRow(sheet, id) {
 }
 
 /**
- * Restaura un registro borrado lógicamente
- * @param {Sheet} sheet - Hoja de cálculo
- * @param {string} id - ID del registro
- * @return {boolean} true si se restauró correctamente
+ * Restores a soft-deleted row (sets _deleted=false).
  */
 function restoreRow(sheet, id) {
   if (!sheet || !id) return false;
   const rows = sheet.getDataRange().getValues();
   if (rows.length <= 1) return false;
-  const idIndex = rows[0].indexOf('id');
-  const deletedIndex = rows[0].indexOf('_deleted');
-  
+  const headers = rows[0];
+  const idIndex = headers.indexOf('id');
   if (idIndex < 0) return false;
-  
+
+  const deletedIndex = headers.indexOf('_deleted');
+
   for (let i = 1; i < rows.length; i++) {
     if (rows[i][idIndex] == id) {
       const rowNum = i + 1;
-      
       if (deletedIndex >= 0) {
         sheet.getRange(rowNum, deletedIndex + 1).setValue(false);
       }
-      
-      const ssId = getCoreSpreadsheetId();
-      const sheetName = sheet.getName();
-      clearCache(ssId, sheetName);
-      if (sheetName === 'Usuarios') invalidateCache('u:');
-      if (sheetName === 'Perfiles') { invalidateCache('p:'); invalidateCache('p:all'); }
-      
+      invalidateSheetCache(sheet.getName());
       return true;
     }
   }
@@ -514,18 +740,17 @@ function restoreRow(sheet, id) {
 }
 
 /**
- * Obtiene el historial de versiones de un registro
- * @param {Sheet} sheet - Hoja de cálculo
- * @param {string} id - ID del registro
- * @return {array} Historial de versiones
+ * Gets version history for a record (includes soft-deleted).
  */
 function getVersionHistory(sheet, id) {
-  const allData = getSheetData(sheet, true); // Include deleted
-  return allData
+  return getSheetData(sheet, true)
     .filter(row => row.id === id)
     .sort((a, b) => (b._v || 0) - (a._v || 0));
 }
 
+/**
+ * Physically deletes a row from the sheet.
+ */
 function deleteRowById(sheet, id) {
   if (!sheet || !id) return;
   const rows = sheet.getDataRange().getValues();
@@ -536,16 +761,23 @@ function deleteRowById(sheet, id) {
   for (let i = 1; i < rows.length; i++) {
     if (rows[i][idIndex] == id) {
       sheet.deleteRow(i + 1);
-      
-      const ssId = getCoreSpreadsheetId();
-      const sheetName = sheet.getName();
-      clearCache(ssId, sheetName);
-      if (sheetName === 'Usuarios') invalidateCache('u:');
-      if (sheetName === 'Perfiles') { invalidateCache('p:'); invalidateCache('p:all'); }
+      invalidateSheetCache(sheet.getName());
       break;
     }
   }
 }
+
+/**
+ * Invalidates cache entries for a sheet by name.
+ */
+function invalidateSheetCache(sheetName) {
+  if (sheetName === 'Usuarios') invalidateCache('u:');
+  if (sheetName === 'Perfiles') { invalidateCache('p:'); invalidateCache('p:all'); }
+}
+
+// ================================================================= //
+// RESPONSE HELPER
+// ================================================================= //
 
 function createResponse(data) {
   return ContentService.createTextOutput(JSON.stringify(data))
@@ -553,203 +785,99 @@ function createResponse(data) {
 }
 
 // ================================================================= //
-// AUTENTICACIÓN ZERO-KNOWLEDGE
-// All config from GSheet, no script properties
+// AUTHENTICATION — ZERO-KNOWLEDGE
+// All config from GSheet, no script properties for app state.
 // ================================================================= //
 
-const SESSION_TTL = 86400; // 24 horas en segundos
+const SESSION_TTL = 86400; // 24 hours in seconds
 
-/**
- * Helper para obtener user properties
- */
-function getUserProperties() {
-  return PropertiesService.getUserProperties();
-}
+// --- User Lookup ---
 
-/**
- * Get current ssId from session storage
- */
-function getCurrentSsId() {
-  return getUserProperties().getProperty('current_ssId');
-}
-
-/**
- * Obtiene la hoja de Usuarios desde el GSheet especificado
- */
 function getUsuariosSheet(ssId) {
-  const ss = SpreadsheetApp.openById(ssId);
-  return ss.getSheetByName('Usuarios');
+  return SpreadsheetApp.openById(ssId).getSheetByName('Usuarios');
 }
 
-/**
- * Busca un usuario por username (email)
- * @param {string} username - Email del usuario
- * @param {string} ssId - ID del spreadsheet
- * @return {object|null} Usuario encontrado o null
- */
 function getUserByUsername(username, ssId) {
   return getCached('u:un:' + username, () => {
     const sheet = getUsuariosSheet(ssId);
     if (!sheet) return null;
-    const data = getSheetData(sheet);
-    return data.find(row => row.username === username) || null;
+    return getSheetData(sheet).find(row => row.username === username) || null;
   });
 }
 
-/**
- * Busca un usuario por ID
- * @param {string} id - ID del usuario
- * @param {string} ssId - ID del spreadsheet
- * @return {object|null} Usuario encontrado o null
- */
 function getUserById(id, ssId) {
   return getCached('u:id:' + id, () => {
     const sheet = getUsuariosSheet(ssId);
     if (!sheet) return null;
-    const data = getSheetData(sheet);
-    return data.find(row => row.id === id) || null;
+    return getSheetData(sheet).find(row => row.id === id) || null;
   });
 }
 
-/**
- * Hashea una contraseña usando SHA-256
- * @param {string} password - Contraseña en texto plano
- * @return {string} Hash de la contraseña
- */
+// --- Password ---
+
 function hashPassword(password) {
   if (!password) return '';
-  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, password);
-  return digest.map(function(b) {
-    return ('00' + (b < 0 ? b + 256 : b).toString(16)).slice(-2);
-  }).join('');
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, password)
+    .map(b => ('00' + (b < 0 ? b + 256 : b).toString(16)).slice(-2)).join('');
 }
 
-/**
- * Parsea auth_config del usuario (maneja tanto string como objeto ya parseado)
- * @param {string|object} authConfig - auth_config del usuario
- * @return {object} auth_config parseado
- */
+function verifyPassword(password, hash) {
+  return !!(password && hash && hashPassword(password) === hash);
+}
+
+function validatePasswordComplexity(password) {
+  const errors = [];
+  if (!password) { errors.push('La contraseña es requerida'); return { valid: false, errors }; }
+  if (password.length < 8) errors.push('Mínimo 8 caracteres');
+  if (password.length > 128) errors.push('Máximo 128 caracteres');
+  if (!/[a-z]/.test(password)) errors.push('Al menos una letra minúscula');
+  if (!/[A-Z]/.test(password)) errors.push('Al menos una letra mayúscula');
+  if (!/[0-9]/.test(password)) errors.push('Al menos un número');
+  if (!/[^a-zA-Z0-9]/.test(password)) errors.push('Al menos un carácter especial');
+  return { valid: errors.length === 0, errors };
+}
+
+// --- Config Parsers ---
+
 function parseAuthConfig(authConfig) {
   const defaults = { default_method: 'passkey', password_hash: '', recovery_enabled: true, email_otp: { enabled: false }, totp: { enabled: false }, passkeys: [] };
   if (!authConfig) return defaults;
-  try {
-    return typeof authConfig === 'string' ? JSON.parse(authConfig) : authConfig;
-  } catch (e) {
-    return defaults;
-  }
+  try { return typeof authConfig === 'string' ? JSON.parse(authConfig) : authConfig; } catch (e) { return defaults; }
 }
 
-/**
- * Parsea metadata del usuario (maneja tanto string como objeto ya parseado)
- * @param {string|object} metadata - metadata del usuario
- * @return {object} metadata parseado
- */
 function parseUserMetadata(metadata) {
   const defaults = { last_login: null, last_password_change: null, failed_login_attempts: 0, created_from_ip: null };
   if (!metadata) return defaults;
-  try {
-    return typeof metadata === 'string' ? JSON.parse(metadata) : metadata;
-  } catch (e) {
-    return defaults;
-  }
+  try { return typeof metadata === 'string' ? JSON.parse(metadata) : metadata; } catch (e) { return defaults; }
 }
 
-/**
- * Verifica una contraseña contra un hash
- * @param {string} password - Contraseña en texto plano
- * @param {string} hash - Hash almacenado
- * @return {boolean} true si coincide
- */
-function verifyPassword(password, hash) {
-  if (!password || !hash) return false;
-  return hashPassword(password) === hash;
-}
+// --- User CRUD ---
 
-/**
- * Valida requisitos de complejidad de contraseña
- * @param {string} password - Contraseña a validar
- * @return {object} { valid: boolean, errors: string[] }
- */
-function validatePasswordComplexity(password) {
-  const errors = [];
-  
-  if (!password) {
-    errors.push('La contraseña es requerida');
-    return { valid: false, errors };
-  }
-  
-  if (password.length < 8) {
-    errors.push('Mínimo 8 caracteres');
-  }
-  
-  if (password.length > 128) {
-    errors.push('Máximo 128 caracteres');
-  }
-  
-  if (!/[a-z]/.test(password)) {
-    errors.push('Al menos una letra minúscula');
-  }
-  
-  if (!/[A-Z]/.test(password)) {
-    errors.push('Al menos una letra mayúscula');
-  }
-  
-  if (!/[0-9]/.test(password)) {
-    errors.push('Al menos un número');
-  }
-  
-  if (!/[^a-zA-Z0-9]/.test(password)) {
-    errors.push('Al menos un carácter especial');
-  }
-  
-  return {
-    valid: errors.length === 0,
-    errors
-  };
-}
-
-/**
- * Crea un nuevo usuario
- * @param {object} userData - Datos del usuario
- * @param {string} ssId - ID del spreadsheet
- * @return {object} Usuario creado
- */
 function createUser(userData, ssId) {
   const sheet = getUsuariosSheet(ssId);
   if (!sheet) throw new Error('Hoja Usuarios no encontrada');
-  
-  // Verificar si el usuario ya existe
-  const existing = getUserByUsername(userData.username, ssId);
-  if (existing) {
-    throw new Error('ERR_USER_EXISTS: El usuario ya existe');
-  }
-  
-  // Validar contraseña (requerida)
-  if (!userData.password) {
-    throw new Error('ERR_PASSWORD_REQUIRED: La contraseña es requerida');
-  }
+
+  if (getUserByUsername(userData.username, ssId)) throw new Error('ERR_USER_EXISTS: El usuario ya existe');
+  if (!userData.password) throw new Error('ERR_PASSWORD_REQUIRED: La contraseña es requerida');
   const pwValidation = validatePasswordComplexity(userData.password);
-  if (!pwValidation.valid) {
-    throw new Error('ERR_PASSWORD_WEAK: ' + pwValidation.errors.join(', '));
-  }
-  
+  if (!pwValidation.valid) throw new Error('ERR_PASSWORD_WEAK: ' + pwValidation.errors.join(', '));
+
   const now = new Date().toISOString();
   const authConfig = {
     default_method: userData.default_method || 'passkey',
-    password_hash: userData.password ? hashPassword(userData.password) : '',
+    password_hash: hashPassword(userData.password),
     recovery_enabled: true,
     email_otp: { enabled: true, created_at: now },
     totp: { enabled: false, secret: null, created_at: null },
-    passkeys: []
+    passkeys: [],
   };
-  
   const metadata = {
     last_login: null,
-    last_password_change: userData.password ? now : null,
+    last_password_change: now,
     failed_login_attempts: 0,
-    created_from_ip: userData.ip || null
+    created_from_ip: userData.ip || null,
   };
-  
+
   const user = {
     id: Utilities.getUuid(),
     username: userData.username,
@@ -759,1566 +887,494 @@ function createUser(userData, ssId) {
     auth_config: JSON.stringify(authConfig),
     metadata: JSON.stringify(metadata),
     created_at: now,
-    _ts: now
+    _ts: now,
   };
-  
+
   updateOrInsert(sheet, user, false);
   clearCache(ssId, 'Usuarios');
   invalidateCache('u:');
-  
   return { success: true, user: { id: user.id, username: user.username } };
 }
 
-/**
- * Actualiza un usuario existente
- * @param {string} id - ID del usuario
- * @param {object} updates - Campos a actualizar
- * @param {string} ssId - ID del spreadsheet
- * @return {object} Usuario actualizado
- */
 function updateUser(id, updates, ssId) {
   const sheet = getUsuariosSheet(ssId);
   if (!sheet) throw new Error('Hoja Usuarios no encontrada');
-  
+
   const user = getUserById(id, ssId);
-  if (!user) {
-    throw new Error('ERR_USER_NOT_FOUND: Usuario no encontrado');
-  }
-  
-  // Handle auth_config and metadata as JSON strings
-  let processedUpdates = { ...updates };
-  if (updates.auth_config && typeof updates.auth_config === 'object') {
-    processedUpdates.auth_config = JSON.stringify(updates.auth_config);
-  }
-  if (updates.metadata && typeof updates.metadata === 'object') {
-    processedUpdates.metadata = JSON.stringify(updates.metadata);
-  }
-  
-  const updatedUser = {
-    ...user,
-    ...processedUpdates,
-    _ts: new Date().toISOString()
-  };
-  
-  updateOrInsert(sheet, updatedUser, false);
+  if (!user) throw new Error('ERR_USER_NOT_FOUND: Usuario no encontrado');
+
+  const processed = { ...updates };
+  if (updates.auth_config && typeof updates.auth_config === 'object') processed.auth_config = JSON.stringify(updates.auth_config);
+  if (updates.metadata && typeof updates.metadata === 'object') processed.metadata = JSON.stringify(updates.metadata);
+
+  updateOrInsert(sheet, { ...user, ...processed, _ts: new Date().toISOString() }, false);
   clearCache(ssId, 'Usuarios');
   invalidateCache('u:');
-  
-  return { success: true, user: { id: updatedUser.id, username: updatedUser.username } };
+  return { success: true, user: { id: user.id, username: user.username } };
 }
 
-/**
- * Actualiza la contraseña de un usuario
- * @param {string} userId - ID del usuario
- * @param {string} newPassword - Nueva contraseña
- * @return {object} Resultado
- */
-function updateUserPassword(userId, newPassword) {
-  const sheet = getUsuariosSheet();
-  if (!sheet) throw new Error('Hoja Usuarios no encontrada');
-  
-  const user = getUserById(userId);
-  if (!user) {
-    throw new Error('ERR_USER_NOT_FOUND: Usuario no encontrado');
-  }
-  
-  const password_hash = hashPassword(newPassword);
+function updateUserPassword(userId, newPassword, ssId) {
+  const user = getUserById(userId, ssId);
+  if (!user) throw new Error('ERR_USER_NOT_FOUND: Usuario no encontrado');
+
+  const authConfig = parseAuthConfig(user.auth_config);
+  authConfig.password_hash = hashPassword(newPassword);
+  const metadata = parseUserMetadata(user.metadata);
   const now = new Date().toISOString();
-  
-  // Parse existing auth_config and update password_hash inside
-  let authConfig = { default_method: 'passkey', password_hash: '', recovery_enabled: true, email_otp: { enabled: false }, totp: { enabled: false }, passkeys: [] };
-  try {
-    if (user.auth_config) {
-      authConfig = parseAuthConfig(user.auth_config);
-    }
-  } catch (e) {
-    // Use default if parse fails
-  }
-  
-  authConfig.password_hash = password_hash;
-  
-  // Update metadata for password change tracking
-  let metadata = parseUserMetadata(user.metadata);
   metadata.last_password_change = now;
-  
-  const updatedUser = {
-    ...user,
-    auth_config: JSON.stringify(authConfig),
-    metadata: JSON.stringify(metadata),
-    _ts: now
-  };
-  
-  updateOrInsert(sheet, updatedUser, false);
-  clearCache(ssId, 'Usuarios');
-  invalidateCache('u:');
-  
+
+  updateUser(userId, { auth_config: authConfig, metadata: metadata }, ssId);
   return { success: true };
 }
 
-/**
- * Actualiza el metadata de un usuario
- * @param {string} userId - ID del usuario
- * @param {object} updates - Campos a actualizar en metadata
- * @return {object} Resultado
- */
-function updateUserMetadata(userId, updates) {
-  const user = getUserById(userId);
-  if (!user) {
-    throw new Error('ERR_USER_NOT_FOUND: Usuario no encontrado');
-  }
-  
-  let metadata = { last_login: null, last_password_change: null, failed_login_attempts: 0, created_from_ip: null };
-  try {
-    metadata = parseUserMetadata(user.metadata);
-  } catch (e) {
-    // Use default
-  }
-  
-  metadata = { ...metadata, ...updates };
-  
-  const ssId = getUserProperties().getProperty('current_ssId');
-  return updateUser(userId, { metadata: JSON.stringify(metadata) }, ssId);
+function updateUserMetadata(userId, updates, ssId) {
+  const user = getUserById(userId, ssId);
+  if (!user) throw new Error('ERR_USER_NOT_FOUND: Usuario no encontrado');
+  const metadata = { ...parseUserMetadata(user.metadata), ...updates };
+  return updateUser(userId, { metadata: metadata }, ssId);
 }
 
-/**
- * Incrementa los intentos de login fallidos
- * @param {string} userId - ID del usuario
- */
-function incrementFailedLoginAttempts(userId) {
-  const ssId = getUserProperties().getProperty('current_ssId');
+function incrementFailedLoginAttempts(userId, ssId) {
   const user = getUserById(userId, ssId);
   if (!user) return;
-  
-  let metadata = { last_login: null, last_password_change: null, failed_login_attempts: 0, created_from_ip: null };
-  try {
-    metadata = parseUserMetadata(user.metadata);
-  } catch (e) {}
-  
+  const metadata = parseUserMetadata(user.metadata);
   metadata.failed_login_attempts = (metadata.failed_login_attempts || 0) + 1;
-  updateUser(userId, { metadata: JSON.stringify(metadata) }, ssId);
+  updateUser(userId, { metadata: metadata }, ssId);
 }
 
-/**
- * Reinicia los intentos de login fallidos
- * @param {string} userId - ID del usuario
- */
-function resetFailedLoginAttempts(userId) {
-  const ssId = getUserProperties().getProperty('current_ssId');
+function resetFailedLoginAttempts(userId, ssId) {
   const user = getUserById(userId, ssId);
   if (!user) return;
-  
-  let metadata = { last_login: null, last_password_change: null, failed_login_attempts: 0, created_from_ip: null };
-  try {
-    metadata = parseUserMetadata(user.metadata);
-  } catch (e) {}
-  
+  const metadata = parseUserMetadata(user.metadata);
   metadata.failed_login_attempts = 0;
-  updateUser(userId, { metadata: JSON.stringify(metadata) }, ssId);
+  updateUser(userId, { metadata: metadata }, ssId);
 }
 
-/**
- * Obtiene un valor específico del metadata de un usuario
- * @param {string} userId - ID del usuario
- * @param {string} key - Clave del metadata
- * @return {any} Valor de la clave
- */
-function getUserMetadataValue(userId, key) {
-  const user = getUserById(userId);
+function getUserMetadataValue(userId, key, ssId) {
+  const user = getUserById(userId, ssId);
   if (!user) return null;
-  
-  let metadata = { last_login: null, last_password_change: null, failed_login_attempts: 0, created_from_ip: null };
-  try {
-    metadata = parseUserMetadata(user.metadata);
-  } catch (e) {}
-  
-  return metadata[key] || null;
+  return parseUserMetadata(user.metadata)[key] || null;
 }
 
-/**
- * Invalida todas las sesiones de un usuario
- * @param {string} userId - ID del usuario
- */
 function invalidateAllUserSessions(userId) {
   const sessions = getUserSessions(userId);
-  if (sessions && sessions.length > 0) {
-    sessions.forEach(session => {
-      try {
-        invalidateSession(session.token);
-      } catch (e) {
-        Logger.log('Error invalidating session: ' + e.message);
-      }
-    });
+  sessions.forEach(s => { try { invalidateSession(s.token); } catch (e) {} });
+}
+
+// --- Auth Helpers ---
+
+/**
+ * Resolves a user from either a valid session token or username+password.
+ */
+function resolveUser(sessionToken, username, password, ssId) {
+  if (sessionToken) {
+    const session = validateSession(sessionToken, ssId);
+    if (!session.valid) return { error: 'ERR_AUTH_INVALID: Sesión inválida o expirada' };
+    const user = getUserById(session.userId, ssId);
+    return user ? { user, username: user.username } : { error: 'ERR_USER_NOT_FOUND' };
   }
+  if (!username || !password) return { error: 'ERR_INVALID_CREDENTIALS: Usuario y contraseña requeridos' };
+  const user = getUserByUsername(username, ssId);
+  if (!user) return { error: 'ERR_USER_NOT_FOUND' };
+  if (!verifyPassword(password, parseAuthConfig(user.auth_config).password_hash)) {
+    return { error: 'ERR_INVALID_CREDENTIALS: Contraseña incorrecta' };
+  }
+  return { user, username };
 }
 
 /**
- * Genera un token de sesión
- * @param {string} userId - ID del usuario
- * @param {string} ssId - ID del spreadsheet
- * @return {object} Token de sesión
+ * Derives rpId from an origin URL for WebAuthn.
  */
-function generateSessionToken(userId, ssId) {
-  const user = getUserById(userId, ssId);
-  if (!user) {
-    throw new Error('ERR_USER_NOT_FOUND');
-  }
-  
-  const token = Utilities.getUuid() + '_' + Utilities.getUuid();
-  const expiresAt = new Date(Date.now() + SESSION_TTL * 1000).toISOString();
-  
-  // Guardar sesión con ssId
-  const sessionData = {
-    token: token,
-    userId: userId,
-    ssId: ssId,
-    createdAt: new Date().toISOString(),
-    expiresAt: expiresAt
-  };
-  
-  const userSessions = getUserSessions(userId);
-  userSessions.push(sessionData);
-  PropertiesService.getUserProperties().setProperty(
-    'sessions_' + userId,
-    JSON.stringify(userSessions)
-  );
-  
-  _addToSessionIndex(token, userId, expiresAt);
-  
-  return {
-    sessionToken: token,
-    expiresAt: expiresAt,
-    userId: userId
-  };
-}
-
-/**
- * Obtiene las sesiones de un usuario
- */
-function getUserSessions(userId) {
-  const stored = PropertiesService.getUserProperties().getProperty('sessions_' + userId);
-  return stored ? JSON.parse(stored) : [];
-}
-
-/**
- * Índice híbrido de sesiones (memoria + PropertiesService)
- */
-let _sessionIndex = null;
-
-function _loadSessionIndex() {
-  if (_sessionIndex) return _sessionIndex;
-  
-  const stored = CacheService.getScriptCache().get('session_index');
-  if (stored) {
-    _sessionIndex = JSON.parse(stored);
-    return _sessionIndex;
-  }
-  
-  _sessionIndex = {};
-  return _sessionIndex;
-}
-
-function _saveSessionIndex() {
-  if (!_sessionIndex) return;
+function deriveRpId(origin) {
+  if (!origin) return 'localhost';
   try {
-    CacheService.getScriptCache().put('session_index', JSON.stringify(_sessionIndex), SESSION_TTL);
-  } catch (e) {}
+    const match = origin.match(/^https?:\/\/([^:\/]+)/);
+    return match ? match[1] : 'localhost';
+  } catch (e) { return 'localhost'; }
 }
 
-function _addToSessionIndex(token, userId, expiresAt) {
-  let idx = _loadSessionIndex();
-  idx[token] = { userId, expiresAt };
-  _saveSessionIndex();
+/**
+ * Generates a random base64 challenge for WebAuthn.
+ */
+function generateChallenge() {
+  const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid() + Date.now());
+  return Utilities.base64Encode(bytes);
 }
 
-function _removeFromSessionIndex(token) {
-  let idx = _loadSessionIndex();
-  delete idx[token];
-  _saveSessionIndex();
+/**
+ * Returns enabled auth methods from an authConfig object.
+ */
+function getEnabledMethods(authConfig) {
+  const methods = [];
+  if (authConfig.passkeys?.length > 0) methods.push('passkey');
+  if (authConfig.totp?.enabled) methods.push('totp');
+  if (authConfig.email_otp?.enabled) methods.push('email_otp');
+  return methods;
 }
 
-function _findSessionInProperties(token) {
-  const allProperties = PropertiesService.getUserProperties();
-  const keys = allProperties.getKeys();
-  
-  for (const key of keys) {
-    if (!key.startsWith('sessions_')) continue;
-    
-    const sessions = JSON.parse(allProperties.getProperty(key) || '[]');
-    for (const session of sessions) {
-      if (session.token === token) {
-        if (new Date(session.expiresAt) > new Date()) {
-          return session;
+/**
+ * Updates user auth_config and clears related cache entries.
+ */
+function updateUserAuthConfig(user, authConfig, ssId) {
+  updateUser(user.id, { auth_config: authConfig }, ssId);
+  CacheService.getScriptCache().remove('u:un:' + user.username);
+  CacheService.getScriptCache().remove('u:id:' + user.id);
+}
+
+// ================================================================= //
+// AUTH ACTIONS
+// ================================================================= //
+
+function actionLogin(payload, ssId) {
+  try {
+    const { username, password, method, code, passkeyAssertion } = payload;
+
+    const rateLimit = checkRateLimit('login:' + username, 5, 60);
+    if (!rateLimit.allowed) {
+      return { success: false, error: 'ERR_RATE_LIMITED: Demasiados intentos. Intenta más tarde.', retryAfter: rateLimit.resetIn, step: 'password' };
+    }
+
+    if (!ssId) return { success: false, error: 'ERR_SS_ID_REQUIRED: Se requiere ssId para login', step: 'password' };
+
+    const user = getUserByUsername(username, ssId);
+    if (!user) return { success: false, error: 'ERR_AUTH_INVALID: Usuario no encontrado', step: 'password' };
+
+    const authConfig = parseAuthConfig(user.auth_config);
+
+    // Step 1: Password verification
+    if (!password) return { success: false, error: 'ERR_PASSWORD_REQUIRED: Ingrese su contraseña', step: 'password' };
+    if (!verifyPassword(password, authConfig.password_hash)) {
+      incrementFailedLoginAttempts(user.id, ssId);
+      logAccess(username, false, 'Contraseña inválida', ssId);
+      return { success: false, error: 'ERR_AUTH_INVALID: Contraseña incorrecta', step: 'password' };
+    }
+    resetFailedLoginAttempts(user.id, ssId);
+
+    // Step 2: Detect enabled methods
+    const enabledMethods = getEnabledMethods(authConfig);
+
+    if (!method) {
+      if (enabledMethods.length === 1) {
+        const singleMethod = enabledMethods[0];
+        if (singleMethod === 'email_otp') {
+          const otpResult = actionRequestOTP({ username: username }, ssId);
+          if (!otpResult.success) return otpResult;
+          return { success: false, step: singleMethod, availableMethods: enabledMethods, message: 'Código enviado automáticamente' };
         }
+        return { success: false, step: singleMethod, availableMethods: enabledMethods, message: 'Ingrese su código' };
+      }
+      return { success: false, step: 'method', availableMethods: enabledMethods, defaultMethod: authConfig.default_method || 'passkey', message: 'Seleccione método de autenticación' };
+    }
+
+    // Step 3: Verify selected method
+    if (method === 'totp') {
+      if (!authConfig.totp?.enabled || !authConfig.totp?.secret) return { success: false, error: 'ERR_TOTP_NOT_CONFIGURED', step: 'method' };
+      if (!code) return { success: false, error: 'ERR_CODE_REQUIRED: Ingrese código TOTP', step: 'totp' };
+      if (!verifyTOTP(authConfig.totp.secret, code)) {
+        logAccess(username, false, 'TOTP inválido', ssId);
+        return { success: false, error: 'ERR_AUTH_INVALID: Código TOTP inválido', step: 'totp' };
+      }
+    } else if (method === 'email_otp') {
+      if (!authConfig.email_otp?.enabled) return { success: false, error: 'ERR_EMAIL_OTP_NOT_CONFIGURED', step: 'method' };
+      if (!code) return { success: false, error: 'ERR_CODE_REQUIRED: Ingrese código del email', step: 'email_otp' };
+      if (!verifyEmailOTP(username, code)) {
+        logAccess(username, false, 'Email OTP inválido', ssId);
+        return { success: false, error: 'ERR_AUTH_INVALID: Código inválido', step: 'email_otp' };
+      }
+    } else if (method === 'passkey') {
+      if (!authConfig.passkeys?.length) return { success: false, error: 'ERR_PASSKEY_NOT_CONFIGURED', step: 'method' };
+      if (!passkeyAssertion) return { success: false, error: 'ERR_PASSKEY_REQUIRED', step: 'passkey' };
+      if (!authConfig.passkeys.find(pk => pk.id === passkeyAssertion.credentialId)) {
+        logAccess(username, false, 'Passkey inválido', ssId);
+        return { success: false, error: 'ERR_AUTH_INVALID: Passkey no reconocido', step: 'passkey' };
       }
     }
-  }
-  
-  return null;
-}
 
-/**
- * Valida un token de sesión (usa índice híbrido con fallback a PropertiesService)
- * @param {string} token - Token de sesión
- * @return {object|null} Datos de sesión o null si es inválido
- */
-function validateSession(token) {
-  let idx = _loadSessionIndex();
-  let session = idx[token];
-  
-  if (!session) {
-    session = _findSessionInProperties(token);
-    if (session) {
-      idx[token] = session;
-      _saveSessionIndex();
-    }
-  }
-  
-  if (session) {
-    if (new Date(session.expiresAt) > new Date()) {
-      const user = getUserById(session.userId, getCurrentSsId());
-      return {
-        valid: true,
-        userId: session.userId,
-        username: user?.username,
-        expiresAt: session.expiresAt
-      };
-    }
-    delete idx[token];
-    _saveSessionIndex();
-  }
-  
-  return { valid: false };
-}
+    // Success
+    updateUserMetadata(user.id, { last_login: new Date().toISOString() }, ssId);
+    const session = generateSessionToken(user.id, ssId);
+    logAccess(username, true, 'Login exitoso', ssId);
 
-/**
- * Cierra una sesión
- * @param {string} token - Token de sesión a cerrar
- */
-function invalidateSession(token) {
-  _removeFromSessionIndex(token);
-  
-  const allProperties = PropertiesService.getUserProperties();
-  const keys = allProperties.getKeys();
-  
-  for (const key of keys) {
-    if (!key.startsWith('sessions_')) continue;
-    
-    let sessions = JSON.parse(allProperties.getProperty(key) || '[]');
-    const initialLength = sessions.length;
-    sessions = sessions.filter(s => s.token !== token);
-    
-    if (sessions.length !== initialLength) {
-      allProperties.setProperty(key, JSON.stringify(sessions));
-    }
+    return {
+      success: true,
+      sessionToken: session.sessionToken,
+      wrapped_mk: user.wrapped_mk,
+      expiresAt: session.expiresAt,
+      user: { id: user.id, username: user.username, perfilId: user.perfilId },
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
   }
 }
 
-/**
- * Renueva/extiende un token de sesión
- * @param {string} token - Token de sesión a renovar
- * @return {object} Nuevo token o error
- */
-function refreshSessionToken(token) {
-  const allProperties = PropertiesService.getUserProperties();
-  const keys = allProperties.getKeys();
-  
-  for (const key of keys) {
-    if (!key.startsWith('sessions_')) continue;
-    
-    let sessions = JSON.parse(allProperties.getProperty(key) || '[]');
-    const sessionIndex = sessions.findIndex(s => s.token === token);
-    
-    if (sessionIndex !== -1) {
-      const session = sessions[sessionIndex];
-      
-      // Verificar que no ha expirado
-      if (new Date(session.expiresAt) < new Date()) {
-        return { success: false, error: 'ERR_SESSION_EXPIRED' };
-      }
-      
-      // Verificar si está próximo a expirar (menos de 1 hora)
-      const timeLeft = new Date(session.expiresAt) - new Date();
-      const oneHour = 60 * 60 * 1000;
-      
-      if (timeLeft > oneHour) {
-        // No necesita renovación aún
-        return { 
-          success: true, 
-          message: 'Sesión válida', 
-          expiresAt: session.expiresAt,
-          needsRefresh: false
-        };
-      }
-      
-      // Renovar sesión
-      const newExpiresAt = new Date(Date.now() + SESSION_TTL * 1000).toISOString();
-      sessions[sessionIndex].expiresAt = newExpiresAt;
-      sessions[sessionIndex].lastRefresh = new Date().toISOString();
-      
-      allProperties.setProperty(key, JSON.stringify(sessions));
-      
-      _addToSessionIndex(token, session.userId, newExpiresAt);
-      
-      return { 
-        success: true, 
-        expiresAt: newExpiresAt,
-        needsRefresh: false
-      };
-    }
-  }
-  
-  return { success: false, error: 'ERR_SESSION_NOT_FOUND' };
-}
-
-/**
- * Obtiene todas las sesiones activas de un usuario
- * @param {string} userId - ID del usuario
- * @return {array} Lista de sesiones activas
- */
-function getActiveSessions(userId) {
-  const sessions = getUserSessions(userId);
-  const now = new Date();
-  
-  return sessions.filter(s => new Date(s.expiresAt) > now).map(s => ({
-    token: s.token,
-    createdAt: s.createdAt,
-    expiresAt: s.expiresAt,
-    lastRefresh: s.lastRefresh || null
-  }));
-}
-
-/**
- * Cierra todas las sesiones de un usuario
- * @param {string} userId - ID del usuario
- * @return {object} Resultado
- */
-function invalidateAllSessions(userId) {
-  PropertiesService.getUserProperties().deleteProperty('sessions_' + userId);
-  
-  let idx = _loadSessionIndex();
-  const keysToRemove = Object.keys(idx).filter(k => idx[k].userId === userId);
-  keysToRemove.forEach(k => delete idx[k]);
-  _saveSessionIndex();
-  
-  return { success: true, message: 'Todas las sesiones cerradas' };
-}
-
-/**
- * Acción: register - Crea un nuevo usuario
- * @param {object} payload - Datos del usuario
- * @param {string} ssId - ID del spreadsheet Core
- * @return {object} Respuesta
- */
 function actionRegister(payload, ssId) {
   try {
-    if (!ssId) {
-      return { success: false, error: 'ERR_SS_ID_REQUIRED' };
-    }
-    
-    // Validate email is provided
-    if (!payload.email || !payload.email.trim()) {
-      return { success: false, error: 'ERR_EMAIL_REQUIRED: El email es requerido' };
-    }
-    
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(payload.email.trim())) {
-      return { success: false, error: 'ERR_EMAIL_INVALID: Formato de email inválido' };
-    }
-    
+    if (!ssId) return { success: false, error: 'ERR_SS_ID_REQUIRED' };
+    if (!payload.email || !payload.email.trim()) return { success: false, error: 'ERR_EMAIL_REQUIRED: El email es requerido' };
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email.trim())) return { success: false, error: 'ERR_EMAIL_INVALID: Formato de email inválido' };
+
     const result = createUser({
       username: payload.username,
       email: payload.email.trim(),
       password: payload.password,
       wrapped_mk: payload.wrapped_mk,
       perfilId: payload.perfilId,
-      ip: payload.ip
+      ip: payload.ip,
     }, ssId);
-    
-    // Send welcome email
-    try {
-      sendWelcomeEmail(payload.email, payload.username, 'tu congregación');
-    } catch (emailErr) {
-      Logger.log('Error sending welcome email: ' + emailErr.message);
-    }
-    
-    // Send OTP email for verification (also verifies email exists)
-    try {
-      const otpResult = actionRequestOTP({
-        username: payload.username,
-        verifyOnly: true
-      });
-      if (!otpResult.success) {
-        Logger.log('Warning: Could not send initial OTP: ' + otpResult.error);
-      }
-    } catch (otpErr) {
-      Logger.log('Warning: Error sending initial OTP: ' + otpErr.message);
-    }
-    
-    return {
-      success: true,
-      user: result.user
-    };
+
+    try { sendWelcomeEmail(payload.email, payload.username, 'tu congregación'); } catch (e) { Logger.log('Error sending welcome email: ' + e.message); }
+
+    return { success: true, user: result.user };
   } catch (err) {
-    return {
-      success: false,
-      error: err.message
-    };
+    return { success: false, error: err.message };
   }
 }
 
-/**
- * Acción: setupTOTP - Genera secreto TOTP para un usuario
- * @param {object} payload - Datos del usuario
- * @return {object} Respuesta con secreto y URI para QR
- */
-function actionSetupTOTP(payload) {
+function actionChallenge(payload, ssId) {
   try {
-    let { username, password, sessionToken } = payload;
-    
-    let user = null;
-    
-    // If sessionToken provided, validate session and get user
-    if (sessionToken) {
-      const session = validateSession(sessionToken);
-      if (!session.valid) {
-        return { success: false, error: 'ERR_AUTH_INVALID: Sesión inválida o expirada' };
-      }
-      user = getUserById(session.userId);
-    } else {
-      // Fall back to password verification
-      if (!username || !password) {
-        return { success: false, error: 'ERR_INVALID_CREDENTIALS: Usuario y contraseña requeridos' };
-      }
-      
-      user = getUserByUsername(username, getCurrentSsId());
-      if (!user) {
-        return { success: false, error: 'ERR_USER_NOT_FOUND' };
-      }
-      
-      // Parse auth_config to get password_hash
-      let authConfig = { password_hash: '', totp: { enabled: false } };
-      try {
-        authConfig = parseAuthConfig(user.auth_config);
-      } catch (e) {}
-      
-      // Verificar contraseña using auth_config.password_hash
-      if (!verifyPassword(password, authConfig.password_hash)) {
-        return { success: false, error: 'ERR_INVALID_CREDENTIALS: Contraseña incorrecta' };
-      }
-    }
-    
-    if (!user) {
-      return { success: false, error: 'ERR_USER_NOT_FOUND' };
-    }
-    
-    username = user.username;
-    
-    // Generar secreto TOTP
-    const totpResult = generateTOTPSecret(username);
-    if (!totpResult.success) {
-      return { success: false, error: totpResult.error };
-    }
-    
-    // Guardar secreto temporalmente (no confirmado aún)
+    if (!ssId) return { success: false, error: 'ERR_SS_ID_REQUIRED' };
+    const user = getUserByUsername(payload.username, ssId);
+    if (!user) return { success: false, error: 'ERR_USER_NOT_FOUND' };
+
+    const authConfig = parseAuthConfig(user.auth_config);
+    const challenge = generateChallenge();
+
     PropertiesService.getUserProperties().setProperty(
-      'totp_pending_' + username,
-      JSON.stringify({
-        secret: totpResult.secret,
-        createdAt: new Date().toISOString(),
-        expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString()
-      })
+      'passkey_challenge_' + payload.username,
+      JSON.stringify({ challenge, createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString() })
     );
-    
+
     return {
       success: true,
-      secret: totpResult.secret,
-      otpURI: totpResult.otpURI
+      challenge: challenge,
+      rpId: deriveRpId(payload.origin),
+      timeout: 60000,
+      allowCredentials: (authConfig.passkeys || []).map(pk => ({ id: pk.id, type: 'public-key' })),
+      userVerification: 'preferred',
     };
   } catch (err) {
     return { success: false, error: err.message };
   }
 }
 
-/**
- * Acción: confirmTOTP - Confirma la configuración de TOTP
- * @param {object} payload - Datos con código de verificación
- * @return {object} Resultado
- */
-function actionConfirmTOTP(payload) {
+function actionSetupTOTP(payload, ssId) {
   try {
-    const { username, password, code, sessionToken } = payload;
-    
-    let user = null;
-    let resolvedUsername = username;
-    
-    // If sessionToken provided, validate session and get user
-    if (sessionToken) {
-      const session = validateSession(sessionToken);
-      if (!session.valid) {
-        return { success: false, error: 'ERR_AUTH_INVALID: Sesión inválida o expirada' };
-      }
-      user = getUserById(session.userId);
-      resolvedUsername = user?.username || username;
-    } else {
-      // Fall back to password verification
-      if (!username || !password) {
-        return { success: false, error: 'ERR_INVALID_CREDENTIALS: Usuario y contraseña requeridos' };
-      }
-      
-      user = getUserByUsername(username, getCurrentSsId());
-      if (!user) {
-        return { success: false, error: 'ERR_USER_NOT_FOUND' };
-      }
-      
-      // Parse auth_config to get password_hash
-      let authConfig = { password_hash: '', totp: { enabled: false, secret: null } };
-      try {
-        authConfig = parseAuthConfig(user.auth_config);
-      } catch (e) {}
-      
-      // Verificar contraseña using auth_config.password_hash
-      if (!verifyPassword(password, authConfig.password_hash)) {
-        return { success: false, error: 'ERR_INVALID_CREDENTIALS: Contraseña incorrecta' };
-      }
-    }
-    
-    if (!user) {
-      return { success: false, error: 'ERR_USER_NOT_FOUND' };
-    }
-    
-    // Obtener secreto pendiente
-    const pendingData = PropertiesService.getUserProperties().getProperty('totp_pending_' + resolvedUsername);
-    if (!pendingData) {
-      return { success: false, error: 'ERR_NO_PENDING_TOTP: No hay configuración TOTP pendiente' };
-    }
-    
-    const pending = JSON.parse(pendingData);
-    
-    // Verificar si no ha expirado
+    const { sessionToken, username, password } = payload;
+    const resolved = resolveUser(sessionToken, username, password, ssId);
+    if (resolved.error) return { success: false, error: resolved.error };
+
+    const totpResult = generateTOTPSecret(resolved.username);
+    if (!totpResult.success) return totpResult;
+
+    PropertiesService.getUserProperties().setProperty(
+      'totp_pending_' + resolved.username,
+      JSON.stringify({ secret: totpResult.secret, createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString() })
+    );
+
+    return { success: true, secret: totpResult.secret, otpURI: totpResult.otpURI };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function actionConfirmTOTP(payload, ssId) {
+  try {
+    const { sessionToken, username, password, code } = payload;
+    const resolved = resolveUser(sessionToken, username, password, ssId);
+    if (resolved.error) return { success: false, error: resolved.error };
+
+    const pendingStr = PropertiesService.getUserProperties().getProperty('totp_pending_' + resolved.username);
+    if (!pendingStr) return { success: false, error: 'ERR_NO_PENDING_TOTP: No hay configuración TOTP pendiente' };
+
+    const pending = JSON.parse(pendingStr);
     if (new Date(pending.expiresAt) < new Date()) {
-      PropertiesService.getUserProperties().deleteProperty('totp_pending_' + resolvedUsername);
+      PropertiesService.getUserProperties().deleteProperty('totp_pending_' + resolved.username);
       return { success: false, error: 'ERR_TOTP_EXPIRED: La configuración ha expirado' };
     }
-    
-    // Verificar código TOTP
-    const isValid = verifyTOTP(pending.secret, code);
-    if (!isValid) {
-      return { success: false, error: 'ERR_INVALID_CODE: Código inválido' };
+
+    if (!verifyTOTP(pending.secret, code)) return { success: false, error: 'ERR_INVALID_CODE: Código inválido' };
+
+    const authConfig = parseAuthConfig(resolved.user.auth_config);
+    authConfig.totp = { enabled: true, secret: pending.secret, created_at: new Date().toISOString() };
+
+    if (authConfig.default_method !== 'passkey') {
+      authConfig.default_method = 'totp';
     }
-    
-    // Parse auth_config again to get fresh data
-    let authConfig = { password_hash: '', totp: { enabled: false, secret: null }, passkeys: [] };
-    try {
-      authConfig = parseAuthConfig(user.auth_config);
-    } catch (e) {}
-    
-    // Update auth_config with TOTP
-    authConfig.totp = {
-      enabled: true,
-      secret: pending.secret,
-      created_at: new Date().toISOString()
-    };
-    
-    updateUser(user.id, { auth_config: JSON.stringify(authConfig) }, getCurrentSsId());
-    
-    // Limpiar cache de usuarios para que el login use datos frescos
-    clearCache(ssId, 'Usuarios');
-    CacheService.getScriptCache().remove('u:un:' + resolvedUsername);
-    CacheService.getScriptCache().remove('u:id:' + user.id);
-    
-    
-    // Limpiar secreto pendiente
-    PropertiesService.getUserProperties().deleteProperty('totp_pending_' + resolvedUsername);
-    
+
+    updateUserAuthConfig(resolved.user, authConfig, ssId);
+
+    PropertiesService.getUserProperties().deleteProperty('totp_pending_' + resolved.username);
     return { success: true, message: 'TOTP configurado correctamente' };
   } catch (err) {
     return { success: false, error: err.message };
   }
 }
 
-/**
- * Acción: disableTOTP - Desactiva TOTP para un usuario
- * @param {object} payload - Datos del usuario
- * @return {object} Resultado
- */
-function actionDisableTOTP(payload) {
+function actionSetupPasskey(payload, ssId) {
   try {
-    const { sessionToken } = payload;
-    
-    // Validar sesión
-    const session = validateSession(sessionToken);
-    if (!session.valid) {
-      return { success: false, error: 'ERR_AUTH_INVALID' };
-    }
-    
-    // Get user to parse auth_config
-    const user = getUserById(session.userId, getCurrentSsId());
-    if (!user) {
-      return { success: false, error: 'ERR_USER_NOT_FOUND' };
-    }
-    
-    let authConfig = { totp: { enabled: false, secret: null } };
-    try {
-      authConfig = parseAuthConfig(user.auth_config);
-    } catch (e) {}
-    
-    // Disable TOTP in auth_config
-    authConfig.totp = { enabled: false, secret: null, created_at: null };
-    
-    updateUser(session.userId, { auth_config: JSON.stringify(authConfig) });
-    
-    return { success: true, message: 'TOTP desactivado' };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-}
+    const { sessionToken, username, password, deviceName } = payload;
+    const resolved = resolveUser(sessionToken, username, password, ssId);
+    if (resolved.error) return { success: false, error: resolved.error };
 
-/**
- * Acción: login - Autentica usuario y devuelve token
- * @param {object} payload - Credenciales
- * @param {string} ssId - ID del spreadsheet Core
- * @return {object} Respuesta con token
- */
-function actionLogin(payload, ssId) {
-  try {
-    const { username, password, method, code, passkeyAssertion } = payload;
-    
-    // Rate limiting: max 5 intentos por minuto por username
-    const rateLimit = checkRateLimit('login:' + username, 5, 60);
-    if (!rateLimit.allowed) {
-      return { 
-        success: false, 
-        error: 'ERR_RATE_LIMITED: Demasiados intentos. Intenta más tarde.',
-        retryAfter: rateLimit.resetIn,
-        step: 'password'
-      };
-    }
-    
-    // Buscar usuario - requires ssId
-    if (!ssId) {
-      return { success: false, error: 'ERR_SS_ID_REQUIRED: Se requiere ssId para login', step: 'password' };
-    }
-    
-    const user = getUserByUsername(username, ssId);
-    if (!user) {
-      return { success: false, error: 'ERR_AUTH_INVALID: Usuario no encontrado', step: 'password' };
-    }
-    
-    // Parse auth_config
-    let authConfig = parseAuthConfig(user.auth_config);
-    
-    // STEP 1: Verificar contraseña (always required as first step)
-    if (!password) {
-      return { success: false, error: 'ERR_PASSWORD_REQUIRED: Ingrese su contraseña', step: 'password' };
-    }
-    
-    // Verificar contraseña using auth_config.password_hash
-    if (!verifyPassword(password, authConfig.password_hash)) {
-      incrementFailedLoginAttempts(user.id);
-      logAccess(username, false, 'Contraseña inválida');
-      return { success: false, error: 'ERR_AUTH_INVALID: Contraseña incorrecta', step: 'password' };
-    }
-    
-    // Reset failed attempts on successful password verify
-    resetFailedLoginAttempts(user.id);
-    
-    // STEP 2: Detect enabled auth methods and handle based on method parameter
-    const enabledMethods = [];
-    if (authConfig.passkeys && authConfig.passkeys.length > 0) enabledMethods.push('passkey');
-    if (authConfig.totp && authConfig.totp.enabled) enabledMethods.push('totp');
-    if (authConfig.email_otp && authConfig.email_otp.enabled) enabledMethods.push('email_otp');
-    
-    // If no method specified
-    if (!method) {
-      // Auto-proceed if only one method is enabled
-      if (enabledMethods.length === 1) {
-        const singleMethod = enabledMethods[0];
-        
-        // For email_otp, automatically send the code
-        if (singleMethod === 'email_otp') {
-          Logger.log('actionLogin: auto-sending email OTP for username=' + username);
-          const otpResult = actionRequestOTP({ username: username });
-          if (!otpResult.success) {
-            return otpResult;
-          }
-          return {
-            success: false,
-            step: singleMethod,
-            availableMethods: enabledMethods,
-            message: 'Código enviado automáticamente'
-          };
-        }
-        
-        // For totp or passkey, ask for the code/credential
-        return {
-          success: false,
-          step: singleMethod,
-          availableMethods: enabledMethods,
-          message: 'Ingrese su código'
-        };
-      }
-      
-      // Multiple methods - let user choose
-      return {
-        success: false,
-        step: 'method',
-        availableMethods: enabledMethods,
-        defaultMethod: authConfig.default_method || 'passkey',
-        message: 'Seleccione método de autenticación'
-      };
-    }
-    
-    // STEP 3: Verify the selected auth method
-    if (method === 'totp') {
-      if (!authConfig.totp || !authConfig.totp.enabled || !authConfig.totp.secret) {
-        return { success: false, error: 'ERR_TOTP_NOT_CONFIGURED: TOTP no configurado', step: 'method' };
-      }
-      if (!code) {
-        return { success: false, error: 'ERR_CODE_REQUIRED: Ingrese código TOTP', step: 'totp' };
-      }
-      const isValid = verifyTOTP(authConfig.totp.secret, code);
-      if (!isValid) {
-        logAccess(username, false, 'TOTP inválido');
-        return { success: false, error: 'ERR_AUTH_INVALID: Código TOTP inválido', step: 'totp' };
-      }
-    } else if (method === 'email_otp') {
-      if (!authConfig.email_otp || !authConfig.email_otp.enabled) {
-        return { success: false, error: 'ERR_EMAIL_OTP_NOT_CONFIGURED: Email OTP no configurado', step: 'method' };
-      }
-      if (!code) {
-        return { success: false, error: 'ERR_CODE_REQUIRED: Ingrese código del email', step: 'email_otp' };
-      }
-      const isValid = verifyEmailOTP(username, code);
-      if (!isValid) {
-        logAccess(username, false, 'Email OTP inválido');
-        return { success: false, error: 'ERR_AUTH_INVALID: Código inválido', step: 'email_otp' };
-      }
-    } else if (method === 'passkey') {
-      if (!authConfig.passkeys || authConfig.passkeys.length === 0) {
-        return { success: false, error: 'ERR_PASSKEY_NOT_CONFIGURED: Passkey no configurado', step: 'method' };
-      }
-      if (!passkeyAssertion) {
-        return { success: false, error: 'ERR_PASSKEY_REQUIRED: Autenticación con passkey requerida', step: 'passkey' };
-      }
-      // Passkey verification done on frontend, we just validate the result
-      // The frontend sends the verified credential ID
-      const validCredential = authConfig.passkeys.find(pk => pk.id === passkeyAssertion.credentialId);
-      if (!validCredential) {
-        logAccess(username, false, 'Passkey inválido');
-        return { success: false, error: 'ERR_AUTH_INVALID: Passkey no reconocido', step: 'passkey' };
-      }
-    }
-    
-    // Update last login metadata
-    updateUserMetadata(user.id, { last_login: new Date().toISOString() });
-    
-    // Store ssId in user properties for session operations
-    getUserProperties().setProperty('current_ssId', ssId);
-    
-    // Generar token de sesión
-    const session = generateSessionToken(user.id, ssId);
-    
-    logAccess(username, true, 'Login exitoso');
-    
-    return {
-      success: true,
-      sessionToken: session.sessionToken,
-      wrapped_mk: user.wrapped_mk,
-      expiresAt: session.expiresAt,
-      user: {
-        id: user.id,
-        username: user.username,
-        perfilId: user.perfilId
-      }
-    };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-}
-
-/**
- * Acción: challenge - Genera desafío para WebAuthn/Passkey
- * @param {object} payload - Datos del desafío
- * @return {object} Respuesta con desafío
- */
-function actionChallenge(payload) {
-  try {
-    const user = getUserByUsername(payload.username);
-    
-    if (!user) {
-      return { success: false, error: 'ERR_USER_NOT_FOUND' };
-    }
-    
-    // Parse auth_config to get passkeys
-    let authConfig = { passkeys: [] };
-    try {
-      authConfig = parseAuthConfig(user.auth_config);
-    } catch (e) {}
-    
-    // Generate challenge - proper random base64 (standard, not URL-safe)
-    const randomBytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid() + new Date().getTime());
-    const challenge = Utilities.base64Encode(randomBytes);
-    
-    // Guardar desafío temporalmente
-    PropertiesService.getUserProperties().setProperty(
-      'passkey_challenge_' + payload.username,
-      JSON.stringify({
-        challenge: challenge,
-        createdAt: new Date().toISOString(),
-        expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString()
-      })
-    );
-    
-    // Get existing passkeys for allowCredentials (IDs are already base64 from browser)
-    const existingCredentials = authConfig.passkeys.map(pk => ({
-      id: pk.id,
-      type: 'public-key'
-    }));
-    
-    // Derive rpId from origin (use hostname, default to localhost)
-    let rpId = 'localhost';
-    if (payload.origin) {
-      try {
-        const url = Utilities.newBlob(payload.origin).getDataAsString();
-        const match = url.match(/^https?:\/\/([^:\/]+)/);
-        if (match && match[1]) {
-          rpId = match[1];
-        }
-      } catch (e) {
-        rpId = 'localhost';
-      }
-    }
-    
-    return {
-      success: true,
-      challenge: challenge,
-      rpId: rpId,
-      timeout: 60000,
-      allowCredentials: existingCredentials,
-      userVerification: 'preferred'
-    };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-}
-
-/**
- * Acción: setupPasskey - Prepara registro de nuevo passkey
- * @param {object} payload - { username, password, deviceName }
- * @return {object} Respuesta con desafío para registro
- */
-function actionSetupPasskey(payload) {
-  try {
-    let { username, password, deviceName, sessionToken } = payload;
-    
-    let user = null;
-    
-    // If sessionToken provided, validate session and get user
-    if (sessionToken) {
-      const session = validateSession(sessionToken);
-      if (!session.valid) {
-        return { success: false, error: 'ERR_AUTH_INVALID: Sesión inválida o expirada' };
-      }
-      user = getUserById(session.userId);
-    } else {
-      // Fall back to password verification
-      user = getUserByUsername(username, getCurrentSsId());
-      if (!user) {
-        return { success: false, error: 'ERR_USER_NOT_FOUND' };
-      }
-      
-      let authConfigVerify = { password_hash: '', passkeys: [] };
-      try {
-        authConfigVerify = parseAuthConfig(user.auth_config);
-      } catch (e) {}
-      
-      if (!verifyPassword(password, authConfigVerify.password_hash)) {
-        return { success: false, error: 'ERR_AUTH_INVALID: Contraseña incorrecta' };
-      }
-    }
-    
-    if (!user) {
-      return { success: false, error: 'ERR_USER_NOT_FOUND' };
-    }
-    
-    username = user.username;
-    
-    let authConfig = { password_hash: '', passkeys: [] };
-    try {
-      authConfig = parseAuthConfig(user.auth_config);
-    } catch (e) {}
-    
-    // Generate challenge for registration - proper random base64 (standard, not URL-safe)
-    const randomBytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid() + new Date().getTime());
-    const challenge = Utilities.base64Encode(randomBytes);
-    
-    // Generate user ID for WebAuthn - proper base64 encoding (standard, not URL-safe)
-    const userIdBytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, username + new Date().getTime());
-    const userId = Utilities.base64Encode(userIdBytes);
-    
-    // Store pending passkey setup
-    const pendingData = {
-      challenge: challenge,
-      deviceName: deviceName || 'Dispositivo nuevo',
-      username: username,
-      createdAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString()
-    };
+    const authConfig = parseAuthConfig(resolved.user.auth_config);
+    const challenge = generateChallenge();
+    const userIdBytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, resolved.username + Date.now());
 
     PropertiesService.getUserProperties().setProperty(
-      'passkey_setup_' + username,
-      JSON.stringify(pendingData)
+      'passkey_setup_' + resolved.username,
+      JSON.stringify({ challenge, deviceName: deviceName || 'Dispositivo nuevo', username: resolved.username, createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString() })
     );
-
-    // Derive rpId from origin (use hostname, default to localhost)
-    let rpId = 'localhost';
-    if (payload.origin) {
-      try {
-        const url = Utilities.newBlob(payload.origin).getDataAsString();
-        const match = url.match(/^https?:\/\/([^:\/]+)/);
-        if (match && match[1]) {
-          rpId = match[1];
-        }
-      } catch (e) {
-        rpId = 'localhost';
-      }
-    }
 
     return {
       success: true,
       challenge: challenge,
-      rpId: rpId,
+      rpId: deriveRpId(payload.origin),
       timeout: 60000,
-      user: {
-        id: userId,
-        name: username,
-        displayName: username
-      },
-      pubKeyCredParams: [
-        { type: 'public-key', alg: -7 },
-        { type: 'public-key', alg: -257 }
-      ],
+      user: { id: Utilities.base64Encode(userIdBytes), name: resolved.username, displayName: resolved.username },
+      pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
       attestation: 'preferred',
-      excludeCredentials: authConfig.passkeys.map(pk => ({
-        id: pk.id,
-        type: 'public-key'
-      }))
+      excludeCredentials: (authConfig.passkeys || []).map(pk => ({ id: pk.id, type: 'public-key' })),
     };
   } catch (err) {
     return { success: false, error: err.message };
   }
 }
 
-/**
- * Acción: confirmPasskey - Confirma registro de passkey
- * @param {object} payload - { username, password, attestation }
- * @return {object} Resultado
- */
-function actionConfirmPasskey(payload) {
+function actionConfirmPasskey(payload, ssId) {
   try {
-    const { username, password, attestation, sessionToken } = payload;
-    
-    let user = null;
-    let resolvedUsername = username;
-    
-    // If sessionToken provided, validate session and get user
-    if (sessionToken) {
-      const session = validateSession(sessionToken);
-      if (!session.valid) {
-        return { success: false, error: 'ERR_AUTH_INVALID: Sesión inválida o expirada' };
-      }
-      user = getUserById(session.userId);
-      resolvedUsername = user?.username || username;
-    } else {
-      // Fall back to password verification
-      user = getUserByUsername(username, getCurrentSsId());
-      if (!user) {
-        return { success: false, error: 'ERR_USER_NOT_FOUND' };
-      }
-      
-      // Get pending setup data
-      const pendingStr = PropertiesService.getUserProperties().getProperty('passkey_setup_' + username);
-      if (!pendingStr) {
-        return { success: false, error: 'ERR_PASSKEY_SETUP_EXPIRED: La configuración expiró' };
-      }
-      
-      const pending = JSON.parse(pendingStr);
-      
-      // Check expiry
-      if (new Date(pending.expiresAt) < new Date()) {
-        PropertiesService.getUserProperties().deleteProperty('passkey_setup_' + username);
-        return { success: false, error: 'ERR_PASSKEY_SETUP_EXPIRED: La configuración expiró' };
-      }
-      
-      // Verify password again
-      let authConfigVerify = { password_hash: '', passkeys: [] };
-      try {
-        authConfigVerify = parseAuthConfig(user.auth_config);
-      } catch (e) {}
-      
-      if (!verifyPassword(password, authConfigVerify.password_hash)) {
-        return { success: false, error: 'ERR_AUTH_INVALID: Contraseña incorrecta' };
-      }
-    }
-    
-    if (!user) {
-      return { success: false, error: 'ERR_USER_NOT_FOUND' };
-    }
-    
-    let authConfig = { password_hash: '', passkeys: [] };
-    try {
-      authConfig = parseAuthConfig(user.auth_config);
-    } catch (e) {}
-    
-    // Get pending setup data
-    const pendingStr = PropertiesService.getUserProperties().getProperty('passkey_setup_' + resolvedUsername);
-    if (!pendingStr) {
-      return { success: false, error: 'ERR_PASSKEY_SETUP_EXPIRED: La configuración expiró' };
-    }
-    
+    const { sessionToken, username, password, attestation } = payload;
+    const resolved = resolveUser(sessionToken, username, password, ssId);
+    if (resolved.error) return { success: false, error: resolved.error };
+
+    const pendingStr = PropertiesService.getUserProperties().getProperty('passkey_setup_' + resolved.username);
+    if (!pendingStr) return { success: false, error: 'ERR_PASSKEY_SETUP_EXPIRED: La configuración expiró' };
+
     const pending = JSON.parse(pendingStr);
-    
-    // Check expiry
     if (new Date(pending.expiresAt) < new Date()) {
-      PropertiesService.getUserProperties().deleteProperty('passkey_setup_' + resolvedUsername);
+      PropertiesService.getUserProperties().deleteProperty('passkey_setup_' + resolved.username);
       return { success: false, error: 'ERR_PASSKEY_SETUP_EXPIRED: La configuración expiró' };
     }
-    
-    // Parse attestation response from frontend
-    // attestation.response.clientDataJSON contains the client data
-    // attestation.response.attestationObject contains the authenticator data
-    
-    // For simplicity, we store the credential ID from the attestation
-    // In production, you'd verify the attestation properly
-    const credentialId = attestation.id;
-    const publicKey = attestation.response.publicKey || '';
-    
-    const newPasskey = {
-      id: credentialId,
-      public_key: publicKey,
-      device_name: pending.deviceName,
-      created_at: new Date().toISOString()
-    };
-    
-    // Add to passkeys array
+
+    const authConfig = parseAuthConfig(resolved.user.auth_config);
     authConfig.passkeys = authConfig.passkeys || [];
-    authConfig.passkeys.push(newPasskey);
-    
-    // Update user
-    updateUser(user.id, { auth_config: JSON.stringify(authConfig) }, getCurrentSsId());
-    
-    // Clear cache so AuthSettings gets fresh data
-    clearCache(ssId, 'Usuarios');
-    CacheService.getScriptCache().remove('u:un:' + username);
-    CacheService.getScriptCache().remove('u:id:' + user.id);
-    
-    // Clear pending
-    PropertiesService.getUserProperties().deleteProperty('passkey_setup_' + username);
-    
-    return {
-      success: true,
-      message: 'Passkey configurado exitosamente',
-      passkeyId: credentialId
-    };
+    authConfig.passkeys.push({
+      id: attestation.id,
+      public_key: attestation.response.publicKey || '',
+      device_name: pending.deviceName,
+      created_at: new Date().toISOString(),
+    });
+
+    authConfig.default_method = 'passkey';
+
+    updateUserAuthConfig(resolved.user, authConfig, ssId);
+    PropertiesService.getUserProperties().deleteProperty('passkey_setup_' + resolved.username);
+
+    return { success: true, message: 'Passkey configurado exitosamente', passkeyId: attestation.id };
   } catch (err) {
     return { success: false, error: err.message };
   }
 }
 
-/**
- * Acción: deletePasskey - Elimina un passkey
- * @param {object} session - Objeto de sesión validado
- * @param {object} payload - { passkeyId }
- * @return {object} Resultado
- */
-function actionDeletePasskey(session, payload) {
+function actionDeletePasskey(payload, ssId) {
   try {
-    const { passkeyId } = payload;
-    
-    const user = getUserById(session.userId, getCurrentSsId());
-    if (!user) {
-      return { success: false, error: 'ERR_USER_NOT_FOUND' };
-    }
-    
-    const username = user.username;
-    
-    // Get authConfig for the user
-    let authConfig = { passkeys: [] };
-    try {
-      authConfig = parseAuthConfig(user.auth_config);
-    } catch (e) {}
-    
-    // Remove passkey
-    const passkeyIndex = authConfig.passkeys.findIndex(pk => pk.id === passkeyId);
-    if (passkeyIndex === -1) {
-      return { success: false, error: 'ERR_PASSKEY_NOT_FOUND: Passkey no encontrado' };
-    }
-    
-    authConfig.passkeys.splice(passkeyIndex, 1);
-    
-    // Update user
-    updateUser(user.id, { auth_config: JSON.stringify(authConfig) }, getCurrentSsId());
-    
-    // Clear cache so AuthSettings gets fresh data
-    clearCache(ssId, 'Usuarios');
-    CacheService.getScriptCache().remove('u:un:' + username);
-    CacheService.getScriptCache().remove('u:id:' + user.id);
-    
+    const { sessionToken, passkeyId } = payload;
+    const session = validateSession(sessionToken, ssId);
+    if (!session.valid) return { success: false, error: 'ERR_AUTH_INVALID' };
+
+    const user = getUserById(session.userId, ssId);
+    if (!user) return { success: false, error: 'ERR_USER_NOT_FOUND' };
+
+    const authConfig = parseAuthConfig(user.auth_config);
+    const idx = (authConfig.passkeys || []).findIndex(pk => pk.id === passkeyId);
+    if (idx === -1) return { success: false, error: 'ERR_PASSKEY_NOT_FOUND: Passkey no encontrado' };
+
+    authConfig.passkeys.splice(idx, 1);
+    updateUserAuthConfig(user, authConfig, ssId);
     return { success: true, message: 'Passkey eliminado' };
   } catch (err) {
     return { success: false, error: err.message };
   }
 }
 
-/**
- * Acción: getAuthMethods - Obtiene métodos de auth habilitados
- * @param {object} session - Objeto de sesión validado
- * @return {object} Métodos disponibles
- */
-function actionGetAuthMethods(session) {
-  try {
-    const user = getUserById(session.userId, getCurrentSsId());
-    if (!user) {
-      return { success: false, error: 'ERR_USER_NOT_FOUND' };
-    }
-    
-    let authConfig = { default_method: 'passkey', passkeys: [], totp: { enabled: false }, email_otp: { enabled: false } };
-    try {
-      authConfig = parseAuthConfig(user.auth_config);
-    } catch (e) {}
-    
-    const methods = [];
-    if (authConfig.passkeys && authConfig.passkeys.length > 0) methods.push('passkey');
-    if (authConfig.totp && authConfig.totp.enabled) methods.push('totp');
-    if (authConfig.email_otp && authConfig.email_otp.enabled) methods.push('email_otp');
-    
-    return {
-      success: true,
-      methods: methods,
-      defaultMethod: authConfig.default_method,
-      passkeys: authConfig.passkeys || [],
-      totp: { enabled: authConfig.totp?.enabled || false },
-      email_otp: { enabled: authConfig.email_otp?.enabled || false },
-      recovery_enabled: authConfig.recovery_enabled ?? true
-    };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-}
-
-/**
- * Acción: updateAuthConfig - Actualiza configuración de autenticación
- * @param {object} session - Sesión del usuario
- * @param {object} payload - { default_method, recovery_enabled, email_otp_enabled }
- * @return {object} Respuesta
- */
-function actionUpdateAuthConfig(session, payload) {
-  try {
-    const user = getUserById(session.userId, getCurrentSsId());
-    if (!user) {
-      return { success: false, error: 'ERR_USER_NOT_FOUND' };
-    }
-    
-    let authConfig = { default_method: 'passkey', password_hash: '', recovery_enabled: true, email_otp: { enabled: false }, totp: { enabled: false }, passkeys: [] };
-    try {
-      authConfig = parseAuthConfig(user.auth_config);
-    } catch (e) {}
-    
-    if (payload.default_method !== undefined) {
-      authConfig.default_method = payload.default_method;
-    }
-    if (payload.recovery_enabled !== undefined) {
-      authConfig.recovery_enabled = payload.recovery_enabled;
-    }
-    if (payload.email_otp_enabled !== undefined) {
-      if (!authConfig.email_otp) authConfig.email_otp = {};
-      authConfig.email_otp.enabled = payload.email_otp_enabled;
-    }
-    
-    updateUser(session.userId, {
-      auth_config: JSON.stringify(authConfig)
-    });
-    
-    return { success: true };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-}
-
-/**
- * Acción: changePassword - Cambia la contraseña del usuario
- * @param {object} session - Sesión del usuario
- * @param {object} payload - { old_password, new_password }
- * @return {object} Respuesta
- */
-function actionChangePassword(session, payload) {
+function actionChangePassword(payload, sessionToken, ssId) {
   try {
     const { old_password, new_password } = payload;
-    
-    if (!old_password || !new_password) {
-      return { success: false, error: 'ERR_INVALID_CREDENTIALS: Contraseñas requeridas' };
-    }
-    
-    if (new_password.length < 8) {
-      return { success: false, error: 'ERR_WEAK_PASSWORD: La contraseña debe tener al menos 8 caracteres' };
-    }
-    
-    const user = getUserById(session.userId, getCurrentSsId());
-    if (!user) {
-      return { success: false, error: 'ERR_USER_NOT_FOUND' };
-    }
-    
-    let authConfig = { default_method: 'passkey', password_hash: '', recovery_enabled: true, email_otp: { enabled: false }, totp: { enabled: false }, passkeys: [] };
-    try {
-      authConfig = parseAuthConfig(user.auth_config);
-    } catch (e) {}
-    
+    const session = validateSession(sessionToken, ssId);
+    if (!session.valid) return { success: false, error: 'ERR_AUTH_INVALID' };
+
+    if (!old_password || !new_password) return { success: false, error: 'ERR_INVALID_CREDENTIALS: Contraseñas requeridas' };
+    if (new_password.length < 8) return { success: false, error: 'ERR_WEAK_PASSWORD: Mínimo 8 caracteres' };
+
+    const user = getUserById(session.userId, ssId);
+    if (!user) return { success: false, error: 'ERR_USER_NOT_FOUND' };
+
+    const authConfig = parseAuthConfig(user.auth_config);
     if (!verifyPassword(old_password, authConfig.password_hash)) {
-      updateUserMetadata(session.userId, { failed_login_attempts: (getUserMetadataValue(session.userId, 'failed_login_attempts') || 0) + 1 });
+      updateUserMetadata(session.userId, { failed_login_attempts: (getUserMetadataValue(session.userId, 'failed_login_attempts', ssId) || 0) + 1 }, ssId);
       return { success: false, error: 'ERR_INVALID_CREDENTIALS: Contraseña actual incorrecta' };
     }
-    
-    const newHash = hashPassword(new_password);
-    authConfig.password_hash = newHash;
-    
-    updateUser(session.userId, {
-      auth_config: JSON.stringify(authConfig)
-    });
-    
-    updateUserMetadata(session.userId, { 
-      last_password_change: new Date().toISOString(),
-      failed_login_attempts: 0
-    });
-    
-    logAccess(user.username, true, 'Contraseña cambiada');
-    
+
+    authConfig.password_hash = hashPassword(new_password);
+    updateUserAuthConfig(user, authConfig, ssId);
+    updateUserMetadata(session.userId, { last_password_change: new Date().toISOString(), failed_login_attempts: 0 }, ssId);
+    logAccess(user.username, true, 'Contraseña cambiada', ssId);
+
     return { success: true };
   } catch (err) {
     return { success: false, error: err.message };
   }
 }
 
-/**
- * Acción: deleteAccount - Elimina la cuenta del usuario
- * @param {object} session - Sesión del usuario
- * @param {object} payload - { password }
- * @return {object} Respuesta
- */
-function actionDeleteAccount(session, payload) {
+function actionConfirmPasswordReset(payload, sessionToken, ssId) {
   try {
-    const { password } = payload;
-    
-    if (!password) {
-      return { success: false, error: 'ERR_INVALID_CREDENTIALS: Contraseña requerida para eliminar cuenta' };
+    const { userId, token, newPassword } = payload;
+    if (!userId || !token || !newPassword) return { success: false, error: 'ERR_INVALID_REQUEST: Datos incompletos' };
+
+    const pwValidation = validatePasswordComplexity(newPassword);
+    if (!pwValidation.valid) return { success: false, error: 'ERR_PASSWORD_WEAK: ' + pwValidation.errors.join(', ') };
+
+    const stored = PropertiesService.getUserProperties().getProperty('pwd_reset_' + userId);
+    if (!stored) return { success: false, error: 'ERR_INVALID_TOKEN: Token inválido o expirado' };
+
+    const resetData = JSON.parse(stored);
+    if (resetData.token !== token) return { success: false, error: 'ERR_INVALID_TOKEN: Token inválido' };
+    if (new Date(resetData.expiresAt) < new Date()) {
+      PropertiesService.getUserProperties().deleteProperty('pwd_reset_' + userId);
+      return { success: false, error: 'ERR_TOKEN_EXPIRED: El token ha expirado' };
     }
-    
-    const user = getUserById(session.userId, getCurrentSsId());
-    if (!user) {
-      return { success: false, error: 'ERR_USER_NOT_FOUND' };
-    }
-    
-    let authConfig = { default_method: 'passkey', password_hash: '', recovery_enabled: true, email_otp: { enabled: false }, totp: { enabled: false }, passkeys: [] };
-    try {
-      authConfig = parseAuthConfig(user.auth_config);
-    } catch (e) {}
-    
-    if (!verifyPassword(password, authConfig.password_hash)) {
-      return { success: false, error: 'ERR_INVALID_CREDENTIALS: Contraseña incorrecta' };
-    }
-    
-    invalidateAllSessions(session.userId);
-    
-    deleteData('Usuarios', user.id, true);
-    
-    logAccess(user.username, true, 'Cuenta eliminada');
-    
-    return { success: true, message: 'Cuenta eliminada correctamente' };
+
+    const user = getUserById(userId, ssId);
+    if (!user) return { success: false, error: 'ERR_USER_NOT_FOUND' };
+
+    updateUserPassword(userId, newPassword, ssId);
+    invalidateAllUserSessions(userId);
+    PropertiesService.getUserProperties().deleteProperty('pwd_reset_' + userId);
+
+    try { sendPasswordChangedEmail(user.email || user.username, user.username); } catch (e) {}
+    logAccess(user.username, true, 'Contraseña restablecida', ssId);
+
+    return { success: true, message: 'Contraseña restablecida exitosamente' };
   } catch (err) {
     return { success: false, error: err.message };
   }
 }
 
-/**
- * Acción: requestOTP - Envía código por email
- * @param {object} payload - Datos del request
- * @return {object} Respuesta
- */
-function actionRequestOTP(payload) {
+function actionRequestPasswordReset(payload, ssId) {
   try {
-    // Skip rate limiting for verification emails (e.g., during registration)
-    const isVerification = payload.verifyOnly === true;
-    
-    const user = getUserByUsername(payload.username);
-    
-    if (!user) {
-      return { success: false, error: 'ERR_USER_NOT_FOUND', debug: { username: payload.username } };
-    }
-    
-    // Get email from user record
-    const email = user.email || payload.username;
-    
-    Logger.log('actionRequestOTP: username=' + payload.username + ', resolved email=' + email);
-    
-    // Rate limiting: max 5 requests per minute (skip for verification)
-    if (!isVerification) {
-      const rateLimit = checkRateLimit('otp:' + payload.username, 5, 60);
-      if (!rateLimit.allowed) {
-      return { 
-        success: false, 
-        error: 'ERR_RATE_LIMITED: Demasiados códigos solicitados. Intenta más tarde.',
-        retryAfter: rateLimit.resetIn,
-        debug: { username: payload.username, rateLimitKey: 'otp:' + payload.username }
-      };
-      }
-    }
-    
-    // Generar código OTP de 6 dígitos
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    
-    // Guardar código temporalmente
-    PropertiesService.getUserProperties().setProperty(
-      'otp_' + payload.username,
-      JSON.stringify({
-        code: code,
-        createdAt: new Date().toISOString(),
-        expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString() // 10 min
-      })
-    );
-    
-    // Enviar email con código OTP
-    try {
-      sendOTPEmail(email, code, 'Congregación');
-    } catch (emailErr) {
-      Logger.log('Error sending OTP email: ' + emailErr.message);
-      return { 
-        success: false, 
-        error: 'ERR_EMAIL_SEND: No se pudo enviar el código por email',
-        debug: { email: email, error: emailErr.message }
-      };
-    }
-    
-    logAccess(payload.username, true, 'OTP enviado por email');
-    
-    return { 
-      success: true, 
-      message: 'Código enviado por email',
-      debug: { email: email }
-    };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-}
+    if (!ssId) return { success: false, error: 'ERR_SS_ID_REQUIRED' };
+    const user = getUserByUsername(payload.username, ssId);
+    if (!user) return { success: true, message: 'Si el usuario existe, recibirás un email' };
 
-/**
- * Envía código OTP por email
- * @param {string} email - Email del destinatario
- * @param {string} code - Código OTP
- */
-function sendOTPEmail(email, code, congregationName) {
-  congregationName = congregationName || 'Congregación';
-  
-  Logger.log('sendOTPEmail: Attempting to send OTP to email: ' + email);
-  
-  try {
-    MailApp.sendEmail({
-      to: email,
-      subject: 'Código de verificación - Congre-Admin',
-      name: 'Congre-Admin',
-      body: 'Tu código de verificación es: ' + code + '\n\nEste código expira en 10 minutos.\n\nSi no solicitaste este código, puedes ignorar este email.'
-    });
-    Logger.log('sendOTPEmail: Email sent successfully');
-  } catch (emailErr) {
-    Logger.log('sendOTPEmail ERROR: ' + emailErr.message);
-    Logger.log('sendOTPEmail STACK: ' + emailErr.stack);
-    throw emailErr;
-  }
-}
-
-/**
- * Envía email de bienvenida
- * @param {string} email - Email del destinatario
- * @param {string} username - Nombre de usuario
- */
-function sendWelcomeEmail(email, username, congregationName) {
-  congregationName = congregationName || 'tu congregación';
-  
-  try {
-    
-    MailApp.sendEmail({
-      to: email,
-      subject: 'Bienvenido a Congre-Admin',
-      name: 'Congre-Admin',
-      body: 'Hola ' + username + ',\n\n' +
-        'Tu cuenta en Congre-Admin ha sido creada exitosamente.\n\n' +
-        ' Congregación: ' + congregationName + '\n' +
-        ' Usuario: ' + username + '\n\n' +
-        'Ya puedes iniciar sesión en la aplicación.\n\n' +
-        'Si tienes alguna pregunta, contacta al administrador del sistema.'
-    });
-  } catch (err) {
-    Logger.log('Error enviando email de bienvenida: ' + err.message);
-    throw new Error('ERR_EMAIL_SEND: No se pudo enviar el email de bienvenida');
-  }
-}
-
-/**
- * Verifica código OTP de email
- * @param {string} username - Username
- * @param {string} code - Código a verificar
- * @return {boolean} true si es válido
- */
-function verifyEmailOTP(username, code) {
-  try {
-    const stored = PropertiesService.getUserProperties().getProperty('otp_' + username);
-    if (!stored) return false;
-    
-    const otpData = JSON.parse(stored);
-    if (new Date(otpData.expiresAt) < new Date()) return false;
-    if (otpData.code !== code) return false;
-    
-    PropertiesService.getUserProperties().deleteProperty('otp_' + username);
-    return true;
-  } catch (e) {
-    return false;
-  }
-}
-
-/**
- * Acción: requestPasswordReset - Envía email para restablecer contraseña
- * @param {object} payload - Datos del request
- * @return {object} Respuesta
- */
-function actionRequestPasswordReset(payload) {
-  try {
-    const user = getUserByUsername(payload.username);
-    
-    if (!user) {
-      // Don't reveal if user exists or not
-      return { success: true, message: 'Si el usuario existe, recibirás un email' };
-    }
-    
-    // Generate reset token
     const resetToken = Utilities.getUuid();
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
-    
-    // Store token
     PropertiesService.getUserProperties().setProperty(
       'pwd_reset_' + user.id,
-      JSON.stringify({
-        token: resetToken,
-        expiresAt: expiresAt.toISOString()
-      })
+      JSON.stringify({ token: resetToken, expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString() })
     );
-    
-    // Send reset email
-    const email = user.email || payload.username;
+
     const resetLink = 'https://congre-admin.github.io/admin/reset-password?token=' + resetToken + '&userId=' + user.id;
-    
-    sendPasswordResetEmail(email, user.username, resetLink, 'tu congregación');
-    
-    logAccess(payload.username, true, 'Solicitud de reset de contraseña');
-    
+    sendPasswordResetEmail(user.email || payload.username, user.username, resetLink);
+    logAccess(payload.username, true, 'Solicitud de reset de contraseña', ssId);
+
     return { success: true, message: 'Si el usuario existe, recibirás un email con instrucciones' };
   } catch (err) {
     Logger.log('Error en requestPasswordReset: ' + err.message);
@@ -2326,346 +1382,234 @@ function actionRequestPasswordReset(payload) {
   }
 }
 
-/**
- * Acción: resetPassword - Restablece la contraseña
- * @param {object} payload - Datos del request
- * @return {object} Respuesta
- */
-function actionResetPassword(payload) {
+function actionRequestOTP(payload, ssId) {
   try {
-    const { userId, token, newPassword } = payload;
-    
-    if (!userId || !token || !newPassword) {
-      return { success: false, error: 'ERR_INVALID_REQUEST: Datos incompletos' };
+    if (!ssId) return { success: false, error: 'ERR_SS_ID_REQUIRED' };
+    const isVerification = payload.verifyOnly === true;
+    const user = getUserByUsername(payload.username, ssId);
+    if (!user) return { success: false, error: 'ERR_USER_NOT_FOUND', debug: { username: payload.username } };
+
+    const email = user.email || payload.username;
+    Logger.log('actionRequestOTP: username=' + payload.username + ', resolved email=' + email);
+
+    if (!isVerification) {
+      const rateLimit = checkRateLimit('otp:' + payload.username, 5, 60);
+      if (!rateLimit.allowed) {
+        return { success: false, error: 'ERR_RATE_LIMITED: Demasiados códigos solicitados.', retryAfter: rateLimit.resetIn };
+      }
     }
-    
-    // Validate password complexity
-    const pwValidation = validatePasswordComplexity(newPassword);
-    if (!pwValidation.valid) {
-      return { success: false, error: 'ERR_PASSWORD_WEAK: ' + pwValidation.errors.join(', ') };
+
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    PropertiesService.getUserProperties().setProperty(
+      'otp_' + payload.username,
+      JSON.stringify({ code, createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString() })
+    );
+
+    try { sendOTPEmail(email, code, 'Congregación'); } catch (e) {
+      Logger.log('Error sending OTP email: ' + e.message);
+      return { success: false, error: 'ERR_EMAIL_SEND: No se pudo enviar el código por email', debug: { email, error: e.message } };
     }
-    
-    // Get stored token
-    const stored = PropertiesService.getUserProperties().getProperty('pwd_reset_' + userId);
-    if (!stored) {
-      return { success: false, error: 'ERR_INVALID_TOKEN: Token inválido o expirado' };
-    }
-    
-    const resetData = JSON.parse(stored);
-    
-    // Verify token matches
-    if (resetData.token !== token) {
-      return { success: false, error: 'ERR_INVALID_TOKEN: Token inválido' };
-    }
-    
-    // Check expiration
-    if (new Date(resetData.expiresAt) < new Date()) {
-      PropertiesService.getUserProperties().deleteProperty('pwd_reset_' + userId);
-      return { success: false, error: 'ERR_TOKEN_EXPIRED: El token ha expirado' };
-    }
-    
-    // Get user and update password
-    const user = getUserById(userId);
-    if (!user) {
-      return { success: false, error: 'ERR_USER_NOT_FOUND' };
-    }
-    
-    // Update password
-    updateUserPassword(userId, newPassword);
-    
-    // Invalidate all sessions for this user
-    invalidateAllUserSessions(userId);
-    
-    // Delete reset token
-    PropertiesService.getUserProperties().deleteProperty('pwd_reset_' + userId);
-    
-    // Send confirmation email
-    const email = user.email || user.username;
-    sendPasswordChangedEmail(email, user.username, 'tu congregación');
-    
-    logAccess(user.username, true, 'Contraseña restablecida');
-    
-    return { success: true, message: 'Contraseña restablecida exitosamente' };
+
+    logAccess(payload.username, true, 'OTP enviado por email', ssId);
+    return { success: true, message: 'Código enviado por email', debug: { email } };
   } catch (err) {
-    Logger.log('Error en resetPassword: ' + err.message);
     return { success: false, error: err.message };
   }
 }
 
-/**
- * Envía email de restablecimiento de contraseña
- */
-function sendPasswordResetEmail(email, username, resetLink, congregationName) {
-  congregationName = congregationName || 'tu congregación';
-  
+function actionGetAuthMethods(payload, sessionToken, ssId) {
   try {
-    
-    MailApp.sendEmail({
-      to: email,
-      subject: 'Restablecer contraseña - Congre-Admin',
-      name: 'Congre-Admin',
-      body: 'Hola ' + username + ',\n\n' +
-        'Has solicitado restablecer tu contraseña.\n\n' +
-        'Haz clic en el siguiente enlace para crear una nueva contraseña:\n' +
-        resetLink + '\n\n' +
-        'Este enlace expirará en 1 hora.\n\n' +
-        'Si no solicitaste este cambio, puedes ignorar este email. Tu contraseña permanecerá sin cambios.'
-    });
-  } catch (err) {
-    Logger.log('Error enviando email de reset: ' + err.message);
-    throw new Error('ERR_EMAIL_SEND: No se pudo enviar el email');
-  }
-}
+    const session = validateSession(sessionToken, ssId);
+    if (!session.valid) return { success: false, error: 'ERR_AUTH_INVALID' };
 
-/**
- * Envía email de confirmación de cambio de contraseña
- */
-function sendPasswordChangedEmail(email, username, congregationName) {
-  congregationName = congregationName || 'tu congregación';
-  
-  try {
-    
-    MailApp.sendEmail({
-      to: email,
-      subject: 'Contraseña actualizada - Congre-Admin',
-      name: 'Congre-Admin',
-      body: 'Hola ' + username + ',\n\n' +
-        'Tu contraseña ha sido actualizada exitosamente.\n\n' +
-        'Si no realizaste este cambio, contacta al administrador inmediatamente.'
-    });
-  } catch (err) {
-    Logger.log('Error enviando email de confirmación: ' + err.message);
-  }
-}
+    const user = getUserById(session.userId, ssId);
+    if (!user) return { success: false, error: 'ERR_USER_NOT_FOUND' };
 
-const BASE32_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    const authConfig = parseAuthConfig(user.auth_config);
+    const methods = getEnabledMethods(authConfig);
 
-/**
- * Genera un secreto TOTP aleatorio en base32
- */
-function generateBase32Secret(size) {
-  let secret = '';
-  const randomBase = Utilities.getUuid() + Utilities.getUuid();
-  for (let i = 0; i < size; i++) {
-    const charCode = randomBase.charCodeAt(i % randomBase.length);
-    secret += BASE32_CHARS.charAt(charCode % 32);
-  }
-  return secret;
-}
-
-/**
- * Genera un secreto TOTP para un usuario
- * @param {string} username - Nombre de usuario
- * @return {object} Objeto con secret y otpURI
- */
-function generateTOTPSecret(username) {
-  try {
-    const secret = generateBase32Secret(20);
-    const issuer = 'CongreAdmin';
-    const otpURI = 'otpauth://totp/' + encodeURIComponent(issuer + ':' + username) + 
-                   '?secret=' + secret + 
-                   '&issuer=' + encodeURIComponent(issuer) + 
-                   '&algorithm=SHA1&digits=6&period=30';
-    
     return {
       success: true,
-      secret: secret,
-      otpURI: otpURI
+      methods: methods,
+      defaultMethod: authConfig.default_method,
+      passkeys: authConfig.passkeys || [],
+      totp: { enabled: authConfig.totp?.enabled || false },
+      email_otp: { enabled: authConfig.email_otp?.enabled || false },
+      recovery_enabled: authConfig.recovery_enabled ?? true,
     };
   } catch (err) {
     return { success: false, error: err.message };
   }
 }
 
-/**
- * Convierte base32 a hex - implementación probada
- */
-function base32tohex(base32) {
-  const base32chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-  const hexChars = "0123456789abcdef";
-  let bits = "";
-  let hex = "";
-
-  for (let i = 0; i < base32.length; i++) {
-    const val = base32chars.indexOf(base32[i].toUpperCase());
-    if (val === -1) continue;
-    bits += val.toString(2).padStart(5, "0");
-  }
-
-  for (let i = 0; i < bits.length; i += 4) {
-    const chunk = bits.substr(i, 4);
-    const decimal = parseInt(chunk, 2);
-    hex += hexChars[decimal];
-  }
-  return hex;
-}
-
-/**
- * Genera código TOTP - implementación probada
- */
-function generateTOTP(secret, timeStepSeconds, digits) {
-  const str = base32tohex(secret);
-  const bytes = new Uint8Array(str.length / 2);
-  for (let i = 0; i < str.length; i += 2) {
-    bytes[i / 2] = parseInt(str.substr(i, 2), 16);
-  }
-
-  const timestamp = Math.floor(new Date().getTime() / 1000);
-  let counter = Math.floor(timestamp / timeStepSeconds);
-
-  const counterBytes = new Uint8Array(8);
-  for (let i = 7; i >= 0; i--) {
-    counterBytes[i] = counter & 0xff;
-    counter = counter >>> 8;
-  }
-
-  const hmacDigest = Utilities.computeHmacSignature(
-    Utilities.MacAlgorithm.HMAC_SHA_1,
-    counterBytes,
-    bytes
-  );
-
-  const offset = hmacDigest[hmacDigest.length - 1] & 0xf;
-  const truncatedHash = (
-    ((hmacDigest[offset] & 0x7f) << 24) |
-    ((hmacDigest[offset + 1] & 0xff) << 16) |
-    ((hmacDigest[offset + 2] & 0xff) << 8) |
-    (hmacDigest[offset + 3] & 0xff)
-  ) % Math.pow(10, digits);
-
-  return truncatedHash.toString().padStart(digits, '0');
-}
-
-/**
- * Genera código TOTP - implementación probada
- */
-function generateTOTP(secret, timeStepSeconds, digits) {
-  const timestamp = Math.floor(new Date().getTime() / 1000);
-  return generateTOTPAtTime(secret, timestamp, timeStepSeconds, digits);
-}
-
-/**
- * Genera código TOTP en un timestamp específico
- */
-function generateTOTPAtTime(secret, timestamp, timeStepSeconds, digits) {
-  const str = base32tohex(secret);
-  const bytes = new Uint8Array(str.length / 2);
-  for (let i = 0; i < str.length; i += 2) {
-    bytes[i / 2] = parseInt(str.substr(i, 2), 16);
-  }
-
-  let counter = Math.floor(timestamp / timeStepSeconds);
-
-  const counterBytes = new Uint8Array(8);
-  for (let i = 7; i >= 0; i--) {
-    counterBytes[i] = counter & 0xff;
-    counter = counter >>> 8;
-  }
-
-  const hmacDigest = Utilities.computeHmacSignature(
-    Utilities.MacAlgorithm.HMAC_SHA_1,
-    counterBytes,
-    bytes
-  );
-
-  const offset = hmacDigest[hmacDigest.length - 1] & 0xf;
-  const truncatedHash = (
-    ((hmacDigest[offset] & 0x7f) << 24) |
-    ((hmacDigest[offset + 1] & 0xff) << 16) |
-    ((hmacDigest[offset + 2] & 0xff) << 8) |
-    (hmacDigest[offset + 3] & 0xff)
-  ) % Math.pow(10, digits);
-
-  return truncatedHash.toString().padStart(digits, '0');
-}
-
-/**
- * Verifica código TOTP - implementación probada
- * @param {string} secret - Secreto TOTP en base32
- * @param {string} code - Código a verificar
- * @return {boolean} true si es válido
- */
-function verifyTOTP(secret, code) {
-  if (!secret || !code) return false;
-  if (code.length !== 6 || !/^\d+$/.test(code)) return false;
-  
-  const timestamp = Math.floor(new Date().getTime() / 1000);
-  const windowSize = 1;
-  
-  for (let i = -windowSize; i <= windowSize; i++) {
-    const testTimestamp = timestamp + (i * 30);
-    const expectedTOTP = generateTOTPAtTime(secret, testTimestamp, 30, 6);
-    if (expectedTOTP === code) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
- * Registra acceso en log
- * @param {string} username - Usuario
- * @param {boolean} success - Si fue exitoso
- * @param {string} details - Detalles
- */
-function logAccess(username, success, details) {
+function actionSetDefaultAuthMethod(payload, sessionToken, ssId) {
   try {
-    const ssId = getCoreSpreadsheetId();
-    if (!ssId) return;
-    
-    const ss = getCoreSpreadsheet();
-    let sheet = ss.getSheetByName('Logs_Accesos');
-    
-    if (!sheet) {
-      sheet = ss.insertSheet('Logs_Accesos');
-      sheet.appendRow(['timestamp', 'username', 'success', 'details', 'ip']);
-    }
-    
-    sheet.appendRow([
-      new Date().toISOString(),
-      username,
-      success ? 'YES' : 'NO',
-      details,
-      'SERVER'
-    ]);
+    const { method } = payload;
+    const session = validateSession(sessionToken, ssId);
+    if (!session.valid) return { success: false, error: 'ERR_AUTH_INVALID' };
+
+    const user = getUserById(session.userId, ssId);
+    if (!user) return { success: false, error: 'ERR_USER_NOT_FOUND' };
+
+    const authConfig = parseAuthConfig(user.auth_config);
+    authConfig.default_method = method;
+    updateUserAuthConfig(user, authConfig, ssId);
+
+    return { success: true };
   } catch (err) {
-    Logger.log('Error guardando log: ' + err.message);
+    return { success: false, error: err.message };
   }
 }
 
 // ================================================================= //
-// CONTROL DE PERMISOS RBAC
-// Fase 1.3: Implementación de permisos
+// SESSION MANAGEMENT
 // ================================================================= //
 
-/**
- * Obtiene la hoja de Perfiles
- */
-function getPerfilesSheet(ssId) {
-  const ss = SpreadsheetApp.openById(ssId);
-  return ss.getSheetByName('Perfiles');
+function generateSessionToken(userId, ssId) {
+  const user = getUserById(userId, ssId);
+  if (!user) throw new Error('ERR_USER_NOT_FOUND');
+
+  const token = Utilities.getUuid() + '_' + Utilities.getUuid();
+  const expiresAt = new Date(Date.now() + SESSION_TTL * 1000).toISOString();
+
+  const sessions = getUserSessions(userId);
+  sessions.push({ token, userId, ssId, createdAt: new Date().toISOString(), expiresAt });
+  PropertiesService.getUserProperties().setProperty('sessions_' + userId, JSON.stringify(sessions));
+  _addToSessionIndex(token, userId, expiresAt);
+
+  return { sessionToken: token, expiresAt, userId };
 }
 
-/**
- * Obtiene un perfil por ID
- * @param {string} perfilId - ID del perfil
- * @param {string} ssId - ID del spreadsheet
- * @return {object|null} Perfil encontrado o null
- */
+function getUserSessions(userId) {
+  const stored = PropertiesService.getUserProperties().getProperty('sessions_' + userId);
+  return stored ? JSON.parse(stored) : [];
+}
+
+let _sessionIndex = null;
+
+function _loadSessionIndex() {
+  if (_sessionIndex) return _sessionIndex;
+  const stored = CacheService.getScriptCache().get('session_index');
+  _sessionIndex = stored ? JSON.parse(stored) : {};
+  return _sessionIndex;
+}
+
+function _saveSessionIndex() {
+  if (!_sessionIndex) return;
+  try { CacheService.getScriptCache().put('session_index', JSON.stringify(_sessionIndex), SESSION_TTL); } catch (e) {}
+}
+
+function _addToSessionIndex(token, userId, expiresAt) {
+  const idx = _loadSessionIndex();
+  idx[token] = { userId, expiresAt };
+  _saveSessionIndex();
+}
+
+function _removeFromSessionIndex(token) {
+  const idx = _loadSessionIndex();
+  delete idx[token];
+  _saveSessionIndex();
+}
+
+function _findSessionInProperties(token) {
+  const props = PropertiesService.getUserProperties();
+  for (const key of (props.getKeys() || [])) {
+    if (!key.startsWith('sessions_')) continue;
+    const sessions = JSON.parse(props.getProperty(key) || '[]');
+    for (const s of sessions) {
+      if (s.token === token && new Date(s.expiresAt) > new Date()) return s;
+    }
+  }
+  return null;
+}
+
+function validateSession(token, ssId) {
+  const idx = _loadSessionIndex();
+  let session = idx[token];
+
+  if (!session) {
+    session = _findSessionInProperties(token);
+    if (session) { idx[token] = session; _saveSessionIndex(); }
+  }
+
+  if (session && new Date(session.expiresAt) > new Date()) {
+    const user = ssId ? getUserById(session.userId, ssId) : null;
+    return { valid: true, userId: session.userId, username: user?.username, expiresAt: session.expiresAt };
+  }
+
+  if (session) { delete idx[token]; _saveSessionIndex(); }
+  return { valid: false };
+}
+
+function invalidateSession(token) {
+  _removeFromSessionIndex(token);
+  const props = PropertiesService.getUserProperties();
+  for (const key of (props.getKeys() || [])) {
+    if (!key.startsWith('sessions_')) continue;
+    const sessions = JSON.parse(props.getProperty(key) || '[]');
+    const filtered = sessions.filter(s => s.token !== token);
+    if (filtered.length !== sessions.length) props.setProperty(key, JSON.stringify(filtered));
+  }
+}
+
+function refreshSessionToken(token) {
+  const props = PropertiesService.getUserProperties();
+  for (const key of (props.getKeys() || [])) {
+    if (!key.startsWith('sessions_')) continue;
+    const sessions = JSON.parse(props.getProperty(key) || '[]');
+    const idx = sessions.findIndex(s => s.token === token);
+    if (idx === -1) continue;
+
+    const session = sessions[idx];
+    if (new Date(session.expiresAt) < new Date()) return { success: false, error: 'ERR_SESSION_EXPIRED' };
+
+    const timeLeft = new Date(session.expiresAt) - new Date();
+    if (timeLeft > 60 * 60 * 1000) {
+      return { success: true, message: 'Sesión válida', expiresAt: session.expiresAt, needsRefresh: false };
+    }
+
+    const newExpiresAt = new Date(Date.now() + SESSION_TTL * 1000).toISOString();
+    sessions[idx].expiresAt = newExpiresAt;
+    sessions[idx].lastRefresh = new Date().toISOString();
+    props.setProperty(key, JSON.stringify(sessions));
+    _addToSessionIndex(token, session.userId, newExpiresAt);
+
+    return { success: true, expiresAt: newExpiresAt, needsRefresh: false };
+  }
+  return { success: false, error: 'ERR_SESSION_NOT_FOUND' };
+}
+
+function getActiveSessions(userId) {
+  const now = new Date();
+  return getUserSessions(userId)
+    .filter(s => new Date(s.expiresAt) > now)
+    .map(s => ({ token: s.token, createdAt: s.createdAt, expiresAt: s.expiresAt, lastRefresh: s.lastRefresh || null }));
+}
+
+function invalidateAllSessions(userId) {
+  PropertiesService.getUserProperties().deleteProperty('sessions_' + userId);
+  const idx = _loadSessionIndex();
+  Object.keys(idx).filter(k => idx[k].userId === userId).forEach(k => delete idx[k]);
+  _saveSessionIndex();
+  return { success: true, message: 'Todas las sesiones cerradas' };
+}
+
+// ================================================================= //
+// RBAC — ROLE-BASED ACCESS CONTROL
+// ================================================================= //
+
+function getPerfilesSheet(ssId) {
+  return SpreadsheetApp.openById(ssId).getSheetByName('Perfiles');
+}
+
 function getPerfilById(perfilId, ssId) {
   return getCached('p:id:' + perfilId, () => {
     const sheet = getPerfilesSheet(ssId);
     if (!sheet) return null;
-    const data = getSheetData(sheet);
-    return data.find(row => row.id === perfilId) || null;
+    return getSheetData(sheet).find(row => row.id === perfilId) || null;
   });
 }
 
-/**
- * Obtiene todos los perfiles (con caché)
- * @param {string} ssId - ID del spreadsheet
- * @return {array} Lista de perfiles
- */
 function getAllPerfiles(ssId) {
   return getCached('p:all', () => {
     const sheet = getPerfilesSheet(ssId);
@@ -2674,380 +1618,461 @@ function getAllPerfiles(ssId) {
   });
 }
 
-/**
- * Normaliza el campo permisos (string JSON → objeto)
- * @param {string|object} permisos - Permisos en cualquier formato
- * @return {object} Permisos como objeto
- */
 function normalizePermisos(permisos) {
   if (!permisos) return {};
   if (typeof permisos === 'object') return permisos;
-  if (typeof permisos === 'string') {
-    try { return JSON.parse(permisos); } catch(e) { return {}; }
-  }
+  if (typeof permisos === 'string') { try { return JSON.parse(permisos); } catch (e) { return {}; } }
   return {};
 }
 
 /**
- * Verifica rate limiting para una acción
- * @param {string} identifier - Identificador único (IP, username, etc)
- * @param {number} maxRequests - Máximo de requests permitidos
- * @param {number} windowSeconds - Ventana de tiempo en segundos
- * @return {object} { allowed: boolean, remaining: number, resetIn: number }
+ * Resolves a permission from flat or granular format.
+ * Flat: "RW" → returns "RW"
+ * Granular: {"configuracion":"RW","*":"R"} → returns permiso[key] or permiso['*']
  */
+function resolvePermission(modulePerm, sheetName) {
+  if (!modulePerm) return null;
+  if (typeof modulePerm === 'string') return modulePerm;
+  if (typeof modulePerm === 'object') {
+    var key = sheetName.toLowerCase();
+    return modulePerm[key] || modulePerm['*'] || null;
+  }
+  return null;
+}
+
+function getPermiso(perfilId, modulo, ssId) {
+  const perfil = getPerfilById(perfilId, ssId);
+  if (!perfil) return null;
+  return normalizePermisos(perfil.permisos)[modulo] || null;
+}
+
+function validarPermiso(userId, modulo, accion, ssId, sheetName) {
+  const user = getUserById(userId, ssId);
+  if (!user) return false;
+  const modulePerm = getPermiso(user.perfilId, modulo, ssId);
+  if (!modulePerm) return false;
+  const permiso = resolvePermission(modulePerm, sheetName || '');
+  if (!permiso) return false;
+  const map = { read: ['R', 'RW'], write: ['W', 'RW'], delete: ['RW'] };
+  return (map[accion] || []).includes(permiso);
+}
+
+function getUserPermisos(userId, ssId) {
+  const user = getUserById(userId, ssId);
+  if (!user) return {};
+  const perfil = getPerfilById(user.perfilId, ssId);
+  if (!perfil) return {};
+  return normalizePermisos(perfil.permisos);
+}
+
+function checkPermission(session, action, sheetName, ssId, module) {
+  if (!session || !session.valid) return { allowed: false, error: 'ERR_AUTH_INVALID' };
+  if (!validarPermiso(session.userId, module || sheetName, action, ssId, sheetName)) {
+    logAccess(session.username, false, 'Permiso denegado: ' + action + ' en ' + sheetName, ssId);
+    return { allowed: false, error: 'ERR_PERMISSION_DENIED' };
+  }
+  return { allowed: true };
+}
+
+// ================================================================= //
+// RATE LIMITING
+// ================================================================= //
+
 function checkRateLimit(identifier, maxRequests, windowSeconds) {
   const cache = CacheService.getScriptCache();
   const key = 'rl:' + identifier;
   const current = parseInt(cache.get(key) || '0', 10);
-  
-  if (current >= maxRequests) {
-    return { allowed: false, remaining: 0, resetIn: windowSeconds };
-  }
-  
+  if (current >= maxRequests) return { allowed: false, remaining: 0, resetIn: windowSeconds };
   cache.put(key, (current + 1).toString(), windowSeconds);
   return { allowed: true, remaining: maxRequests - current - 1, resetIn: windowSeconds };
 }
 
-function getCached(key, fetchFn) {
-  const cache = CacheService.getScriptCache();
-  const cached = cache.get(key);
-  if (cached) return JSON.parse(cached);
-  
-  const data = fetchFn();
-  if (data) cache.put(key, JSON.stringify(data), CACHE_TTL_LOOKUP);
-  return data;
+// ================================================================= //
+// TOTP
+// ================================================================= //
+
+const BASE32_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+
+function generateBase32Secret(size) {
+  let secret = '';
+  const randomBase = Utilities.getUuid() + Utilities.getUuid();
+  for (let i = 0; i < size; i++) secret += BASE32_CHARS.charAt(randomBase.charCodeAt(i % randomBase.length) % 32);
+  return secret;
 }
 
-function invalidateCache(pattern) {
-  // CacheService.getScriptCache() no tiene getAll() en Google Apps Script
-  // El cache expira automáticamente según el TTL definido (CACHE_TTL_DATA = 10 min)
-  // Esta función queda aquí por compatibilidad pero no hace invalidación por patrón
-  Logger.log('Cache invalidation requested for pattern: ' + pattern + ' (no-op - cache expires automatically)');
-}
-
-/**
- * Obtiene el permiso de un perfil para un módulo
- * @param {string} perfilId - ID del perfil
- * @param {string} modulo - Nombre del módulo
- * @param {string} ssId - ID del spreadsheet
- * @return {string} Permiso (RW, R, W, null)
- */
-function getPermiso(perfilId, modulo, ssId) {
-  const perfil = getPerfilById(perfilId, ssId);
-  if (!perfil) return null;
-  
-  const permisos = normalizePermisos(perfil.permisos);
-  return permisos[modulo] || null;
-}
-
-/**
- * Valida si un usuario tiene permiso para una acción
- * @param {string} userId - ID del usuario
- * @param {string} modulo - Nombre del módulo
- * @param {string} accion - Acción (read, write, delete)
- * @param {string} ssId - ID del spreadsheet
- * @return {boolean} true si tiene permiso
- */
-function validarPermiso(userId, modulo, accion, ssId) {
-  const user = getUserById(userId, ssId);
-  if (!user) return false;
-  
-  const permiso = getPermiso(user.perfilId, modulo, ssId);
-  if (!permiso) return false;
-  
-  // Mapeo de acciones a permisos
-  const permisosAccion = {
-    'read': ['R', 'RW'],
-    'write': ['W', 'RW'],
-    'delete': ['RW']
-  };
-  
-  const permisosPermitidos = permisosAccion[accion] || [];
-  return permisosPermitidos.includes(permiso);
-}
-
-/**
- * Obtiene todos los permisos de un usuario
- * @param {string} userId - ID del usuario
- * @param {string} ssId - ID del spreadsheet
- * @return {object} Objeto con permisos por módulo
- */
-function getUserPermisos(userId, ssId) {
-  const user = getUserById(userId, ssId);
-  if (!user) return {};
-  
-  const perfil = getPerfilById(user.perfilId, ssId);
-  if (!perfil) return {};
-  
-  return normalizePermisos(perfil.permisos);
-}
-
-/**
- * Valida permisos de usuario para un módulo
- * @param {object} session - Sesión validada
- * @param {string} action - Acción (read, write, delete)
- * @param {string} modulo - Módulo objetivo
- * @param {string} ssId - ID del spreadsheet
- * @return {object} Resultado de validación
- */
-function checkPermission(session, action, modulo, ssId) {
-  if (!session || !session.valid) {
-    return { allowed: false, error: 'ERR_AUTH_INVALID' };
-  }
-  
-  const tienePermiso = validarPermiso(session.userId, modulo, action, ssId);
-  
-  if (!tienePermiso) {
-    logAccess(session.username, false, `Permiso denegado: ${action} en ${modulo}`);
-    return { allowed: false, error: 'ERR_PERMISSION_DENIED' };
-  }
-  
-  return { allowed: true };
-}
-  
-  const tienePermiso = validarPermiso(session.userId, modulo, action);
-  
-  if (!tienePermiso) {
-    logAccess(session.username, false, `Permiso denegado: ${action} en ${modulo}`);
-    return { allowed: false, error: 'ERR_PERMISSION_DENIED' };
-  }
-  
-  return { allowed: true };
-}
-
-/**
- * Acción: getCongregacion - Obtiene información de la congregación desde GSheet
- */
-function actionGetCongregacion(ssId) {
+function generateTOTPSecret(username) {
   try {
-    if (!ssId) {
-      return { success: false, error: 'ERR_SS_ID_REQUIRED' };
-    }
-    
-    const ss = SpreadsheetApp.openById(ssId);
-    const configSheet = ss.getSheetByName('Configuracion');
-    
-    if (!configSheet) {
-      return { success: true, congregacion: { nombre: '', numero: '' } };
-    }
-    
-    const configData = getCachedSheetData(ss, 'Configuracion');
-    const getValue = (key) => configData.find(c => c.clave === key)?.valor;
-    
-    return { 
-      success: true, 
-      congregacion: {
-        nombre: getValue('nombre_congregacion') || getValue('nombre_mostrar') || '',
-        numero: getValue('numero_congregacion') || '',
-        nombreMostrar: getValue('nombre_mostrar') || '',
-        idioma: getValue('idioma_predeterminado') || 'es',
-        zonaHoraria: getValue('zona_horaria') || 'America/New_York'
-      } 
+    const secret = generateBase32Secret(20);
+    const issuer = 'CongreAdmin';
+    return {
+      success: true,
+      secret,
+      otpURI: 'otpauth://totp/' + encodeURIComponent(issuer + ':' + username) + '?secret=' + secret + '&issuer=' + encodeURIComponent(issuer) + '&algorithm=SHA1&digits=6&period=30',
     };
   } catch (err) {
     return { success: false, error: err.message };
   }
 }
 
-/**
- * Acción: getPermisos - Obtiene permisos de un usuario
- */
-function actionGetPermisos(payload) {
-  try {
-    const permisos = getUserPermisos(payload.userId);
-    return { success: true, permisos: permisos };
-  } catch (err) {
-    return { success: false, error: err.message };
+function base32tohex(base32) {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let bits = '';
+  for (let i = 0; i < base32.length; i++) {
+    const val = chars.indexOf(base32[i].toUpperCase());
+    if (val !== -1) bits += val.toString(2).padStart(5, '0');
   }
+  let hex = '';
+  for (let i = 0; i < bits.length; i += 4) hex += '0123456789abcdef'[parseInt(bits.substr(i, 4), 2)];
+  return hex;
 }
 
-/**
- * Acción: checkPermission - Valida permiso para acción
- */
-function actionCheckPermission(payload) {
-  try {
-    const result = checkPermission(
-      { valid: true, userId: payload.userId, username: payload.username },
-      payload.action,
-      payload.modulo,
-      payload.ssId
-    );
-    return result;
-  } catch (err) {
-    return { allowed: false, error: err.message };
-  }
+function generateTOTP(secret, timeStepSeconds, digits) {
+  return generateTOTPAtTime(secret, Math.floor(Date.now() / 1000), timeStepSeconds, digits);
 }
 
-/**
- * Acción: logout - Cierra sesión
- * @param {object} payload - Token de sesión
- * @return {object} Respuesta
- */
-function actionLogout(payload) {
-  try {
-    invalidateSession(payload.sessionToken);
-    return { success: true };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
+function generateTOTPAtTime(secret, timestamp, timeStepSeconds, digits) {
+  const hex = base32tohex(secret);
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
+
+  let counter = Math.floor(timestamp / timeStepSeconds);
+  const counterBytes = new Uint8Array(8);
+  for (let i = 7; i >= 0; i--) { counterBytes[i] = counter & 0xff; counter = counter >>> 8; }
+
+  const hmac = Utilities.computeHmacSignature(Utilities.MacAlgorithm.HMAC_SHA_1, counterBytes, bytes);
+  const offset = hmac[hmac.length - 1] & 0xf;
+  const truncated = (((hmac[offset] & 0x7f) << 24) | ((hmac[offset + 1] & 0xff) << 16) | ((hmac[offset + 2] & 0xff) << 8) | (hmac[offset + 3] & 0xff)) % Math.pow(10, digits);
+  return truncated.toString().padStart(digits, '0');
 }
 
-/**
- * Acción: refreshSession - Renueva token de sesión
- * @param {object} payload - Token de sesión
- * @return {object} Respuesta
- */
-function actionRefreshSession(payload) {
-  try {
-    const result = refreshSessionToken(payload.sessionToken);
-    return result;
-  } catch (err) {
-    return { success: false, error: err.message };
+function verifyTOTP(secret, code) {
+  if (!secret || !code || code.length !== 6 || !/^\d+$/.test(code)) return false;
+  const timestamp = Math.floor(Date.now() / 1000);
+  for (let i = -1; i <= 1; i++) {
+    if (generateTOTPAtTime(secret, timestamp + i * 30, 30, 6) === code) return true;
   }
+  return false;
 }
 
 // ================================================================= //
-// FUNCIONES DE INSTALACIÓN
-// Setup: createSpreadsheet, initCoreTables, seedPerfiles
+// EMAIL
 // ================================================================= //
 
-/**
- * Genera nombre de spreadsheet para módulo
- * Formato: CongreAdmin-[nombre]-[modulo]
- * @param {string} modulo - Nombre del módulo
- * @param {string} nombre - Nombre de la congregación
- * @return {string} Nombre formateado
- */
-function getModuleSpreadsheetName(modulo, nombre) {
-  nombre = nombre || 'SinNombre';
-  const nombreLimpio = nombre.replace(/[^a-zA-Z0-9]/g, '');
-  return `CongreAdmin-${nombreLimpio}-${modulo}`;
+function sendOTPEmail(email, code, congregationName) {
+  MailApp.sendEmail({ to: email, subject: 'Código de verificación - Congre-Admin', name: 'Congre-Admin', body: 'Tu código de verificación es: ' + code + '\n\nEste código expira en 10 minutos.\n\nSi no solicitaste este código, puedes ignorar este email.' });
 }
 
-/**
- * Crea un nuevo Google Spreadsheet
- * @param {string} name - Nombre del spreadsheet
- * @return {object} ID y URL del spreadsheet creado
- */
+function sendWelcomeEmail(email, username, congregationName) {
+  MailApp.sendEmail({ to: email, subject: 'Bienvenido a Congre-Admin', name: 'Congre-Admin', body: 'Hola ' + username + ',\n\nTu cuenta en Congre-Admin ha sido creada exitosamente.\n\nCongregación: ' + congregationName + '\nUsuario: ' + username + '\n\nYa puedes iniciar sesión en la aplicación.' });
+}
+
+function sendPasswordResetEmail(email, username, resetLink) {
+  MailApp.sendEmail({ to: email, subject: 'Restablecer contraseña - Congre-Admin', name: 'Congre-Admin', body: 'Hola ' + username + ',\n\nHas solicitado restablecer tu contraseña.\n\nEnlace para crear una nueva contraseña:\n' + resetLink + '\n\nEste enlace expirará en 1 hora.\n\nSi no solicitaste este cambio, ignora este email.' });
+}
+
+function sendPasswordChangedEmail(email, username) {
+  MailApp.sendEmail({ to: email, subject: 'Contraseña actualizada - Congre-Admin', name: 'Congre-Admin', body: 'Hola ' + username + ',\n\nTu contraseña ha sido actualizada exitosamente.\n\nSi no realizaste este cambio, contacta al administrador inmediatamente.' });
+}
+
+function verifyEmailOTP(username, code) {
+  try {
+    const stored = PropertiesService.getUserProperties().getProperty('otp_' + username);
+    if (!stored) return false;
+    const otpData = JSON.parse(stored);
+    if (new Date(otpData.expiresAt) < new Date() || otpData.code !== code) return false;
+    PropertiesService.getUserProperties().deleteProperty('otp_' + username);
+    return true;
+  } catch (e) { return false; }
+}
+
+// ================================================================= //
+// AUDIT LOGGING
+// ================================================================= //
+
+function logAccess(username, success, details, ssId) {
+  try {
+    if (!ssId) return;
+    const ss = SpreadsheetApp.openById(ssId);
+    let sheet = ss.getSheetByName('Logs_Accesos');
+    if (!sheet) {
+      sheet = ss.insertSheet('Logs_Accesos');
+      sheet.appendRow(['timestamp', 'username', 'success', 'details', 'ip']);
+    }
+    sheet.appendRow([new Date().toISOString(), username, success ? 'YES' : 'NO', details, 'SERVER']);
+  } catch (err) { Logger.log('Error guardando log: ' + err.message); }
+}
+
+// ================================================================= //
+// INSTALLATION
+// ================================================================= //
+
 function createSpreadsheet(name) {
   try {
     const ss = SpreadsheetApp.create(name || 'CongreAdmin');
-    return {
-      success: true,
-      ssId: ss.getId(),
-      url: ss.getUrl(),
-      name: ss.getName()
-    };
+    return { success: true, ssId: ss.getId(), url: ss.getUrl(), name: ss.getName() };
   } catch (err) {
     return { success: false, error: err.message };
   }
 }
 
 /**
- * Crea una hoja si no existe
- */
-function createSheetIfNotExists(ss, name, headers) {
-  let sheet = ss.getSheetByName(name);
-  if (!sheet) {
-    sheet = ss.insertSheet(name);
-    sheet.appendRow(headers);
-    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#f3f3f3');
-  } else {
-    // Ensure headers exist even if sheet was created without them
-    const lastRow = sheet.getLastRow();
-    if (lastRow === 0) {
-      sheet.appendRow(headers);
-      sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#f3f3f3');
-    }
-  }
-  return { sheet: name, status: 'created' };
-}
-
-/**
- * Acción: install - Crea los spreadsheets inicial y público
- * NO guarda nada en script properties - todo se devuelve al frontend
- * @param {object} payload - Datos de instalación
- * @return {object} Resultado
+ * Creates Core and Public spreadsheets inside a dedicated Drive folder.
+ * Returns IDs/URLs — frontend handles all storage.
+ * NO script properties used — fully multi-tenant.
  */
 function actionInstall(payload) {
   try {
     const { nombreCongregacion, numeroCongregacion, nombreMostrar, gasUrl } = payload;
-    
     const nombreLimpio = (nombreCongregacion || 'SinNombre').replace(/[^a-zA-Z0-9]/g, '');
-    
-    // 1. Crear Spreadsheet Core con formato: CongreAdmin-[nombre]-[modulo]
-    const ssName = `CongreAdmin-${nombreLimpio}-Core`;
-    const ssResult = createSpreadsheet(ssName);
-    if (!ssResult.success) {
-      return { success: false, error: 'Error creando spreadsheet: ' + ssResult.error };
-    }
-    
-    const ssId = ssResult.ssId;
-    
-    // 2. Crear Spreadsheet Público (para información compartida)
-    const ssPublicName = `CongreAdmin-${nombreLimpio}-Public`;
-    const ssPublicResult = createSpreadsheet(ssPublicName);
-    let publicSsId = '';
-    if (ssPublicResult.success) {
-      publicSsId = ssPublicResult.ssId;
-      
-      // Auto-share public spreadsheet (anyone with link can view)
-      DriveApp.getFileById(publicSsId).setSharing(
-        DriveApp.Access.ANYONE_WITH_LINK,
-        DriveApp.Permission.VIEW
-      );
-    } else {
-      return { success: false, error: 'Error creando spreadsheet público: ' + ssPublicResult.error };
-    }
-    
-    // NO guardamos en script properties - devolvemos todo al frontend
+
+    // 1. Create Drive folder with subfolders
+    const folder = DriveApp.createFolder('CongreAdmin-' + nombreLimpio);
+    folder.createFolder('backups');
+    folder.createFolder('documentos');
+    folder.createFolder('exportaciones');
+
+    // 2. Create spreadsheets
+    const ssResult = createSpreadsheet('CongreAdmin-' + nombreLimpio + '-Core');
+    if (!ssResult.success) return { success: false, error: 'Error creando spreadsheet: ' + ssResult.error };
+
+    const ssPublicResult = createSpreadsheet('CongreAdmin-' + nombreLimpio + '-Public');
+    if (!ssPublicResult.success) return { success: false, error: 'Error creando spreadsheet público: ' + ssPublicResult.error };
+
+    // 3. Move spreadsheets into folder
+    DriveApp.getFileById(ssResult.ssId).moveTo(folder);
+    DriveApp.getFileById(ssPublicResult.ssId).moveTo(folder);
+
+    // 4. Share public spreadsheet
+    DriveApp.getFileById(ssPublicResult.ssId).setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
     return {
       success: true,
-      ssId: ssId,
+      ssId: ssResult.ssId,
       ssUrl: ssResult.url,
-      publicSsId: publicSsId,
+      publicSsId: ssPublicResult.ssId,
       publicSsUrl: ssPublicResult.url,
-      nombreCongregacion: nombreCongregacion,
-      numeroCongregacion: numeroCongregacion,
-      nombreMostrar: nombreMostrar || `Co. ${nombreCongregacion}`,
-      message: 'Spreadsheets creados. La configuración se almacena en la hoja Configuracion.'
+      folderId: folder.getId(),
+      folderUrl: folder.getUrl(),
+      nombreCongregacion,
+      numeroCongregacion,
+      nombreMostrar: nombreMostrar || 'Co. ' + nombreCongregacion,
+      message: 'Spreadsheets y carpeta Drive creados. Configura tablas y datos desde el frontend.',
     };
   } catch (err) {
     return { success: false, error: err.message };
   }
 }
-    
-    const ssId = ssResult.ssId;
-    
-    // 2. Crear Spreadsheet Público (para información compartida)
-    const ssPublicName = `CongreAdmin-${nombreLimpio}-Public`;
-    const ssPublicResult = createSpreadsheet(ssPublicName);
-    let publicSsId = '';
-    if (ssPublicResult.success) {
-      publicSsId = ssPublicResult.ssId;
-      
-      // Auto-share public spreadsheet (anyone with link can view)
-      DriveApp.getFileById(publicSsId).setSharing(
-        DriveApp.Access.ANYONE_WITH_LINK,
-        DriveApp.Permission.VIEW
-      );
-    } else {
-      return { success: false, error: 'Error creando spreadsheet público: ' + ssPublicResult.error };
-    }
-    
-    // Return configuration - frontend handles storage
-    return {
-      success: true,
-      ssId: ssId,
-      ssUrl: ssResult.url,
-      publicSsId: publicSsId,
-      publicSsUrl: ssPublicResult.url,
-      nombreCongregacion: nombreCongregacion,
-      numeroCongregacion: numeroCongregacion,
-      nombreMostrar: nombreMostrar || `Co. ${nombreCongregacion}`,
-      message: 'Spreadsheets creados. La orquestación de tablas y datos se realiza desde el frontend.'
-    };
-  } catch (err) {
-    return { success: false, error: err.message };
+
+/**
+ * Internal helper: upload a file for batchExecute.
+ * Returns { fileId, fileUrl, fileName, size } or { error }.
+ */
+function _batchUploadFile(folderId, op) {
+  if (!op.content) return { error: 'ERR_INVALID_REQUEST: Content is required' };
+  if (!op.fileName) return { error: 'ERR_INVALID_REQUEST: FileName is required' };
+
+  const mimeType = op.mimeType || 'application/octet-stream';
+  if (ALLOWED_MIMETYPES.indexOf(mimeType) === -1) return { error: 'ERR_INVALID_MIMETYPE: ' + mimeType };
+  if (op.content.length * 0.75 > FILE_MAX_SIZE) return { error: 'ERR_FILE_TOO_LARGE: Max 37MB' };
+
+  let decodedContent;
+  try { decodedContent = Utilities.base64Decode(op.content); }
+  catch (e) { return { error: 'ERR_INVALID_BASE64: Content is not valid base64' }; }
+
+  const targetFolder = resolveTargetFolder(folderId, op.subfolder);
+  if (!targetFolder) return { error: op.subfolder ? 'ERR_SUBFOLDER_NOT_FOUND' : 'ERR_FOLDER_NOT_FOUND' };
+
+  const blob = Utilities.newBlob(decodedContent, mimeType, op.fileName);
+  const file = targetFolder.createFile(blob);
+  return { fileId: file.getId(), fileUrl: file.getUrl(), fileName: file.getName(), size: file.getSize() };
+}
+
+// ================================================================= //
+// FILE MANAGEMENT — Drive Folder System
+// ================================================================= //
+
+const FILE_MAX_SIZE = 37 * 1024 * 1024; // 37MB (GAS doPost limit)
+
+const ALLOWED_MIMETYPES = [
+  'application/pdf',
+  'image/jpeg', 'image/png', 'image/gif', 'image/svg+xml', 'image/webp',
+  'text/plain', 'text/csv', 'text/html',
+  'application/json',
+  'application/zip',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-excel',
+  'application/msword',
+  'application/vnd.oasis.opendocument.text',
+  'application/vnd.oasis.opendocument.spreadsheet',
+  'audio/mpeg', 'audio/wav', 'audio/ogg',
+  'video/mp4', 'video/webm',
+];
+
+/**
+ * Helper: resolve target folder (main folder or subfolder).
+ */
+function resolveTargetFolder(folderId, subfolder) {
+  const folder = DriveApp.getFolderById(folderId);
+  if (!subfolder) return folder;
+  const subfolders = folder.getFoldersByName(subfolder);
+  if (!subfolders.hasNext()) return null;
+  return subfolders.next();
+}
+
+/**
+ * Helper: validate session for file actions.
+ */
+function validateFileSession(sessionToken, ssId) {
+  if (!sessionToken) return { error: 'ERR_AUTH_REQUIRED' };
+  const session = validateSession(sessionToken, ssId);
+  if (!session.valid) return { error: 'ERR_AUTH_INVALID' };
+  const permCheck = checkPermission(session, 'write', 'core', ssId);
+  if (!permCheck.allowed) return { error: permCheck.error };
+  return { session };
+}
+
+/**
+ * Standalone action: Lists files in the installation Drive folder.
+ * Thin wrapper — same logic used by batchExecute.
+ */
+function actionListFolderFiles(payload, sessionToken, ssId) {
+  const auth = validateFileSession(sessionToken, ssId);
+  if (auth.error) return { success: false, error: auth.error };
+
+  const targetFolder = resolveTargetFolder(payload.folderId, payload.subfolder);
+  if (!targetFolder) return { success: false, error: payload.subfolder ? 'ERR_SUBFOLDER_NOT_FOUND' : 'ERR_FOLDER_NOT_FOUND' };
+
+  const files = targetFolder.getFiles();
+  const result = [];
+  while (files.hasNext()) {
+    const f = files.next();
+    const sharing = f.getSharingAccess();
+    const permission = f.getSharingPermission();
+    result.push({
+      id: f.getId(),
+      name: f.getName(),
+      mimeType: f.getMimeType(),
+      size: f.getSize(),
+      created: f.getDateCreated().toISOString(),
+      modified: f.getLastUpdated().toISOString(),
+      url: f.getUrl(),
+      shared: sharing !== DriveApp.Access.PRIVATE,
+      access: sharing,
+      permission: permission,
+    });
+  }
+
+  return { success: true, files: result };
+}
+
+/**
+ * Standalone action: Uploads a base64-encoded file.
+ * Thin wrapper — same logic used by batchExecute.
+ */
+function actionUploadFile(payload, sessionToken, ssId) {
+  const auth = validateFileSession(sessionToken, ssId);
+  if (auth.error) return { success: false, error: auth.error };
+
+  const uploadResult = _batchUploadFile(payload.folderId, payload);
+  if (uploadResult.error) return { success: false, error: uploadResult.error };
+
+  return { success: true, fileId: uploadResult.fileId, fileUrl: uploadResult.fileUrl, fileName: uploadResult.fileName, size: uploadResult.size };
+}
+
+/**
+ * Standalone action: Downloads a file from Drive as base64.
+ * Same logic used by batchExecute.
+ */
+function actionDownloadFile(payload, sessionToken, ssId) {
+  const auth = validateFileSession(sessionToken, ssId);
+  if (auth.error) return { success: false, error: auth.error };
+
+  if (!payload.fileId) return { success: false, error: 'ERR_INVALID_REQUEST: FileId is required' };
+
+  try {
+    const file = DriveApp.getFileById(payload.fileId);
+    const blob = file.getBlob();
+    const bytes = blob.getBytes();
+    return { success: true, fileName: file.getName(), mimeType: file.getMimeType(), size: bytes.length, content: Utilities.base64Encode(bytes) };
+  } catch (e) {
+    return { success: false, error: 'ERR_FILE_NOT_FOUND: ' + e.message };
+  }
+}
+
+/**
+ * Standalone action: Deletes (trashes) a file.
+ * Same logic used by batchExecute.
+ */
+function actionDeleteFile(payload, sessionToken, ssId) {
+  const auth = validateFileSession(sessionToken, ssId);
+  if (auth.error) return { success: false, error: auth.error };
+
+  if (!payload.fileId) return { success: false, error: 'ERR_INVALID_REQUEST: FileId is required' };
+
+  try {
+    DriveApp.getFileById(payload.fileId).setTrashed(true);
+    return { success: true, message: 'Archivo eliminado' };
+  } catch (e) {
+    return { success: false, error: 'ERR_FILE_NOT_FOUND: ' + e.message };
+  }
+}
+
+/**
+ * Standalone action: Sets sharing permissions on a file.
+ * Same logic used by batchExecute.
+ */
+function actionSetFileSharing(payload, sessionToken, ssId) {
+  const auth = validateFileSession(sessionToken, ssId);
+  if (auth.error) return { success: false, error: auth.error };
+
+  if (!payload.fileId) return { success: false, error: 'ERR_INVALID_REQUEST: FileId is required' };
+
+  const accessMap = {
+    'PRIVATE': DriveApp.Access.PRIVATE,
+    'ANYONE_WITH_LINK': DriveApp.Access.ANYONE_WITH_LINK,
+    'DOMAIN': DriveApp.Access.DOMAIN,
+    'ANYONE': DriveApp.Access.ANYONE,
+  };
+  const permissionMap = {
+    'VIEW': DriveApp.Permission.VIEW,
+    'COMMENT': DriveApp.Permission.COMMENT,
+    'EDIT': DriveApp.Permission.EDIT,
+  };
+
+  const access = accessMap[payload.access];
+  const permission = permissionMap[payload.permission || 'VIEW'];
+
+  if (!access) return { success: false, error: 'ERR_INVALID_REQUEST: Invalid access level. Use PRIVATE, ANYONE_WITH_LINK, DOMAIN, or ANYONE' };
+  if (!permission) return { success: false, error: 'ERR_INVALID_REQUEST: Invalid permission. Use VIEW, COMMENT, or EDIT' };
+
+  try {
+    const file = DriveApp.getFileById(payload.fileId);
+    file.setSharing(access, permission);
+    return { success: true, fileId: file.getId(), access: payload.access, permission: payload.permission || 'VIEW', shareUrl: file.getUrl() + '?usp=sharing' };
+  } catch (e) {
+    return { success: false, error: 'ERR_FILE_NOT_FOUND: ' + e.message };
+  }
+}
+
+/**
+ * Standalone action: Moves a file into the installation Drive folder.
+ * Same logic used by batchExecute.
+ */
+function actionMoveFileToFolder(payload, sessionToken, ssId) {
+  const auth = validateFileSession(sessionToken, ssId);
+  if (auth.error) return { success: false, error: auth.error };
+
+  if (!payload.fileId) return { success: false, error: 'ERR_INVALID_REQUEST: FileId is required' };
+
+  const targetFolder = resolveTargetFolder(payload.folderId, payload.subfolder);
+  if (!targetFolder) return { success: false, error: payload.subfolder ? 'ERR_SUBFOLDER_NOT_FOUND' : 'ERR_FOLDER_NOT_FOUND' };
+
+  try {
+    const file = DriveApp.getFileById(payload.fileId);
+    file.moveTo(targetFolder);
+    return { success: true, fileId: file.getId(), fileName: file.getName(), folderId: targetFolder.getId(), fileUrl: file.getUrl() };
+  } catch (e) {
+    return { success: false, error: 'ERR_FILE_NOT_FOUND: ' + e.message };
   }
 }

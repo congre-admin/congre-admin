@@ -1,9 +1,8 @@
 import { Box, Typography, Grid, Card, CardContent, CardHeader, CircularProgress } from '@mui/material';
 import { People, EventNote, Campaign, Map } from '@mui/icons-material';
-import { useQuery } from '@tanstack/react-query';
-import { dataService } from '@/services/dataService';
+import { useSheetData } from '@/hooks/useSession';
 import { useCongregacion } from '@/hooks/useCongregacion';
-import { QUERY_OPTIONS } from '@/hooks/queryConfig';
+import type { Perfil } from '@/types';
 
 const ADMIN_SS_ID_KEY = 'congre_admin_ss_id';
 
@@ -43,11 +42,8 @@ function StatCard({ title, value, icon, color }: StatCardProps) {
 
 export default function Dashboard() {
   const adminSsId = localStorage.getItem(ADMIN_SS_ID_KEY) || '';
-  const { data: perfiles, isLoading } = useQuery({
-    queryKey: ['perfiles', adminSsId],
-    queryFn: () => dataService.getPerfiles(adminSsId),
+  const { data: perfiles, isLoading } = useSheetData<Perfil[]>('Perfiles', adminSsId, {
     enabled: !!adminSsId,
-    ...QUERY_OPTIONS,
   });
   const { data: congregacion } = useCongregacion();
   const congregationName = congregacion?.nombre || 'CongreAdmin';

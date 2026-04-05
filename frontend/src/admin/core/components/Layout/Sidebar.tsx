@@ -42,7 +42,8 @@ import {
   Business as BusinessIcon
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
-import { useCongregacion } from '@/hooks/useCongregacion';
+import { useThemeContext } from '@/core/context/ThemeContext';
+import { getCachedSettings } from '@/utils/settingsCache';
 import ShareDialog from '../ShareDialog/ShareDialog';
 
 const DRAWER_WIDTH = 260;
@@ -71,7 +72,7 @@ export default function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuth();
-  const { data: congregacion } = useCongregacion();
+  const { mode, toggleDarkMode: toggleThemeMode } = useThemeContext();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -81,11 +82,11 @@ export default function Sidebar() {
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [hoverAnchor, setHoverAnchor] = useState<null | HTMLElement>(null);
-  const [darkMode, setDarkMode] = useState(false);
   const [notificationCount] = useState(3);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
 
-  const congregationName = congregacion?.nombre || 'CongreAdmin';
+  const cached = getCachedSettings();
+  const congregationName = cached?.data.nombre_mostrar || cached?.data.nombre_congregacion || 'CongreAdmin';
   const currentWidth = collapsed ? COLLAPSED_WIDTH : DRAWER_WIDTH;
   const adminSsId = localStorage.getItem('congre_admin_ss_id');
   const shareUrl = `${window.location.origin}/?ssid=${adminSsId || ''}`;
@@ -102,8 +103,7 @@ export default function Sidebar() {
   };
 
   const toggleDarkMode = () => {
-    setDarkMode(!darkMode);
-    document.documentElement.classList.toggle('dark');
+    toggleThemeMode();
     setSettingsMenuAnchor(null);
   };
 
@@ -144,11 +144,6 @@ export default function Sidebar() {
               <Typography variant="h6" noWrap sx={{ fontWeight: 600 }}>
                 {congregationName}
               </Typography>
-              {congregacion?.numero && (
-                <Typography variant="caption" color="text.secondary">
-                  #{congregacion.numero}
-                </Typography>
-              )}
             </Box>
             <IconButton size="small" onClick={() => setCollapsed(true)}>
               <ChevronLeftIcon />
@@ -297,7 +292,7 @@ export default function Sidebar() {
           >
             <ListItemIcon>
               {item.action === 'toggleDarkMode' 
-                ? (darkMode ? <LightModeIcon /> : <DarkModeIcon />)
+                ? (mode === 'dark' ? <LightModeIcon /> : <DarkModeIcon />)
                 : <item.icon fontSize="small" />
               }
             </ListItemIcon>
@@ -449,7 +444,7 @@ export default function Sidebar() {
               >
                 <ListItemIcon>
                   {item.action === 'toggleDarkMode' 
-                    ? (darkMode ? <LightModeIcon /> : <DarkModeIcon />)
+                    ? (mode === 'dark' ? <LightModeIcon /> : <DarkModeIcon />)
                     : <item.icon fontSize="small" />
                   }
                 </ListItemIcon>

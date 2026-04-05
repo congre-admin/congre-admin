@@ -33,35 +33,27 @@ import {
   CheckCircle
 } from '@mui/icons-material';
 import { useAuth } from '../../../core/context/AuthContext';
-
-const API_URL_KEY = 'congre_admin_api_url';
-
-async function fetchApi(url: string, options?: RequestInit) {
-  const response = await fetch(url, {
-    ...options,
-    mode: 'cors',
-    redirect: 'follow',
-    headers: {
-      'Content-Type': 'text/plain;charset=utf-8',
-      ...options?.headers,
-    },
-  });
-  return response.json();
-}
+import { useAuthMethods } from '@/hooks/useSession';
+import { authService } from '@/services/authService';
+import { dataService } from '@/services/dataService';
+import { useQueryClient } from '@tanstack/react-query';
 
 export default function AuthSettings() {
   const navigate = useNavigate();
   const { user, sessionToken, logout } = useAuth();
+  const { data: authData, isLoading: authLoading } = useAuthMethods();
+  const queryClient = useQueryClient();
   
-  const [loading, setLoading] = useState(true);
+  const methods = authData?.methods || [];
+  const defaultMethod = authData?.defaultMethod || 'passkey';
+  const passkeys = authData?.passkeys || [];
+  const totpEnabled = authData?.totp?.enabled || false;
+  
+  const [selectedMethod, setSelectedMethod] = useState(defaultMethod);
+  
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  
-  const [methods, setMethods] = useState<string[]>([]);
-  const [defaultMethod, setDefaultMethod] = useState('passkey');
-  const [passkeys, setPasskeys] = useState<Array<{id: string; deviceName?: string; createdAt?: string}>>([]);
-  const [totpEnabled, setTotpEnabled] = useState(false);
   
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -74,72 +66,21 @@ export default function AuthSettings() {
   const [deletePassword, setDeletePassword] = useState('');
   const [deleteLoading, setDeleteLoading] = useState(false);
 
-  useEffect(() => {
-    loadAuthSettings();
-  }, []);
+  const loading = authLoading || !sessionToken || !user;
 
-  const loadAuthSettings = async () => {
-    if (!sessionToken || !user) {
-      return;
-    }
-    
-    setLoading(true);
-    setError(null);
-    
-    try {
-      const apiUrl = localStorage.getItem(API_URL_KEY);
-      if (!apiUrl) {
-        throw new Error('API URL no configurada');
-      }
-      
-      const data = await fetchApi(apiUrl, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'getAuthMethods',
-          sessionToken,
-          payload: {}
-        })
-      });
-      
-      if (data.success) {
-        setMethods(data.methods || []);
-        setDefaultMethod(data.defaultMethod || 'passkey');
-        setPasskeys(data.passkeys || []);
-        setTotpEnabled(data.totp?.enabled || false);
-      } else {
-        setError(data.error || 'Error al cargar configuración');
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al cargar configuración');
-    } finally {
-      setLoading(false);
-    }
-  };
+  useEffect(() => {
+    if (defaultMethod) setSelectedMethod(defaultMethod);
+  }, [defaultMethod]);
 
   const handleSetDefaultMethod = async (method: string) => {
     setSaving(true);
     setError(null);
     
     try {
-      const apiUrl = localStorage.getItem(API_URL_KEY);
-      if (!apiUrl) throw new Error('API URL no configurada');
-      
-      const data = await fetchApi(apiUrl, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'updateAuthConfig',
-          sessionToken,
-          payload: { default_method: method }
-        })
-      });
-      
-      if (data.success) {
-        setDefaultMethod(method);
-        setSuccess('Método predeterminado actualizado');
-        setTimeout(() => setSuccess(null), 3000);
-      } else {
-        setError(data.error || 'Error al actualizar');
-      }
+      await authService.setDefaultAuthMethod(method);
+      queryClient.invalidateQueries({ queryKey: ['authMethods'] });
+      setSuccess('Método predeterminado actualizado');
+      setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al actualizar');
     } finally {
@@ -154,26 +95,10 @@ export default function AuthSettings() {
     setError(null);
     
     try {
-      const apiUrl = localStorage.getItem(API_URL_KEY);
-      if (!apiUrl) throw new Error('API URL no configurada');
-      
-      const data = await fetchApi(apiUrl, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'deletePasskey',
-          sessionToken,
-          payload: { passkeyId }
-        })
-      });
-      
-      if (data.success) {
-        setPasskeys(passkeys.filter(p => p.id !== passkeyId));
-        setMethods(methods.filter(m => m !== 'passkey' || passkeys.length > 1));
-        setSuccess('Passkey eliminado');
-        setTimeout(() => setSuccess(null), 3000);
-      } else {
-        setError(data.error || 'Error al eliminar passkey');
-      }
+      await authService.deletePasskey(passkeyId);
+      queryClient.invalidateQueries({ queryKey: ['authMethods'] });
+      setSuccess('Passkey eliminado');
+      setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al eliminar passkey');
     } finally {
@@ -188,26 +113,10 @@ export default function AuthSettings() {
     setError(null);
     
     try {
-      const apiUrl = localStorage.getItem(API_URL_KEY);
-      if (!apiUrl) throw new Error('API URL no configurada');
-      
-      const data = await fetchApi(apiUrl, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'disableTOTP',
-          sessionToken,
-          payload: {}
-        })
-      });
-      
-      if (data.success) {
-        setTotpEnabled(false);
-        setMethods(methods.filter(m => m !== 'totp'));
-        setSuccess('TOTP desactivado');
-        setTimeout(() => setSuccess(null), 3000);
-      } else {
-        setError(data.error || 'Error al desactivar TOTP');
-      }
+      await dataService.request('disableTOTP', {});
+      queryClient.invalidateQueries({ queryKey: ['authMethods'] });
+      setSuccess('TOTP desactivado');
+      setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al desactivar TOTP');
     } finally {
@@ -237,26 +146,11 @@ export default function AuthSettings() {
     setPasswordLoading(true);
     
     try {
-      const apiUrl = localStorage.getItem(API_URL_KEY);
-      if (!apiUrl) throw new Error('API URL no configurada');
-      
-      const data = await fetchApi(apiUrl, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'changePassword',
-          sessionToken,
-          payload: { old_password: oldPassword, new_password: newPassword }
-        })
-      });
-      
-      if (data.success) {
-        setPasswordSuccess(true);
-        setOldPassword('');
-        setNewPassword('');
-        setConfirmPassword('');
-      } else {
-        setPasswordError(data.error || 'Error al cambiar contraseña');
-      }
+      await authService.changePassword(oldPassword, newPassword);
+      setPasswordSuccess(true);
+      setOldPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
     } catch (err) {
       setPasswordError(err instanceof Error ? err.message : 'Error al cambiar contraseña');
     } finally {
@@ -274,23 +168,8 @@ export default function AuthSettings() {
     setError(null);
     
     try {
-      const apiUrl = localStorage.getItem(API_URL_KEY);
-      if (!apiUrl) throw new Error('API URL no configurada');
-      
-      const data = await fetchApi(apiUrl, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'deleteAccount',
-          sessionToken,
-          payload: { password: deletePassword }
-        })
-      });
-      
-      if (data.success) {
-        logout();
-      } else {
-        setError(data.error || 'Error al eliminar cuenta');
-      }
+      await dataService.request('deleteAccount', { password: deletePassword });
+      logout();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al eliminar cuenta');
     } finally {
@@ -416,8 +295,8 @@ export default function AuthSettings() {
         </Typography>
         
         <RadioGroup
-          value={defaultMethod}
-          onChange={(e) => handleSetDefaultMethod(e.target.value)}
+          value={selectedMethod}
+          onChange={(e) => setSelectedMethod(e.target.value)}
         >
           {methods.includes('passkey') && (
             <FormControlLabel value="passkey" control={<Radio />} label="Passkey (Huella/Face ID) - Recomendado" />
@@ -429,6 +308,16 @@ export default function AuthSettings() {
             <FormControlLabel value="email_otp" control={<Radio />} label="Código por email" />
           )}
         </RadioGroup>
+        
+        <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
+          <Button
+            variant="contained"
+            onClick={() => handleSetDefaultMethod(selectedMethod)}
+            disabled={saving || selectedMethod === defaultMethod}
+          >
+            Guardar
+          </Button>
+        </Box>
       </Paper>
 
       <Paper sx={{ p: 3, mb: 3 }}>

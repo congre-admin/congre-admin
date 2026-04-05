@@ -1,5 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { initializeCacheOnLogin } from '../../../hooks/useSession';
+import { dataService } from '../../../services/dataService';
+import { setCachedSettings, clearCachedSettings } from '../../../utils/settingsCache';
 
 interface User {
   id: string;
@@ -91,6 +93,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (storedUser && token) {
       setUser(JSON.parse(storedUser));
       setSessionToken(token);
+      
+      const adminSsId = localStorage.getItem(ADMIN_SS_ID_KEY);
+      if (adminSsId) {
+        dataService.getData<{ clave: string; valor: any }[]>('Configuracion', adminSsId)
+          .then(config => {
+            const settings: Record<string, string> = {};
+            config.forEach(c => {
+              settings[c.clave] = typeof c.valor === 'object' ? JSON.stringify(c.valor) : c.valor;
+            });
+            setCachedSettings(settings);
+          })
+          .catch(() => {});
+      }
     }
     setIsLoading(false);
   }, []);
@@ -157,6 +172,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    // Fetch and cache module map for granular permissions
+    try {
+      await dataService.refreshModuleMap();
+    } catch (err) {
+      console.warn('Failed to refresh module map:', err);
+    }
+
+    // Fetch and cache theme config
+    if (adminSsId) {
+      try {
+        const themeConfigResult = await dataService.getConfig('theme_config', adminSsId);
+        if (themeConfigResult?.valor) {
+          localStorage.setItem('congre_theme_config', themeConfigResult.valor);
+        }
+      } catch (err) {
+        console.warn('Failed to fetch theme config:', err);
+      }
+    }
+
+    // Fetch and cache settings
+    if (adminSsId) {
+      try {
+        const config = await dataService.getData<{ clave: string; valor: any }[]>('Configuracion', adminSsId);
+        const settings: Record<string, string> = {};
+        config.forEach(c => {
+          settings[c.clave] = typeof c.valor === 'object' ? JSON.stringify(c.valor) : c.valor;
+        });
+        setCachedSettings(settings);
+      } catch (err) {
+        console.warn('Failed to cache settings:', err);
+      }
+    }
+
     try {
       await initializeCacheOnLogin();
     } catch (error) {
@@ -167,6 +215,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     localStorage.removeItem(SESSION_TOKEN_KEY);
     localStorage.removeItem(USER_DATA_KEY);
+    clearCachedSettings();
     setUser(null);
     setMasterKeyState(null);
     setSessionToken(null);

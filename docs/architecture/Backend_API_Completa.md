@@ -1,7 +1,7 @@
 # Congre-Admin: Documentación Técnica del Backend API
 
-> **Versión:** 2.0.0
-> **Última actualización:** 2026-04-03
+> **Versión:** 2.1.0
+> **Última actualización:** 2026-04-04
 > **Archivo fuente:** `backend/src/api.gs`
 > **Plataforma:** Google Apps Script (GAS)
 
@@ -10,6 +10,15 @@
 ## 1. Resumen Ejecutivo
 
 El Backend de Congre-Admin es un proveedor de servicios implementado como Google Apps Script que utiliza Google Sheets como base de datos distribuida. El sistema sigue una arquitectura de **Segmentación Física de Datos** donde cada módulo/plugin tiene su propio spreadsheet.
+
+### Cambios en v2.1
+
+| Cambio | Descripción |
+|--------|-------------|
+| **Permisos granulares** | Formato jerárquico: `"core":{"configuracion":"RW","*":"R"}`. Backward compatible con formato plano `"core":"RW"` |
+| **Módulo dinámico** | Módulo derivado de `Registro_Plugins` (ssId → plugin_id). Zero valores hardcoded |
+| **Setup mode** | `batchExecute` soporta `isSetup: true` para bypass de sesión durante instalación |
+| **Module resolution** | Frontend resuelve módulo desde caché de `Registro_Plugins`, envía en cada request |
 
 ### Cambios en v2.0
 
@@ -190,6 +199,8 @@ Todas las peticiones se envían vía `POST` al endpoint del GAS:
   "action": "nombre_de_accion",
   "payload": {
     "ssId": "ID_DEL_SPREADSHEET",
+    "coreSsId": "ID_DEL_CORE_SPREADSHEET",
+    "module": "nombre_del_modulo",
     "sessionToken": "TOKEN_DE_SESION"
   },
   "sheet": "NOMBRE_DE_HOJA",
@@ -198,6 +209,8 @@ Todas las peticiones se envían vía `POST` al endpoint del GAS:
 ```
 
 > **Nota v2.0:** `ssId` y `sessionToken` pueden estar en `payload` o al nivel superior de la petición. El backend los extrae de ambos lugares.
+
+> **Nota v2.1:** `coreSsId` y `module` se envían automáticamente desde el frontend en cada request. `coreSsId` permite derivar el módulo dinámicamente. `module` se resuelve desde el mapa de `Registro_Plugins` cacheado en `localStorage`.
 
 ### 3.2 Acciones Disponibles
 
@@ -234,14 +247,20 @@ Ejecuta múltiples operaciones en una sola llamada API. Reemplaza `batchGetData`
 - `continue` (default): Ejecuta todas las operaciones, retorna éxito parcial
 - `fail-fast`: Detiene al primer error
 
+**Modo setup (v2.1):**
+- `isSetup: true`: Bypass de sesión y RBAC para operaciones `initSheet` y `save` únicamente. Usado durante la instalación inicial.
+
 ```javascript
 {
   "action": "batchExecute",
   "payload": {
     "ssId": "ID_SPREADSHEET",
+    "coreSsId": "CORE_SS_ID",
+    "module": "core",
     "folderId": "DRIVE_FOLDER_ID",
     "sessionToken": "TOKEN",
     "mode": "continue",
+    "isSetup": false,
     "operations": [
       { "op": "read", "sheet": "Configuracion" },
       { "op": "read", "sheet": "Perfiles" },
@@ -716,19 +735,90 @@ Crea los spreadsheets Core y Público.
 | Perfil ID | Nombre | Permisos |
 |-----------|--------|----------|
 | `p_admin` | Super-Admin | RW en todos los módulos |
-| `p_secretario` | Secretario | RW en personas, registros, anuncios; R en reuniones, predicación |
-| `p_comite` | Comité de Servicio | R en personas, registros, reuniones, predicación |
-| `p_super_grupo` | Superintendente de Grupo | R en personas; RW en registros; R en reuniones |
-| `p_siervo_territorios` | Siervo de Territorios | RW en predicación |
-| `p_publicador` | Publicador | R en reuniones, predicación |
+| `p_secretario` | Secretario | Granular: core R, personas RW, registros RW, anuncios RW, reuniones R, predicación R |
+| `p_comite` | Comité de Servicio | Granular: core R, personas R, registros R, reuniones R, predicación R |
+| `p_super_grupo` | Superintendente de Grupo | Granular: core R, personas R, registros RW, reuniones R |
+| `p_siervo_territorios` | Siervo de Territorios | Granular: core R, predicación RW |
+| `p_publicador` | Publicador | Granular: core R, reuniones R, predicación R |
 
-### 4.2 Validación de Permisos
+### 4.2 Formato de Permisos (v2.1 — Granular)
+
+Los permisos soportan dos formatos: **plano** (flat) y **granular** (jerárquico).
+
+#### Formato Plano (v1.x / v2.0 — Backward Compatible)
+
+```json
+{
+  "core": "RW",
+  "personas": "RW",
+  "registros": "RW",
+  "predicacion": "R"
+}
+```
+
+Todos los sheets dentro de un módulo reciben el mismo permiso.
+
+#### Formato Granular (v2.1)
+
+```json
+{
+  "core": {
+    "configuracion": "RW",
+    "usuarios": "R",
+    "perfiles": "R",
+    "plugins": "R",
+    "migraciones": "R",
+    "*": "R"
+  },
+  "personas": "RW",
+  "registros": "RW"
+}
+```
+
+**Reglas de resolución:**
+
+1. Si el valor del módulo es un **string** (`"RW"`) → todas las sheets del módulo reciben ese permiso
+2. Si el valor es un **objeto** → se busca la clave que coincida con `sheetName.toLowerCase()`
+3. Si no hay coincidencia → se usa `"*"` como fallback
+4. Si no hay `"*"` → permiso denegado
+
+| Formato de permiso | Sheet: `Configuracion` | Sheet: `Usuarios` | Sheet: `Perfiles` |
+|-------------------|----------------------|-------------------|-------------------|
+| `"core":"RW"` | RW | RW | RW |
+| `"core":{"*":"R"}` | R | R | R |
+| `"core":{"configuracion":"RW","*":"R"}` | RW | R | R |
+| `"core":{"configuracion":"RW"}` | RW | Denegado | Denegado |
+
+**Claves granulares por defecto** (convention: `sheetName.toLowerCase()`):
+
+| Sheet | Clave Granular |
+|-------|---------------|
+| `Configuracion` | `configuracion` |
+| `Usuarios` | `usuarios` |
+| `Perfiles` | `perfiles` |
+| `Registro_Plugins` | `registro_plugins` |
+| `Sistema_Migraciones` | `sistema_migraciones` |
+
+### 4.3 Resolución de Módulo
+
+El módulo se determina dinámicamente, sin valores hardcoded:
+
+1. **Si `ssId === coreSsId`** → módulo = `"core"`
+2. **Si no** → buscar en `Registro_Plugins` la fila donde `ssId` coincida → módulo = `plugin_id`
+3. **Si no se encuentra** → módulo = `ssId` (fallback, probablemente denegado)
+
+El frontend resuelve el módulo al inicio de la sesión:
+- Llama `refreshModuleMap()` que consulta `Registro_Plugins`
+- Almacena el mapa en `localStorage: congre_module_map`
+- En cada request, envía `module` en el payload
+
+### 4.4 Validación de Permisos
 
 > **Nota v2.0:** Las funciones `getPerfiles`, `getPermisos`, `checkPermission`, `createProfile`, `updateProfile`, `deleteProfile` han sido **eliminadas**. El frontend gestiona perfiles directamente mediante `batchExecute` con operaciones `read`/`save`/`delete` en las hojas `Perfiles` y `Usuarios`.
 
 Los permisos se validan internamente en el backend para cada operación de escritura. El frontend puede leer la tabla `Perfiles` directamente para mostrar la matriz de permisos en la UI.
 
-### 4.3 Mapeo de Acciones a Permisos
+### 4.5 Mapeo de Acciones a Permisos
 
 | Acción requerida | Permiso necesario |
 |-----------------|-------------------|
@@ -740,21 +830,22 @@ Los permisos se validan internamente en el backend para cada operación de escri
 
 ## 5. Instalación
 
-### 5.1 Flujo de Instalación (v2.0)
+### 5.1 Flujo de Instalación (v2.1)
 
 ```javascript
-// Paso 1: Crear spreadsheets
+// Paso 1: Crear spreadsheets y carpeta Drive
 {
   "action": "install",
   "payload": { "nombreCongregacion": "Congregación Central" }
 }
 // Response: { ssId, ssUrl, publicSsId, publicSsUrl, folderId, folderUrl }
 
-// Paso 2: Inicializar tablas y datos con batchExecute
+// Paso 2: Inicializar tablas y datos con batchExecute (modo setup)
 {
   "action": "batchExecute",
   "payload": {
     "ssId": "CORE_SS_ID",
+    "isSetup": true,
     "operations": [
       { "op": "initSheet", "sheet": "Usuarios", "headers": ["id","username","email","wrapped_mk","perfilId","auth_config","metadata","created_at","_v","_ts","_deleted"] },
       { "op": "initSheet", "sheet": "Perfiles", "headers": ["id","nombre","permisos","descripcion","_v","_ts","_deleted"] },
@@ -763,11 +854,13 @@ Los permisos se validan internamente en el backend para cada operación de escri
       { "op": "initSheet", "sheet": "Sistema_Migraciones", "headers": ["id","nombre","version","ejecutada_en","estado","error","_v","_ts","_deleted"] },
       { "op": "initSheet", "sheet": "Logs_Accesos", "headers": ["timestamp","username","success","details","ip"] },
       { "op": "save", "sheet": "Perfiles", "data": { "id": "p_admin", "nombre": "Super-Admin", "permisos": {"core":"RW","personas":"RW","registros":"RW","reuniones":"RW","predicacion":"RW","anuncios":"RW"}, "descripcion": "Administrador total" } },
-      { "op": "save", "sheet": "Perfiles", "data": { "id": "p_secretario", "nombre": "Secretario", "permisos": {"core":"R","personas":"RW","registros":"RW","reuniones":"R","predicacion":"R","anuncios":"RW"}, "descripcion": "Secretario de congregación" } }
+      { "op": "save", "sheet": "Perfiles", "data": { "id": "p_secretario", "nombre": "Secretario", "permisos": {"core":{"configuracion":"R","usuarios":"R","perfiles":"R","*":"R"},"personas":"RW","registros":"RW","reuniones":"R","predicacion":"R","anuncios":"RW"}, "descripcion": "Secretario de congregación" } }
     ]
   }
 }
 ```
+
+> **Nota v2.1:** El modo `isSetup: true` permite `initSheet` y `save` sin sesión. Operaciones `delete`, `hardDelete`, `restore` están bloqueadas en setup mode.
 
 ### 5.2 Funciones Eliminadas
 

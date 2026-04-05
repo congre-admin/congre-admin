@@ -46,8 +46,7 @@ export interface LoginPayload {
   password?: string;
   method?: 'password' | 'passkey' | 'totp' | 'email_otp';
   passkeyAssertion?: any;
-  totpCode?: string;
-  emailOtpCode?: string;
+  code?: string;
   challengeToken?: string;
 }
 

@@ -1,5 +1,6 @@
 import { Outlet } from 'react-router-dom';
-import { Box, ReactNode } from '@mui/material';
+import { Box } from '@mui/material';
+import type { ReactNode } from 'react';
 import Sidebar from '../components/Layout/Sidebar';
 
 interface ShellProps {

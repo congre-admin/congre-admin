@@ -12,7 +12,7 @@ import {
   Alert,
   Card,
   CardContent,
-  Grid,
+  Grid2,
   CircularProgress,
   AppBar,
   Toolbar,
@@ -430,8 +430,8 @@ export default function PublicApp() {
                 Información pública de la congregación
               </Typography>
 
-              <Grid container spacing={3}>
-                <Grid size={{ xs: 12, md: 6 }}>
+              <Grid2 container spacing={3}>
+                <Grid2 size={{ xs: 12, md: 6 }}>
                   <Card>
                     <CardContent>
                       <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
@@ -443,9 +443,9 @@ export default function PublicApp() {
                       </Typography>
                     </CardContent>
                   </Card>
-                </Grid>
+                </Grid2>
 
-                <Grid size={{ xs: 12, md: 6 }}>
+                <Grid2 size={{ xs: 12, md: 6 }}>
                   <Card>
                     <CardContent>
                       <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
@@ -457,8 +457,8 @@ export default function PublicApp() {
                       </Typography>
                     </CardContent>
                   </Card>
-                </Grid>
-              </Grid>
+                </Grid2>
+              </Grid2>
             </>
           )}
         </Container>
@@ -744,8 +744,8 @@ export default function PublicApp() {
               Información pública de la congregación
             </Typography>
 
-            <Grid container spacing={3}>
-              <Grid size={{ xs: 12, md: 6 }}>
+            <Grid2 container spacing={3}>
+              <Grid2 size={{ xs: 12, md: 6 }}>
                 <Card>
                   <CardContent>
                     <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
@@ -757,9 +757,9 @@ export default function PublicApp() {
                     </Typography>
                   </CardContent>
                 </Card>
-              </Grid>
+              </Grid2>
 
-              <Grid size={{ xs: 12, md: 6 }}>
+              <Grid2 size={{ xs: 12, md: 6 }}>
                 <Card>
                   <CardContent>
                     <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
@@ -771,8 +771,8 @@ export default function PublicApp() {
                     </Typography>
                   </CardContent>
                 </Card>
-              </Grid>
-            </Grid>
+              </Grid2>
+            </Grid2>
           </>
         )}
       </Box>

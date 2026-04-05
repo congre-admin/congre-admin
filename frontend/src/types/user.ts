@@ -1,5 +1,7 @@
 import type { Permiso } from './data';
 
+export type ModulePermission = Permiso | Record<string, Permiso>;
+
 export interface Perfil {
   id: string;
   nombre: string;
@@ -11,5 +13,5 @@ export interface Perfil {
 }
 
 export interface Permisos {
-  [modulo: string]: Permiso;
+  [modulo: string]: ModulePermission;
 }

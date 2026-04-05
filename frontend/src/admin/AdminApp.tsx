@@ -7,7 +7,6 @@ import Login from './modules/setup/views/Login';
 import SetupTOTP from './modules/setup/views/SetupTOTP';
 import SetupPasskey from './modules/setup/views/SetupPasskey';
 import Shell from './core/shell/Shell';
-import ThemeWrapper from './core/theme/ThemeWrapper';
 
 const Dashboard = lazy(() => import('./modules/dashboard/views/Dashboard'));
 const BackupExport = lazy(() => import('./modules/admin/views/BackupExport'));
@@ -42,35 +41,33 @@ function ProtectedShell({ children }: { children: React.ReactNode }) {
 
 function AuthenticatedApp() {
   return (
-    <ThemeWrapper>
-      <Routes>
-        <Route path="" element={
-          <ProtectedShell>
-            <Dashboard />
-          </ProtectedShell>
-        } />
-        
-        <Route path="backup" element={
-          <ProtectedShell>
-            <BackupExport />
-          </ProtectedShell>
-        } />
-        
-        <Route path="settings/auth" element={
-          <ProtectedShell>
-            <AuthSettings />
-          </ProtectedShell>
-        } />
-        
-        <Route path="settings/congregation" element={
-          <ProtectedShell>
-            <CongregationSettings />
-          </ProtectedShell>
-        } />
-        
-        <Route path="*" element={<Navigate to="" replace />} />
-      </Routes>
-    </ThemeWrapper>
+    <Routes>
+      <Route path="" element={
+        <ProtectedShell>
+          <Dashboard />
+        </ProtectedShell>
+      } />
+      
+      <Route path="backup" element={
+        <ProtectedShell>
+          <BackupExport />
+        </ProtectedShell>
+      } />
+      
+      <Route path="settings/auth" element={
+        <ProtectedShell>
+          <AuthSettings />
+        </ProtectedShell>
+      } />
+      
+      <Route path="settings/congregation" element={
+        <ProtectedShell>
+          <CongregationSettings />
+        </ProtectedShell>
+      } />
+      
+      <Route path="*" element={<Navigate to="" replace />} />
+    </Routes>
   );
 }
 

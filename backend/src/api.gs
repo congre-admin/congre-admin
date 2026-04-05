@@ -40,8 +40,10 @@ function doPost(e) {
     const action = postData.action;
     const payload = postData.payload || {};
     const sessionToken = payload.sessionToken || postData.sessionToken;
-    const sheetName = postData.sheet;
+    const sheetName = payload.sheet || postData.sheet;
     const ssId = payload.ssId || postData.ssId;
+    const coreSsId = payload.coreSsId || ssId;
+    const module = payload.module || null;
 
     // --- Auth actions (no ssId required) ---
     const authActions = {
@@ -54,11 +56,11 @@ function doPost(e) {
       setupPasskey: () => actionSetupPasskey(payload, ssId),
       confirmPasskey: () => actionConfirmPasskey(payload, ssId),
       deletePasskey: () => actionDeletePasskey(payload, ssId),
-      changePassword: () => actionChangePassword(payload, ssId),
+      changePassword: () => actionChangePassword(payload, sessionToken, ssId),
       requestPasswordReset: () => actionRequestPasswordReset(payload, ssId),
-      confirmPasswordReset: () => actionConfirmPasswordReset(payload, ssId),
-      getAuthMethods: () => actionGetAuthMethods(payload, ssId),
-      setDefaultAuthMethod: () => actionSetDefaultAuthMethod(payload, ssId),
+      confirmPasswordReset: () => actionConfirmPasswordReset(payload, sessionToken, ssId),
+      getAuthMethods: () => actionGetAuthMethods(payload, sessionToken, ssId),
+      setDefaultAuthMethod: () => actionSetDefaultAuthMethod(payload, sessionToken, ssId),
       validateSession: () => {
         const s = validateSession(sessionToken, ssId);
         return { valid: s.valid, userId: s.userId };
@@ -91,14 +93,14 @@ function doPost(e) {
     const session = sessionToken ? validateSession(sessionToken, ssId) : null;
 
     const dataActions = {
-      getData: () => dataActionGetData(session, ss, ssId, sheetName),
-      batchExecute: () => batchExecute(session, ss, ssId, payload),
-      initSheet: () => dataActionInitSheet(session, ss, ssId, sheetName, postData),
-      clearSheet: () => dataActionClearSheet(session, ss, ssId, sheetName),
-      saveData: () => dataActionSaveData(session, ss, ssId, sheetName, payload, postData),
-      deleteData: () => dataActionDeleteData(session, ss, ssId, sheetName, payload),
-      hardDelete: () => dataActionHardDelete(session, ss, ssId, sheetName, payload),
-      restoreData: () => dataActionRestoreData(session, ss, ssId, sheetName, payload),
+      getData: () => dataActionGetData(session, ss, ssId, sheetName, module),
+      batchExecute: () => batchExecute(session, ss, ssId, payload, module),
+      initSheet: () => dataActionInitSheet(session, ss, ssId, sheetName, module, postData),
+      clearSheet: () => dataActionClearSheet(session, ss, ssId, sheetName, module),
+      saveData: () => dataActionSaveData(session, ss, ssId, sheetName, module, payload, postData),
+      deleteData: () => dataActionDeleteData(session, ss, ssId, sheetName, module, payload),
+      hardDelete: () => dataActionHardDelete(session, ss, ssId, sheetName, module, payload),
+      restoreData: () => dataActionRestoreData(session, ss, ssId, sheetName, module, payload),
     };
 
     if (!dataActions[action]) return createResponse({ error: 'Acción POST no válida: ' + action });
@@ -120,34 +122,47 @@ const BATCH_MAX_OPS = 50;
  * File ops: uploadFile, downloadFile, listFolderFiles, deleteFile, setFileSharing, moveFileToFolder.
  * Modes: "continue" (all ops, partial success) or "fail-fast" (stop on first error).
  */
-function batchExecute(session, ss, ssId, payload) {
+function batchExecute(session, ss, ssId, payload, module) {
   const operations = payload.operations || [];
   const mode = payload.mode || 'continue';
+  const isSetup = payload.isSetup === true;
 
   if (!operations.length) return { success: false, error: 'ERR_BATCH_EMPTY: No operations provided' };
   if (operations.length > BATCH_MAX_OPS) return { success: false, error: 'ERR_BATCH_TOO_LARGE: Max ' + BATCH_MAX_OPS + ' operations per call' };
 
-  // RBAC pre-check for write operations
-  for (let i = 0; i < operations.length; i++) {
-    const op = operations[i];
-    if (['save', 'delete', 'hardDelete', 'restore', 'initSheet', 'uploadFile', 'deleteFile', 'setFileSharing', 'moveFileToFolder'].includes(op.op)) {
-      if (!session || !session.valid) return { success: false, error: 'ERR_AUTH_REQUIRED', failedAt: i };
-      if (['uploadFile', 'deleteFile', 'setFileSharing', 'moveFileToFolder'].includes(op.op)) {
-        const permCheck = checkPermission(session, 'write', 'core', ssId);
-        if (!permCheck.allowed) return { success: false, error: permCheck.error, failedAt: i };
-      } else {
-        const permCheck = checkPermission(session, 'write', op.sheet, ssId);
-        if (!permCheck.allowed) return { success: false, error: permCheck.error, failedAt: i };
+  // Setup mode: allow only initSheet and save, no session required
+  if (isSetup) {
+    const safeOps = ['initSheet', 'save'];
+    for (var i = 0; i < operations.length; i++) {
+      if (safeOps.indexOf(operations[i].op) === -1) {
+        return { success: false, error: 'ERR_SETUP_INVALID_OP: Only initSheet and save allowed in setup mode', failedAt: i };
       }
-    } else if (op.op === 'read' || op.op === 'readById') {
-      if (session && session.valid) {
-        const permCheck = checkPermission(session, 'read', op.sheet, ssId);
-        if (!permCheck.allowed) return { success: false, error: permCheck.error, failedAt: i };
-      }
-    } else if (op.op === 'downloadFile' || op.op === 'listFolderFiles') {
-      if (session && session.valid) {
-        const permCheck = checkPermission(session, 'read', 'core', ssId);
-        if (!permCheck.allowed) return { success: false, error: permCheck.error, failedAt: i };
+    }
+  }
+
+  // RBAC pre-check for write operations (skipped in setup mode)
+  if (!isSetup) {
+    for (let i = 0; i < operations.length; i++) {
+      const op = operations[i];
+      if (['save', 'delete', 'hardDelete', 'restore', 'initSheet', 'uploadFile', 'deleteFile', 'setFileSharing', 'moveFileToFolder'].includes(op.op)) {
+        if (!session || !session.valid) return { success: false, error: 'ERR_AUTH_REQUIRED', failedAt: i };
+        if (['uploadFile', 'deleteFile', 'setFileSharing', 'moveFileToFolder'].includes(op.op)) {
+          const permCheck = checkPermission(session, 'write', 'core', ssId, module);
+          if (!permCheck.allowed) return { success: false, error: permCheck.error, failedAt: i };
+        } else {
+          const permCheck = checkPermission(session, 'write', op.sheet, ssId, module);
+          if (!permCheck.allowed) return { success: false, error: permCheck.error, failedAt: i };
+        }
+      } else if (op.op === 'read' || op.op === 'readById') {
+        if (session && session.valid) {
+          const permCheck = checkPermission(session, 'read', op.sheet, ssId, module);
+          if (!permCheck.allowed) return { success: false, error: permCheck.error, failedAt: i };
+        }
+      } else if (op.op === 'downloadFile' || op.op === 'listFolderFiles') {
+        if (session && session.valid) {
+          const permCheck = checkPermission(session, 'read', 'core', ssId, module);
+          if (!permCheck.allowed) return { success: false, error: permCheck.error, failedAt: i };
+        }
       }
     }
   }
@@ -214,6 +229,8 @@ function batchExecute(session, ss, ssId, payload) {
           const cached = getBatchSheet(ss, op.sheet, sheetCache);
           if (!cached) { result.success = false; result.error = 'Hoja no encontrada'; break; }
           const idIndex = cached.headers.indexOf('id');
+          const keyIndex = idIndex >= 0 ? idIndex : 0;
+          const keyColumn = cached.headers[keyIndex];
           const vIndex = cached.headers.indexOf('_v');
           const tsIndex = cached.headers.indexOf('_ts');
           const data = op.data;
@@ -221,7 +238,7 @@ function batchExecute(session, ss, ssId, payload) {
           let rowIndex = -1;
           let currentV = 0;
           for (let r = 0; r < cached.rows.length; r++) {
-            if (cached.rows[r][idIndex] == data.id) {
+            if (cached.rows[r][keyIndex] == data[keyColumn]) {
               rowIndex = r;
               currentV = parseInt(cached.rows[r][vIndex]) || 0;
               break;
@@ -251,12 +268,13 @@ function batchExecute(session, ss, ssId, payload) {
           const cached = getBatchSheet(ss, op.sheet, sheetCache);
           if (!cached) { result.success = false; result.error = 'Hoja no encontrada'; break; }
           const idIndex = cached.headers.indexOf('id');
+          const keyIndex = idIndex >= 0 ? idIndex : 0;
           const deletedIndex = cached.headers.indexOf('_deleted');
           const vIndex = cached.headers.indexOf('_v');
           const tsIndex = cached.headers.indexOf('_ts');
           let found = false;
           for (let r = 0; r < cached.rows.length; r++) {
-            if (cached.rows[r][idIndex] == op.id) {
+            if (cached.rows[r][keyIndex] == op.id) {
               if (deletedIndex >= 0) cached.rows[r][deletedIndex] = true;
               if (vIndex >= 0) cached.rows[r][vIndex] = (parseInt(cached.rows[r][vIndex]) || 0) + 1;
               if (tsIndex >= 0) cached.rows[r][tsIndex] = new Date().toISOString();
@@ -274,9 +292,10 @@ function batchExecute(session, ss, ssId, payload) {
           const cached = getBatchSheet(ss, op.sheet, sheetCache);
           if (!cached) { result.success = false; result.error = 'Hoja no encontrada'; break; }
           const idIndex = cached.headers.indexOf('id');
+          const keyIndex = idIndex >= 0 ? idIndex : 0;
           let found = false;
           for (let r = 0; r < cached.rows.length; r++) {
-            if (cached.rows[r][idIndex] == op.id) {
+            if (cached.rows[r][keyIndex] == op.id) {
               cached.rows.splice(r, 1);
               cached.dirty = true;
               found = true;
@@ -292,10 +311,11 @@ function batchExecute(session, ss, ssId, payload) {
           const cached = getBatchSheet(ss, op.sheet, sheetCache);
           if (!cached) { result.success = false; result.error = 'Hoja no encontrada'; break; }
           const idIndex = cached.headers.indexOf('id');
+          const keyIndex = idIndex >= 0 ? idIndex : 0;
           const deletedIndex = cached.headers.indexOf('_deleted');
           let found = false;
           for (let r = 0; r < cached.rows.length; r++) {
-            if (cached.rows[r][idIndex] == op.id) {
+            if (cached.rows[r][keyIndex] == op.id) {
               if (deletedIndex >= 0) cached.rows[r][deletedIndex] = false;
               cached.dirty = true;
               found = true;
@@ -322,7 +342,6 @@ function batchExecute(session, ss, ssId, payload) {
             sheet.getRange(1, 1, 1, op.headers.length).setFontWeight('bold').setBackground('#f3f3f3');
           }
           sheetCache[op.sheet] = { sheet, headers: op.headers, rows: [], dirty: false };
-          clearCache(ssId, op.sheet);
           result.success = true;
           break;
         }
@@ -418,7 +437,6 @@ function batchExecute(session, ss, ssId, payload) {
     if (cached && cached.dirty) {
       const allRows = [cached.headers, ...cached.rows];
       cached.sheet.getRange(1, 1, allRows.length, allRows[0].length).setValues(allRows);
-      clearCache(ssId, sheetName);
     }
   }
 
@@ -457,17 +475,17 @@ function matchFilter(row, filter) {
 // DATA ACTIONS (thin wrappers with session + RBAC validation)
 // ================================================================= //
 
-function dataActionGetData(session, ss, ssId, sheetName) {
+function dataActionGetData(session, ss, ssId, sheetName, module) {
   if (session && session.valid) {
-    const permCheck = checkPermission(session, 'read', sheetName, ssId);
+    const permCheck = checkPermission(session, 'read', sheetName, ssId, module);
     if (!permCheck.allowed) return { error: permCheck.error };
   }
   return { success: true, data: getCachedSheetData(ss, sheetName) };
 }
 
-function dataActionInitSheet(session, ss, ssId, sheetName, postData) {
+function dataActionInitSheet(session, ss, ssId, sheetName, module, postData) {
   if (!session || !session.valid) return { error: 'ERR_AUTH_REQUIRED' };
-  const permCheck = checkPermission(session, 'write', sheetName, ssId);
+  const permCheck = checkPermission(session, 'write', sheetName, ssId, module);
   if (!permCheck.allowed) return { error: permCheck.error };
 
   let sheet = ss.getSheetByName(sheetName);
@@ -480,13 +498,12 @@ function dataActionInitSheet(session, ss, ssId, sheetName, postData) {
   } else if (sheet.getLastRow() === 0) {
     sheet.getRange(1, 1, 1, postData.headers.length).setValues([postData.headers]).setFontWeight('bold').setBackground('#f3f3f3');
   }
-  clearCache(ssId, sheetName);
   return { success: true, message: 'Hoja inicializada' };
 }
 
-function dataActionClearSheet(session, ss, ssId, sheetName) {
+function dataActionClearSheet(session, ss, ssId, sheetName, module) {
   if (!session || !session.valid) return { error: 'ERR_AUTH_REQUIRED' };
-  const permCheck = checkPermission(session, 'write', sheetName, ssId);
+  const permCheck = checkPermission(session, 'write', sheetName, ssId, module);
   if (!permCheck.allowed) return { error: permCheck.error };
 
   const sheet = ss.getSheetByName(sheetName);
@@ -494,13 +511,12 @@ function dataActionClearSheet(session, ss, ssId, sheetName) {
   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues();
   sheet.clearContents();
   if (headers.length > 0 && headers[0][0]) sheet.appendRow(headers[0]);
-  clearCache(ssId, sheetName);
   return { success: true };
 }
 
-function dataActionSaveData(session, ss, ssId, sheetName, payload, postData) {
+function dataActionSaveData(session, ss, ssId, sheetName, module, payload, postData) {
   if (!session || !session.valid) return { error: 'ERR_AUTH_REQUIRED' };
-  const permCheck = checkPermission(session, 'write', sheetName, ssId);
+  const permCheck = checkPermission(session, 'write', sheetName, ssId, module);
   if (!permCheck.allowed) return { error: permCheck.error };
 
   const sheet = ss.getSheetByName(sheetName);
@@ -510,45 +526,41 @@ function dataActionSaveData(session, ss, ssId, sheetName, payload, postData) {
     existingRows = sheet.getDataRange().getValues();
   }
   updateOrInsert(sheet, payload, false, { existingRows });
-  clearCache(ssId, sheetName);
   return { success: true, message: 'Datos guardados' };
 }
 
-function dataActionDeleteData(session, ss, ssId, sheetName, payload) {
+function dataActionDeleteData(session, ss, ssId, sheetName, module, payload) {
   if (!session || !session.valid) return { error: 'ERR_AUTH_REQUIRED' };
-  const permCheck = checkPermission(session, 'write', sheetName, ssId);
+  const permCheck = checkPermission(session, 'write', sheetName, ssId, module);
   if (!permCheck.allowed) return { error: permCheck.error };
 
   const sheet = ss.getSheetByName(sheetName);
   if (!sheet) return { error: 'Hoja no encontrada' };
   const result = softDeleteRow(sheet, payload.id);
   if (!result) return { success: false, error: 'Registro no encontrado' };
-  clearCache(ssId, sheetName);
   return { success: true, message: 'Borrado lógico realizado' };
 }
 
-function dataActionHardDelete(session, ss, ssId, sheetName, payload) {
+function dataActionHardDelete(session, ss, ssId, sheetName, module, payload) {
   if (!session || !session.valid) return { error: 'ERR_AUTH_REQUIRED' };
-  const permCheck = checkPermission(session, 'write', sheetName, ssId);
+  const permCheck = checkPermission(session, 'write', sheetName, ssId, module);
   if (!permCheck.allowed) return { error: permCheck.error };
 
   const sheet = ss.getSheetByName(sheetName);
   if (!sheet) return { error: 'Hoja no encontrada' };
   deleteRowById(sheet, payload.id);
-  clearCache(ssId, sheetName);
   return { success: true, message: 'Borrado físico realizado' };
 }
 
-function dataActionRestoreData(session, ss, ssId, sheetName, payload) {
+function dataActionRestoreData(session, ss, ssId, sheetName, module, payload) {
   if (!session || !session.valid) return { error: 'ERR_AUTH_REQUIRED' };
-  const permCheck = checkPermission(session, 'write', sheetName, ssId);
+  const permCheck = checkPermission(session, 'write', sheetName, ssId, module);
   if (!permCheck.allowed) return { error: permCheck.error };
 
   const sheet = ss.getSheetByName(sheetName);
   if (!sheet) return { error: 'Hoja no encontrada' };
   const result = restoreRow(sheet, payload.id);
   if (!result) return { success: false, error: 'Registro no encontrado' };
-  clearCache(ssId, sheetName);
   return { success: true, message: 'Registro restaurado' };
 }
 
@@ -560,24 +572,13 @@ const CACHE_TTL_DATA = 600; // 10 minutes
 const CACHE_TTL_LOOKUP = 300; // 5 minutes
 
 function getCachedSheetData(ss, sheetName) {
-  const cache = CacheService.getScriptCache();
-  const cacheKey = ss.getId() + '_' + sheetName;
-  const cached = cache.get(cacheKey);
-
-  if (cached) {
-    try { return JSON.parse(cached); } catch (e) {}
-  }
-
+  Logger.log('getCachedSheetData: ssId=' + ss.getId() + ', sheetName=' + sheetName);
   const sheet = ss.getSheetByName(sheetName);
+  Logger.log('getCachedSheetData: sheet=' + (sheet ? sheet.getName() : 'null'));
   if (!sheet) return [];
-
   const data = getSheetData(sheet);
-  try { cache.put(cacheKey, JSON.stringify(data), CACHE_TTL_DATA); } catch (e) {}
+  Logger.log('getCachedSheetData: rows=' + data.length);
   return data;
-}
-
-function clearCache(ssId, sheetName) {
-  CacheService.getScriptCache().remove(ssId + '_' + sheetName);
 }
 
 function getCached(key, fetchFn) {
@@ -876,7 +877,6 @@ function createUser(userData, ssId) {
   };
 
   updateOrInsert(sheet, user, false);
-  clearCache(ssId, 'Usuarios');
   invalidateCache('u:');
   return { success: true, user: { id: user.id, username: user.username } };
 }
@@ -893,7 +893,6 @@ function updateUser(id, updates, ssId) {
   if (updates.metadata && typeof updates.metadata === 'object') processed.metadata = JSON.stringify(updates.metadata);
 
   updateOrInsert(sheet, { ...user, ...processed, _ts: new Date().toISOString() }, false);
-  clearCache(ssId, 'Usuarios');
   invalidateCache('u:');
   return { success: true, user: { id: user.id, username: user.username } };
 }
@@ -1108,10 +1107,6 @@ function actionRegister(payload, ssId) {
     }, ssId);
 
     try { sendWelcomeEmail(payload.email, payload.username, 'tu congregación'); } catch (e) { Logger.log('Error sending welcome email: ' + e.message); }
-    try {
-      const otpResult = actionRequestOTP({ username: payload.username, verifyOnly: true }, ssId);
-      if (!otpResult.success) Logger.log('Warning: Could not send initial OTP: ' + otpResult.error);
-    } catch (e) { Logger.log('Warning: Error sending initial OTP: ' + e.message); }
 
     return { success: true, user: result.user };
   } catch (err) {
@@ -1185,6 +1180,11 @@ function actionConfirmTOTP(payload, ssId) {
 
     const authConfig = parseAuthConfig(resolved.user.auth_config);
     authConfig.totp = { enabled: true, secret: pending.secret, created_at: new Date().toISOString() };
+
+    if (authConfig.default_method !== 'passkey') {
+      authConfig.default_method = 'totp';
+    }
+
     updateUserAuthConfig(resolved.user, authConfig, ssId);
 
     PropertiesService.getUserProperties().deleteProperty('totp_pending_' + resolved.username);
@@ -1248,6 +1248,8 @@ function actionConfirmPasskey(payload, ssId) {
       created_at: new Date().toISOString(),
     });
 
+    authConfig.default_method = 'passkey';
+
     updateUserAuthConfig(resolved.user, authConfig, ssId);
     PropertiesService.getUserProperties().deleteProperty('passkey_setup_' + resolved.username);
 
@@ -1278,9 +1280,9 @@ function actionDeletePasskey(payload, ssId) {
   }
 }
 
-function actionChangePassword(payload, ssId) {
+function actionChangePassword(payload, sessionToken, ssId) {
   try {
-    const { sessionToken, old_password, new_password } = payload;
+    const { old_password, new_password } = payload;
     const session = validateSession(sessionToken, ssId);
     if (!session.valid) return { success: false, error: 'ERR_AUTH_INVALID' };
 
@@ -1307,7 +1309,7 @@ function actionChangePassword(payload, ssId) {
   }
 }
 
-function actionConfirmPasswordReset(payload, ssId) {
+function actionConfirmPasswordReset(payload, sessionToken, ssId) {
   try {
     const { userId, token, newPassword } = payload;
     if (!userId || !token || !newPassword) return { success: false, error: 'ERR_INVALID_REQUEST: Datos incompletos' };
@@ -1399,9 +1401,8 @@ function actionRequestOTP(payload, ssId) {
   }
 }
 
-function actionGetAuthMethods(payload, ssId) {
+function actionGetAuthMethods(payload, sessionToken, ssId) {
   try {
-    const { sessionToken } = payload;
     const session = validateSession(sessionToken, ssId);
     if (!session.valid) return { success: false, error: 'ERR_AUTH_INVALID' };
 
@@ -1425,9 +1426,9 @@ function actionGetAuthMethods(payload, ssId) {
   }
 }
 
-function actionSetDefaultAuthMethod(payload, ssId) {
+function actionSetDefaultAuthMethod(payload, sessionToken, ssId) {
   try {
-    const { sessionToken, method } = payload;
+    const { method } = payload;
     const session = validateSession(sessionToken, ssId);
     if (!session.valid) return { success: false, error: 'ERR_AUTH_INVALID' };
 
@@ -1608,16 +1609,33 @@ function normalizePermisos(permisos) {
   return {};
 }
 
+/**
+ * Resolves a permission from flat or granular format.
+ * Flat: "RW" → returns "RW"
+ * Granular: {"configuracion":"RW","*":"R"} → returns permiso[key] or permiso['*']
+ */
+function resolvePermission(modulePerm, sheetName) {
+  if (!modulePerm) return null;
+  if (typeof modulePerm === 'string') return modulePerm;
+  if (typeof modulePerm === 'object') {
+    var key = sheetName.toLowerCase();
+    return modulePerm[key] || modulePerm['*'] || null;
+  }
+  return null;
+}
+
 function getPermiso(perfilId, modulo, ssId) {
   const perfil = getPerfilById(perfilId, ssId);
   if (!perfil) return null;
   return normalizePermisos(perfil.permisos)[modulo] || null;
 }
 
-function validarPermiso(userId, modulo, accion, ssId) {
+function validarPermiso(userId, modulo, accion, ssId, sheetName) {
   const user = getUserById(userId, ssId);
   if (!user) return false;
-  const permiso = getPermiso(user.perfilId, modulo, ssId);
+  const modulePerm = getPermiso(user.perfilId, modulo, ssId);
+  if (!modulePerm) return false;
+  const permiso = resolvePermission(modulePerm, sheetName || '');
   if (!permiso) return false;
   const map = { read: ['R', 'RW'], write: ['W', 'RW'], delete: ['RW'] };
   return (map[accion] || []).includes(permiso);
@@ -1631,10 +1649,10 @@ function getUserPermisos(userId, ssId) {
   return normalizePermisos(perfil.permisos);
 }
 
-function checkPermission(session, action, modulo, ssId) {
+function checkPermission(session, action, sheetName, ssId, module) {
   if (!session || !session.valid) return { allowed: false, error: 'ERR_AUTH_INVALID' };
-  if (!validarPermiso(session.userId, modulo, action, ssId)) {
-    logAccess(session.username, false, 'Permiso denegado: ' + action + ' en ' + modulo, ssId);
+  if (!validarPermiso(session.userId, module || sheetName, action, ssId, sheetName)) {
+    logAccess(session.username, false, 'Permiso denegado: ' + action + ' en ' + sheetName, ssId);
     return { allowed: false, error: 'ERR_PERMISSION_DENIED' };
   }
   return { allowed: true };

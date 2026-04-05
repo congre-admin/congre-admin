@@ -23,16 +23,17 @@ import {
   Brightness7 as LightModeIcon
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
+import { useThemeContext } from '@/core/context/ThemeContext';
 import { useNavigate } from 'react-router-dom';
 
 export default function Navbar() {
   const { user, logout } = useAuth();
+  const { mode, toggleDarkMode } = useThemeContext();
   const navigate = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-  const [darkMode, setDarkMode] = useState(false);
 
   const handleMenu = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
@@ -46,11 +47,6 @@ export default function Navbar() {
     handleClose();
     logout();
     navigate('/admin/login');
-  };
-
-  const toggleDarkMode = () => {
-    setDarkMode(!darkMode);
-    document.documentElement.classList.toggle('dark');
   };
 
   return (
@@ -81,7 +77,7 @@ export default function Navbar() {
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <IconButton onClick={toggleDarkMode} color="inherit">
-            {darkMode ? <LightModeIcon /> : <DarkModeIcon />}
+            {mode === 'dark' ? <LightModeIcon /> : <DarkModeIcon />}
           </IconButton>
           
           <IconButton color="inherit">

@@ -125,6 +125,8 @@ export default function SetupWizard() {
     localStorage.removeItem('congre_perfil_id');
     localStorage.removeItem('congre_public_ss_id');
     localStorage.removeItem('congre_admin_user_data');
+    localStorage.removeItem('congre_admin_folder_id');
+    localStorage.removeItem('congre_admin_folder_url');
     
     const storedApiUrl = localStorage.getItem(API_URL_KEY);
     const storedSsId = localStorage.getItem(SS_ID_KEY);
@@ -134,20 +136,20 @@ export default function SetupWizard() {
       return;
     }
 
-    fetch('/data/seed_perfiles.json')
+    fetch('/data/seeds/core/perfiles.json')
       .then(res => res.json())
-      .then((data: SeedData) => {
-        setPerfiles(data.perfiles);
+      .then((data: Perfil[]) => {
+        setPerfiles(data);
       })
       .catch(err => {
         console.error('Error loading seed profiles:', err);
         setError('Error al cargar los perfiles base');
       });
 
-    fetch('/data/seed_configuracion.json')
+    fetch('/data/seeds/core/configuracion.json')
       .then(res => res.json())
-      .then((data: SeedConfig) => {
-        setDefaultConfig(data.config);
+      .then((data: Array<{ clave: string; valor: string; is_public: boolean }>) => {
+        setDefaultConfig(data);
       })
       .catch(err => {
         console.error('Error loading seed config:', err);
@@ -221,88 +223,97 @@ export default function SetupWizard() {
       }
 
       localStorage.setItem(SS_ID_KEY, data.ssId);
+      localStorage.setItem('congre_admin_folder_id', data.folderId);
+      localStorage.setItem('congre_admin_folder_url', data.folderUrl);
       
-      // Now orchestrate from frontend using batch operations
       const coreSsId = data.ssId;
       const publicSsId = data.publicSsId;
       
-      // Load schemas
-      const [coreSchema, publicSchema, perfilesSeed, configSeed] = await Promise.all([
+      const [coreSchema, publicSchema, coreConfigSeed, corePerfilesSeed, publicConfigSeed] = await Promise.all([
         fetch('/data/schemas/core.json').then(r => r.json()),
         fetch('/data/schemas/public.json').then(r => r.json()),
-        fetch('/data/seed_perfiles.json').then(r => r.json()),
-        fetch('/data/seed_configuracion.json').then(r => r.json())
+        fetch('/data/seeds/core/configuracion.json').then(r => r.json()),
+        fetch('/data/seeds/core/perfiles.json').then(r => r.json()),
+        fetch('/data/seeds/public/configuracion.json').then(r => r.json())
       ]);
       
-      // Initialize Core tables
-      const coreTables = Object.entries(coreSchema.tables).map(([name, table]: [string, any]) => ({
-        name,
-        headers: table.headers,
-        preserveExisting: false
-      }));
-      
-      const initResult = await dataService.batchInitSheet(coreSsId, coreTables);
-      
-      // Seed Perfiles
-      const perfilesWithMeta = perfilesSeed.perfiles.map((p: Perfil) => ({
+      const perfilesWithMeta = corePerfilesSeed.map((p: Perfil) => ({
         ...p,
         _v: 1,
         _ts: new Date().toISOString(),
         _deleted: false
       }));
-      await dataService.batchSaveData(coreSsId, 'Perfiles', perfilesWithMeta);
       
-      // Store perfiles for display in step 1
-      setPerfiles(perfilesSeed.perfiles);
+      const configOverrides: Record<string, string> = {
+        'nombre_congregacion': nombreCongregacion,
+        'numero_congregacion': numeroCongregacion,
+        'nombre_mostrar': nombreMostrar.trim() || `Co. ${nombreCongregacion}`,
+        'ss_publico': publicSsId,
+        'linked_public_ss': publicSsId
+      };
       
-      // Seed Configuracion (Core)
-      const configWithMeta = configSeed.config.map((c: any) => ({
+      const configWithMeta = coreConfigSeed.map((c: any) => ({
         ...c,
         clave: c.clave,
-        valor: c.valor,
+        valor: configOverrides[c.clave] ?? c.valor,
         is_public: c.is_public,
         _v: 1,
         _ts: new Date().toISOString(),
         _deleted: false
       }));
       
-      // Override with congregation-specific values
-      const configOverrides: Record<string, string> = {
-        'nombre_congregacion': nombreCongregacion,
-        'numero_congregacion': numeroCongregacion,
-        'nombre_mostrar': nombreDisplay,
-        'ss_publico': publicSsId,
-        'linked_public_ss': publicSsId
-      };
+      const coreOps: any[] = [
+        ...Object.entries(coreSchema.tables).map(([name, table]: [string, any]) => ({
+          op: 'initSheet' as const,
+          sheet: name,
+          headers: table.headers,
+          preserveExisting: false,
+        })),
+        ...perfilesWithMeta.map((p: any) => ({
+          op: 'save' as const,
+          sheet: 'Perfiles',
+          data: p,
+        })),
+        ...configWithMeta.map((c: any) => ({
+          op: 'save' as const,
+          sheet: 'Configuracion',
+          data: c,
+        })),
+      ];
       
-      configWithMeta.forEach((c: any) => {
-        if (configOverrides[c.clave] !== undefined) {
-          c.valor = configOverrides[c.clave];
-        }
-      });
+      await dataService.batchExecute(coreOps, { mode: 'fail-fast', isSetup: true });
       
-      await dataService.batchSaveData(coreSsId, 'Configuracion', configWithMeta);
+      setPerfiles(corePerfilesSeed);
       
-      // Initialize Public sheet
       const publicTables = Object.entries(publicSchema.tables).map(([name, table]: [string, any]) => ({
         name,
         headers: table.headers,
         preserveExisting: false
       }));
       
-      await dataService.batchInitSheet(publicSsId, publicTables);
+      const publicConfig = publicConfigSeed.map((c: any) => ({
+        ...c,
+        valor: configOverrides[c.clave] ?? c.valor,
+        _v: 1,
+        _ts: new Date().toISOString(),
+        _deleted: false
+      }));
       
-      // Seed public Configuracion (only public settings)
-      const publicConfig = configSeed.config
-        .filter((c: any) => c.is_public)
-        .map((c: any) => ({
-          ...c,
-          _v: 1,
-          _ts: new Date().toISOString(),
-          _deleted: false
-        }));
+      const publicOps: any[] = [
+        ...publicTables.map((t: any) => ({
+          op: 'initSheet' as const,
+          sheet: t.name,
+          headers: t.headers,
+          preserveExisting: false,
+        })),
+        ...publicConfig.map((c: any) => ({
+          op: 'save' as const,
+          sheet: 'Configuracion',
+          data: c,
+        })),
+      ];
       
-      await dataService.batchSaveData(publicSsId, 'Configuracion', publicConfig);
+      await dataService.batchExecute(publicOps, { mode: 'fail-fast', isSetup: true, ssId: publicSsId });
       
       setActiveStep(1);
     } catch (err) {
@@ -355,7 +366,8 @@ export default function SetupWizard() {
             email: adminEmail,
             password: adminPassword,
             perfilId: 'p_admin',
-            wrapped_mk
+            wrapped_mk,
+            ssId: localStorage.getItem(SS_ID_KEY)
           }
         })
       });

@@ -10,6 +10,16 @@ import type {
   GetPerfilesResponse,
   GetDataResponse,
   Perfil,
+  BatchOp,
+  BatchMode,
+  BatchExecuteResponse,
+  BatchResult,
+  FileItem,
+  ListFilesResponse,
+  UploadFileResponse,
+  DownloadFileResponse,
+  SetSharingResponse,
+  MoveFileResponse,
 } from '../types';
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -27,13 +37,30 @@ const ERROR_MESSAGES: Record<string, string> = {
   ERR_PROFILE_EXISTS: 'El perfil ya existe',
   ERR_PROFILE_NOT_FOUND: 'Perfil no encontrado',
   ERR_PROFILE_IN_USE: 'El perfil está en uso',
+  ERR_SS_ID_REQUIRED: 'Se requiere ID de hoja de cálculo',
+  ERR_FILE_NOT_FOUND: 'Archivo no encontrado',
+  ERR_FILE_TOO_LARGE: 'Archivo demasiado grande (máx 37MB)',
+  ERR_INVALID_MIMETYPE: 'Tipo de archivo no permitido',
+  ERR_FOLDER_NOT_FOUND: 'Carpeta no encontrada',
+  ERR_SUBFOLDER_NOT_FOUND: 'Subcarpeta no encontrada',
+  ERR_INVALID_BASE64: 'Contenido inválido',
+  ERR_BATCH_EMPTY: 'No se proporcionaron operaciones',
+  ERR_BATCH_TOO_LARGE: 'Demasiadas operaciones (máx 50 por llamada)',
+  ERR_SKIPPED: 'Omitida por error anterior',
+  ERR_UNKNOWN_OP: 'Operación desconocida',
 };
 
 const SESSION_TOKEN_KEY = 'congre_admin_session_token';
 const ADMIN_SS_ID_KEY = 'congre_admin_ss_id';
+const FOLDER_ID_KEY = 'congre_admin_folder_id';
+const MODULE_MAP_KEY = 'congre_module_map';
+
+const BATCH_MAX_OPS = 50;
 
 export class DataService {
   private apiUrl: string | null = null;
+  private _moduleMap: Record<string, string> | null = null;
+  private _inFlight = new Map<string, Promise<any>>();
 
   constructor() {
     this.apiUrl = localStorage.getItem('congre_admin_api_url');
@@ -56,7 +83,39 @@ export class DataService {
     return this.apiUrl;
   }
 
-  async resolveModule(moduleOrSsId: string): Promise<string> {
+  resolveModule(sheetName: string, ssId: string): string | null {
+    if (!this._moduleMap) {
+      try {
+        this._moduleMap = JSON.parse(localStorage.getItem(MODULE_MAP_KEY) || '{}');
+      } catch {
+        this._moduleMap = {};
+      }
+    }
+    if (ssId === localStorage.getItem(ADMIN_SS_ID_KEY)) return 'core';
+    return this._moduleMap?.[ssId] || null;
+  }
+
+  async refreshModuleMap(): Promise<void> {
+    this._moduleMap = null;
+    const coreSsId = localStorage.getItem(ADMIN_SS_ID_KEY);
+    if (!coreSsId) return;
+
+    try {
+      const plugins = await this.getData<{ plugin_id: string; ssId: string }[]>('Registro_Plugins', coreSsId);
+      const map: Record<string, string> = { [coreSsId]: 'core' };
+      for (const p of plugins) {
+        if (p.ssId && p.plugin_id) {
+          map[p.ssId] = p.plugin_id;
+        }
+      }
+      localStorage.setItem(MODULE_MAP_KEY, JSON.stringify(map));
+      this._moduleMap = map;
+    } catch {
+      this._moduleMap = null;
+    }
+  }
+
+  async resolveModuleLegacy(moduleOrSsId: string): Promise<string> {
     if (moduleOrSsId.length > 20) {
       return moduleOrSsId;
     }
@@ -84,7 +143,19 @@ export class DataService {
   }
 
   async request<T = any>(action: string, payload: Record<string, any> = {}): Promise<T> {
-    // Always read fresh from localStorage
+    const key = `${action}:${JSON.stringify(payload)}`;
+    if (this._inFlight.has(key)) return this._inFlight.get(key) as Promise<T>;
+
+    const promise = this._doRequest<T>(action, payload);
+    this._inFlight.set(key, promise);
+    try {
+      return await promise;
+    } finally {
+      this._inFlight.delete(key);
+    }
+  }
+
+  private async _doRequest<T = any>(action: string, payload: Record<string, any> = {}): Promise<T> {
     this.apiUrl = localStorage.getItem('congre_admin_api_url') || this.apiUrl;
     
     if (!this.apiUrl) {
@@ -93,6 +164,7 @@ export class DataService {
 
     const sessionToken = localStorage.getItem(SESSION_TOKEN_KEY);
     const coreSsId = localStorage.getItem(ADMIN_SS_ID_KEY);
+    const requestSsId = payload.ssId || coreSsId;
 
     const body: Record<string, any> = {
       action,
@@ -103,8 +175,16 @@ export class DataService {
       body.sessionToken = sessionToken;
     }
 
-    if (coreSsId && !body.payload?.ssId) {
-      body.payload = { ...body.payload, ssId: coreSsId };
+    if (coreSsId) {
+      body.payload = { ...body.payload, coreSsId };
+    }
+
+    if (requestSsId) {
+      body.payload = { ...body.payload, ssId: requestSsId };
+      const module = this.resolveModule(payload.sheet, requestSsId);
+      if (module) {
+        body.payload = { ...body.payload, module };
+      }
     }
 
     const url = this.normalizeUrl(this.apiUrl);
@@ -140,6 +220,23 @@ export class DataService {
       throw new Error(`Respuesta inválida del servidor: ${response.statusText}`);
     }
 
+    if (action === 'batchExecute') {
+      const batchResult = result as unknown as BatchExecuteResponse;
+      if (!batchResult.success) {
+        if (batchResult.results?.length) {
+          const firstError = batchResult.results.find((r: BatchResult) => !r.success);
+          if (firstError?.error) {
+            const message = ERROR_MESSAGES[firstError.error] || firstError.error;
+            throw new Error(message);
+          }
+        } else if (batchResult.error) {
+          const message = ERROR_MESSAGES[batchResult.error] || batchResult.error;
+          throw new Error(message);
+        }
+      }
+      return result as T;
+    }
+
     if (!result.success && result.error) {
       const message = ERROR_MESSAGES[result.error] || result.error;
       throw new Error(message);
@@ -149,24 +246,12 @@ export class DataService {
   }
 
   async getData<T = any[]>(sheet: string, ssId: string, options?: GetDataOptions): Promise<T> {
-    // Flatten payload for backend - getData expects sheet/ssId at top level
     const result = await this.request<GetDataResponse<T>>('getData', {
       ...options,
       sheet,
       ssId,
     });
 
-    return result.data;
-  }
-
-  async batchGetData<T = Record<string, any[]>>(
-    sheets: string[],
-    ssId: string
-  ): Promise<T> {
-    const result = await this.request<{ success: true; data: T }>('batchGetData', {
-      sheets: sheets.join(','),
-      ssId,
-    });
     return result.data;
   }
 
@@ -198,6 +283,77 @@ export class DataService {
     return this.request<ApiResponse>('restoreData', { sheet, ssId, id });
   }
 
+  async batchExecute(
+    operations: BatchOp[],
+    options?: {
+      mode?: BatchMode;
+      folderId?: string;
+      isSetup?: boolean;
+      ssId?: string;
+      onProgress?: (completed: number, total: number, chunkResult: BatchExecuteResponse) => void;
+    }
+  ): Promise<BatchExecuteResponse> {
+    if (!operations.length) {
+      throw new Error(ERROR_MESSAGES.ERR_BATCH_EMPTY);
+    }
+
+    const chunkSize = BATCH_MAX_OPS;
+    const mode = options?.mode || 'continue';
+    const folderId = options?.folderId || localStorage.getItem(FOLDER_ID_KEY) || undefined;
+    const allResults: BatchResult[] = [];
+    let totalSucceeded = 0;
+    let totalFailed = 0;
+
+    for (let i = 0; i < operations.length; i += chunkSize) {
+      const chunk = operations.slice(i, i + chunkSize);
+
+      if (mode === 'fail-fast' && totalFailed > 0) {
+        const remaining = operations.length - i;
+        for (let j = 0; j < remaining; j++) {
+          allResults.push({
+            index: i + j,
+            op: operations[i + j].op,
+            success: false,
+            error: 'ERR_SKIPPED: Previous chunk failed',
+          });
+        }
+        totalFailed += remaining;
+        break;
+      }
+
+      const requestPayload: Record<string, any> = {
+        operations: chunk,
+        mode,
+      };
+      if (options?.ssId) {
+        requestPayload.ssId = options.ssId;
+      }
+      if (folderId) {
+        requestPayload.folderId = folderId;
+      }
+      if (options?.isSetup) {
+        requestPayload.isSetup = true;
+      }
+
+      const response = await this.request<BatchExecuteResponse>('batchExecute', requestPayload);
+
+      for (const result of (response.results || [])) {
+        allResults.push({ ...result, index: i + result.index });
+        if (result.success) totalSucceeded++; else totalFailed++;
+      }
+
+      options?.onProgress?.(i + chunk.length, operations.length, response);
+    }
+
+    return {
+      success: totalFailed === 0,
+      results: allResults,
+      totalOps: operations.length,
+      succeeded: totalSucceeded,
+      failed: totalFailed,
+    };
+  }
+
   async login(payload: LoginPayload): Promise<LoginResponse | LoginStepResponse> {
     return this.request<LoginResponse | LoginStepResponse>('login', payload);
   }
@@ -219,7 +375,7 @@ export class DataService {
   }
 
   async getPerfiles(ssId: string): Promise<Perfil[]> {
-    return this.getData<Perfil>('Perfiles', ssId);
+    return this.getData<Perfil[]>('Perfiles', ssId);
   }
 
   async createProfile(ssId: string, payload: Partial<Perfil>): Promise<ApiResponse> {
@@ -239,29 +395,6 @@ export class DataService {
     return this.deleteData('Perfiles', ssId, profileId);
   }
 
-  async batchInitSheet(ssId: string, tables: { name: string; headers: string[]; preserveExisting?: boolean }[]): Promise<{ success: boolean; results: { name: string; status: string }[] }> {
-    return this.request<{ success: boolean; results: { name: string; status: string }[] }>('batchInitSheet', {
-      ssId: ssId,
-      tables: tables,
-    });
-  }
-
-  async batchSaveData(ssId: string, sheet: string, rows: any[]): Promise<{ success: boolean; results: { id: string; status: string }[] }> {
-    return this.request<{ success: boolean; results: { id: string; status: string }[] }>('batchSaveData', {
-      ssId: ssId,
-      sheet: sheet,
-      rows: rows,
-    });
-  }
-
-  async batchDeleteData(ssId: string, sheet: string, ids: string[]): Promise<{ success: boolean; results: { id: string; status: string }[] }> {
-    return this.request<{ success: boolean; results: { id: string; status: string }[] }>('batchDeleteData', {
-      ssId: ssId,
-      sheet: sheet,
-      ids: ids,
-    });
-  }
-
   async getConfig(key: string, ssId: string): Promise<{ clave: string; valor: string } | null> {
     const result = await this.getData<{ clave: string; valor: string }[]>('Configuracion', ssId);
     return result.find((c) => c.clave === key) || null;
@@ -279,6 +412,73 @@ export class DataService {
       clave: key,
       valor: value,
       is_public: isPublic,
+    });
+  }
+
+  // --- File Operations ---
+
+  async listFolderFiles(folderId?: string, subfolder?: string): Promise<ListFilesResponse> {
+    const resolvedFolder = folderId || localStorage.getItem(FOLDER_ID_KEY);
+    if (!resolvedFolder) {
+      throw new Error('ERR_FOLDER_NOT_FOUND: No folder ID configured');
+    }
+    return this.request<ListFilesResponse>('listFolderFiles', {
+      folderId: resolvedFolder,
+      subfolder,
+    });
+  }
+
+  async uploadFile(
+    content: string,
+    fileName: string,
+    mimeType: string,
+    options?: { folderId?: string; subfolder?: string }
+  ): Promise<UploadFileResponse> {
+    const resolvedFolder = options?.folderId || localStorage.getItem(FOLDER_ID_KEY);
+    if (!resolvedFolder) {
+      throw new Error('ERR_FOLDER_NOT_FOUND: No folder ID configured');
+    }
+    return this.request<UploadFileResponse>('uploadFile', {
+      folderId: resolvedFolder,
+      content,
+      fileName,
+      mimeType,
+      subfolder: options?.subfolder,
+    });
+  }
+
+  async downloadFile(fileId: string): Promise<DownloadFileResponse> {
+    return this.request<DownloadFileResponse>('downloadFile', { fileId });
+  }
+
+  async deleteFile(fileId: string): Promise<ApiResponse> {
+    return this.request<ApiResponse>('deleteFile', { fileId });
+  }
+
+  async setFileSharing(
+    fileId: string,
+    access: 'PRIVATE' | 'ANYONE_WITH_LINK' | 'DOMAIN' | 'ANYONE',
+    permission: 'VIEW' | 'COMMENT' | 'EDIT' = 'VIEW'
+  ): Promise<SetSharingResponse> {
+    return this.request<SetSharingResponse>('setFileSharing', {
+      fileId,
+      access,
+      permission,
+    });
+  }
+
+  async moveFileToFolder(
+    fileId: string,
+    options?: { folderId?: string; subfolder?: string }
+  ): Promise<MoveFileResponse> {
+    const resolvedFolder = options?.folderId || localStorage.getItem(FOLDER_ID_KEY);
+    if (!resolvedFolder) {
+      throw new Error('ERR_FOLDER_NOT_FOUND: No folder ID configured');
+    }
+    return this.request<MoveFileResponse>('moveFileToFolder', {
+      folderId: resolvedFolder,
+      fileId,
+      subfolder: options?.subfolder,
     });
   }
 }

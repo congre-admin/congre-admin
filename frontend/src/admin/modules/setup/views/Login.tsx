@@ -314,7 +314,7 @@ export default function Login() {
 
       dataService.setApiUrl(apiUrl);
 
-      const challengeData = await dataService.request<{ success: boolean; challenge?: string; rpId?: string; timeout?: number; allowCredentials?: any[] }>('challenge', {
+      const challengeData = await dataService.request<{ success: boolean; error?: string; challenge?: string; rpId?: string; timeout?: number; allowCredentials?: Array<{ id: string; type: string }>; userVerification?: string }>('challenge', {
         username,
         origin: window.location.origin
       });
@@ -327,11 +327,11 @@ export default function Login() {
         challenge: Uint8Array.from(atob(challengeData.challenge!), c => c.charCodeAt(0)),
         rpId: challengeData.rpId || 'localhost',
         timeout: challengeData.timeout || 60000,
-        allowCredentials: challengeData.allowCredentials?.map((cred: any) => ({
-          id: base64UrlToUint8Array(cred.id),
-          type: cred.type
+        allowCredentials: challengeData.allowCredentials?.map((cred) => ({
+          id: base64UrlToUint8Array(cred.id) as BufferSource,
+          type: 'public-key' as const
         })) || [],
-        userVerification: challengeData.userVerification || 'preferred'
+        userVerification: (challengeData.userVerification || 'preferred') as UserVerificationRequirement
       };
 
       let credential: PublicKeyCredential | null = null;

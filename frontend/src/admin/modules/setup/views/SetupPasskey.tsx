@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Box,
   Paper,
@@ -51,6 +52,7 @@ interface PasskeyChallenge {
 
 export default function SetupPasskey() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { user, sessionToken, isAuthenticated } = useAuth();
   const { data: congregacion } = useCongregacion();
   const congregationName = congregacion?.nombre || 'CongreAdmin';
@@ -136,6 +138,11 @@ export default function SetupPasskey() {
         payload.password = password;
       }
 
+      const ssId = localStorage.getItem('congre_admin_ss_id');
+      if (ssId) {
+        payload.ssId = ssId;
+      }
+
       const data = await fetchApi(apiUrl, {
         method: 'POST',
         body: JSON.stringify({
@@ -168,7 +175,7 @@ export default function SetupPasskey() {
         timeout: challenge.timeout || 60000,
         attestation: challenge.attestation as AttestationConveyancePreference,
         excludeCredentials: challenge.excludeCredentials.map(cred => ({
-          id: base64UrlToUint8Array(cred.id),
+          id: base64UrlToUint8Array(cred.id) as BufferSource,
           type: cred.type as 'public-key'
         }))
       };
@@ -211,6 +218,11 @@ export default function SetupPasskey() {
         confirmPayload.password = password;
       }
 
+      const confirmSsId = localStorage.getItem('congre_admin_ss_id');
+      if (confirmSsId) {
+        confirmPayload.ssId = confirmSsId;
+      }
+
       const confirmData = await fetchApi(apiUrl, {
         method: 'POST',
         body: JSON.stringify({
@@ -224,6 +236,7 @@ export default function SetupPasskey() {
       }
 
       setSuccess(true);
+      queryClient.invalidateQueries({ queryKey: ['authMethods'] });
       setStep(1);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al configurar passkey');
