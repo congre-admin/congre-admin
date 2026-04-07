@@ -207,17 +207,21 @@ El proveedor de backend debe validar los factores de autenticación requeridos a
 
 ## 6. Control de Permisos RBAC
 
-El sistema implementa Control de Acceso Basado en Roles con perfiles. Los perfiles base se definen en el archivo `backend/data/seed_perfiles.json` y se injectan durante la instalación.
+El sistema implementa Control de Acceso Basado en Roles con perfiles. Los perfiles base se definen en el archivo `frontend/public/data/seeds/core/perfiles.json` y se injectan durante la instalación.
 
 ### Perfiles Soportados
 | Perfil ID | Nombre | Permisos |
 |-----------|--------|----------|
 | `p_admin` | Super-Admin | RW en todos los módulos |
-| `p_secretario` | Secretario | RW en personas, registros, anuncios; R en reuniones, predicación |
-| `p_comite` | Comité de Servicio | R en personas, registros, reuniones, predicación |
-| `p_super_grupo` | Superintendente de Grupo | R en personas; RW en registros; R en reuniones |
-| `p_siervo_territorios` | Siervo de Territorios | RW en predicación |
-| `p_publicador` | Publicador | R en reuniones, predicación |
+| `p_secretario` | Secretario | Granular: core R (todas las sheets), personas RW, registros RW, anuncios RW, reuniones R, predicación R |
+| `p_comite` | Comité de Servicio | Granular: core R, personas R, registros R, reuniones R, predicación R |
+| `p_super_grupo` | Superintendente de Grupo | Granular: core R, personas R, registros RW, reuniones R |
+| `p_siervo_territorios` | Siervo de Territorios | Granular: core R, predicación RW |
+| `p_publicador` | Publicador | Granular: core R, reuniones R, predicación R |
+
+### Formato de Permisos Granulares (v2.1+)
+
+Los permisos soportan dos formatos: **plano** (`"core":"RW"`) y **granular** (`"core":{"configuracion":"RW","*":"R"}`). Ver [Backend_API_Completa.md](./Backend_API_Completa.md) sección 4.2 para detalles completos.
 
 ### Acciones de Permisos (LECTURA)
 - **`getPerfiles`** (ELIMINADO): Usar `batchExecute` con op `read` en hoja `Perfiles`.
@@ -253,10 +257,10 @@ El sistema implementa versionado automático y borrado lógico para todas las ta
 ## 8. Sistema de Caché y Rate Limiting
 
 ### Caché
-- **TTL de datos**: 10 minutos (600 segundos).
-- **TTL de búsquedas**: 5 minutos (300 segundos).
-- Implementado mediante `CacheService` de GAS.
+- **Lectura directa de hojas**: `getCachedSheetData` lee directamente de la hoja sin `CacheService` (v2.2). Para hojas pequeñas, el rendimiento es instantáneo.
+- **Lookup cache**: Búsquedas de usuarios/perfiles usan `CacheService` con TTL de 5 minutos.
 - `invalidateCache(pattern)` es un no-op; la expiración es automática por TTL.
+- **Caché intra-batch**: `batchExecute` lee cada hoja una vez por lote y acumula cambios en memoria.
 
 ### Rate Limiting
 - Máximo 5 intentos por minuto por username en acciones de autenticación.

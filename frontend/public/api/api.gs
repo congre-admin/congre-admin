@@ -40,7 +40,7 @@ function doPost(e) {
     const action = postData.action;
     const payload = postData.payload || {};
     const sessionToken = payload.sessionToken || postData.sessionToken;
-    const sheetName = postData.sheet;
+    const sheetName = payload.sheet || postData.sheet;
     const ssId = payload.ssId || postData.ssId;
     const coreSsId = payload.coreSsId || ssId;
     const module = payload.module || null;
@@ -229,6 +229,8 @@ function batchExecute(session, ss, ssId, payload, module) {
           const cached = getBatchSheet(ss, op.sheet, sheetCache);
           if (!cached) { result.success = false; result.error = 'Hoja no encontrada'; break; }
           const idIndex = cached.headers.indexOf('id');
+          const keyIndex = idIndex >= 0 ? idIndex : 0;
+          const keyColumn = cached.headers[keyIndex];
           const vIndex = cached.headers.indexOf('_v');
           const tsIndex = cached.headers.indexOf('_ts');
           const data = op.data;
@@ -236,7 +238,7 @@ function batchExecute(session, ss, ssId, payload, module) {
           let rowIndex = -1;
           let currentV = 0;
           for (let r = 0; r < cached.rows.length; r++) {
-            if (cached.rows[r][idIndex] == data.id) {
+            if (cached.rows[r][keyIndex] == data[keyColumn]) {
               rowIndex = r;
               currentV = parseInt(cached.rows[r][vIndex]) || 0;
               break;
@@ -266,12 +268,13 @@ function batchExecute(session, ss, ssId, payload, module) {
           const cached = getBatchSheet(ss, op.sheet, sheetCache);
           if (!cached) { result.success = false; result.error = 'Hoja no encontrada'; break; }
           const idIndex = cached.headers.indexOf('id');
+          const keyIndex = idIndex >= 0 ? idIndex : 0;
           const deletedIndex = cached.headers.indexOf('_deleted');
           const vIndex = cached.headers.indexOf('_v');
           const tsIndex = cached.headers.indexOf('_ts');
           let found = false;
           for (let r = 0; r < cached.rows.length; r++) {
-            if (cached.rows[r][idIndex] == op.id) {
+            if (cached.rows[r][keyIndex] == op.id) {
               if (deletedIndex >= 0) cached.rows[r][deletedIndex] = true;
               if (vIndex >= 0) cached.rows[r][vIndex] = (parseInt(cached.rows[r][vIndex]) || 0) + 1;
               if (tsIndex >= 0) cached.rows[r][tsIndex] = new Date().toISOString();
@@ -289,9 +292,10 @@ function batchExecute(session, ss, ssId, payload, module) {
           const cached = getBatchSheet(ss, op.sheet, sheetCache);
           if (!cached) { result.success = false; result.error = 'Hoja no encontrada'; break; }
           const idIndex = cached.headers.indexOf('id');
+          const keyIndex = idIndex >= 0 ? idIndex : 0;
           let found = false;
           for (let r = 0; r < cached.rows.length; r++) {
-            if (cached.rows[r][idIndex] == op.id) {
+            if (cached.rows[r][keyIndex] == op.id) {
               cached.rows.splice(r, 1);
               cached.dirty = true;
               found = true;
@@ -307,10 +311,11 @@ function batchExecute(session, ss, ssId, payload, module) {
           const cached = getBatchSheet(ss, op.sheet, sheetCache);
           if (!cached) { result.success = false; result.error = 'Hoja no encontrada'; break; }
           const idIndex = cached.headers.indexOf('id');
+          const keyIndex = idIndex >= 0 ? idIndex : 0;
           const deletedIndex = cached.headers.indexOf('_deleted');
           let found = false;
           for (let r = 0; r < cached.rows.length; r++) {
-            if (cached.rows[r][idIndex] == op.id) {
+            if (cached.rows[r][keyIndex] == op.id) {
               if (deletedIndex >= 0) cached.rows[r][deletedIndex] = false;
               cached.dirty = true;
               found = true;
@@ -337,7 +342,6 @@ function batchExecute(session, ss, ssId, payload, module) {
             sheet.getRange(1, 1, 1, op.headers.length).setFontWeight('bold').setBackground('#f3f3f3');
           }
           sheetCache[op.sheet] = { sheet, headers: op.headers, rows: [], dirty: false };
-          clearCache(ssId, op.sheet);
           result.success = true;
           break;
         }
@@ -433,7 +437,6 @@ function batchExecute(session, ss, ssId, payload, module) {
     if (cached && cached.dirty) {
       const allRows = [cached.headers, ...cached.rows];
       cached.sheet.getRange(1, 1, allRows.length, allRows[0].length).setValues(allRows);
-      clearCache(ssId, sheetName);
     }
   }
 
@@ -495,7 +498,6 @@ function dataActionInitSheet(session, ss, ssId, sheetName, module, postData) {
   } else if (sheet.getLastRow() === 0) {
     sheet.getRange(1, 1, 1, postData.headers.length).setValues([postData.headers]).setFontWeight('bold').setBackground('#f3f3f3');
   }
-  clearCache(ssId, sheetName);
   return { success: true, message: 'Hoja inicializada' };
 }
 
@@ -509,7 +511,6 @@ function dataActionClearSheet(session, ss, ssId, sheetName, module) {
   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues();
   sheet.clearContents();
   if (headers.length > 0 && headers[0][0]) sheet.appendRow(headers[0]);
-  clearCache(ssId, sheetName);
   return { success: true };
 }
 
@@ -525,7 +526,6 @@ function dataActionSaveData(session, ss, ssId, sheetName, module, payload, postD
     existingRows = sheet.getDataRange().getValues();
   }
   updateOrInsert(sheet, payload, false, { existingRows });
-  clearCache(ssId, sheetName);
   return { success: true, message: 'Datos guardados' };
 }
 
@@ -538,7 +538,6 @@ function dataActionDeleteData(session, ss, ssId, sheetName, module, payload) {
   if (!sheet) return { error: 'Hoja no encontrada' };
   const result = softDeleteRow(sheet, payload.id);
   if (!result) return { success: false, error: 'Registro no encontrado' };
-  clearCache(ssId, sheetName);
   return { success: true, message: 'Borrado lógico realizado' };
 }
 
@@ -550,7 +549,6 @@ function dataActionHardDelete(session, ss, ssId, sheetName, module, payload) {
   const sheet = ss.getSheetByName(sheetName);
   if (!sheet) return { error: 'Hoja no encontrada' };
   deleteRowById(sheet, payload.id);
-  clearCache(ssId, sheetName);
   return { success: true, message: 'Borrado físico realizado' };
 }
 
@@ -563,7 +561,6 @@ function dataActionRestoreData(session, ss, ssId, sheetName, module, payload) {
   if (!sheet) return { error: 'Hoja no encontrada' };
   const result = restoreRow(sheet, payload.id);
   if (!result) return { success: false, error: 'Registro no encontrado' };
-  clearCache(ssId, sheetName);
   return { success: true, message: 'Registro restaurado' };
 }
 
@@ -575,24 +572,13 @@ const CACHE_TTL_DATA = 600; // 10 minutes
 const CACHE_TTL_LOOKUP = 300; // 5 minutes
 
 function getCachedSheetData(ss, sheetName) {
-  const cache = CacheService.getScriptCache();
-  const cacheKey = ss.getId() + '_' + sheetName;
-  const cached = cache.get(cacheKey);
-
-  if (cached) {
-    try { return JSON.parse(cached); } catch (e) {}
-  }
-
+  Logger.log('getCachedSheetData: ssId=' + ss.getId() + ', sheetName=' + sheetName);
   const sheet = ss.getSheetByName(sheetName);
+  Logger.log('getCachedSheetData: sheet=' + (sheet ? sheet.getName() : 'null'));
   if (!sheet) return [];
-
   const data = getSheetData(sheet);
-  try { cache.put(cacheKey, JSON.stringify(data), CACHE_TTL_DATA); } catch (e) {}
+  Logger.log('getCachedSheetData: rows=' + data.length);
   return data;
-}
-
-function clearCache(ssId, sheetName) {
-  CacheService.getScriptCache().remove(ssId + '_' + sheetName);
 }
 
 function getCached(key, fetchFn) {
@@ -891,7 +877,6 @@ function createUser(userData, ssId) {
   };
 
   updateOrInsert(sheet, user, false);
-  clearCache(ssId, 'Usuarios');
   invalidateCache('u:');
   return { success: true, user: { id: user.id, username: user.username } };
 }
@@ -908,7 +893,6 @@ function updateUser(id, updates, ssId) {
   if (updates.metadata && typeof updates.metadata === 'object') processed.metadata = JSON.stringify(updates.metadata);
 
   updateOrInsert(sheet, { ...user, ...processed, _ts: new Date().toISOString() }, false);
-  clearCache(ssId, 'Usuarios');
   invalidateCache('u:');
   return { success: true, user: { id: user.id, username: user.username } };
 }

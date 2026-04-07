@@ -1,7 +1,7 @@
 # Congre-Admin: Documentación Técnica del Backend API
 
-> **Versión:** 2.1.0
-> **Última actualización:** 2026-04-04
+> **Versión:** 2.2.0
+> **Última actualización:** 2026-04-06
 > **Archivo fuente:** `backend/src/api.gs`
 > **Plataforma:** Google Apps Script (GAS)
 
@@ -10,6 +10,15 @@
 ## 1. Resumen Ejecutivo
 
 El Backend de Congre-Admin es un proveedor de servicios implementado como Google Apps Script que utiliza Google Sheets como base de datos distribuida. El sistema sigue una arquitectura de **Segmentación Física de Datos** donde cada módulo/plugin tiene su propio spreadsheet.
+
+### Cambios en v2.2
+
+| Cambio | Descripción |
+|--------|-------------|
+| **CacheService eliminado** | `getCachedSheetData` lee directamente de la hoja. Elimina datos stale y problemas de cache. `clearCache` eliminado. |
+| **Smart key lookup** | `save`, `delete`, `hardDelete`, `restore` en `batchExecute` usan la primera columna como clave cuando no hay columna `id` (ej: `Configuracion` usa `clave`) |
+| **Frontend settings cache** | Settings cacheados en `localStorage` por `AuthContext` en mount/login. Eliminada dependencia de TSQ para config básica. |
+| **Theme engine refactor** | `ThemeContext` unificado como única fuente de tema. Eliminado `ThemeWrapper` y sistema de tema legacy. |
 
 ### Cambios en v2.1
 
@@ -721,6 +730,8 @@ Crea los spreadsheets Core y Público.
   "ssUrl": "https://docs.google.com/spreadsheets/d/...",
   "publicSsId": "PUBLIC_SS_ID",
   "publicSsUrl": "https://docs.google.com/spreadsheets/d/...",
+  "folderId": "DRIVE_FOLDER_ID",
+  "folderUrl": "https://drive.google.com/drive/folders/...",
   "nombreCongregacion": "Congregación Central",
   "nombreMostrar": "Co. Central"
 }
@@ -1082,30 +1093,47 @@ Las mismas operaciones de archivo están disponibles dentro de `batchExecute`, p
 
 ## 7. Sistema de Caché
 
-### 6.1 TTL Configurable
+### 7.1 Lectura Directa de Hojas (v2.2)
+
+`getCachedSheetData(ss, sheetName)` lee **directamente** de la hoja de cálculo usando `sheet.getDataRange().getValues()`. No usa `CacheService` para datos de hojas, eliminando problemas de datos stale.
+
+> **Nota v2.2:** `CacheService` fue eliminado para lecturas de hojas en v2.2. Cada lectura obtiene datos frescos directamente de la hoja. Para hojas pequeñas (Configuracion: ~13 filas, Perfiles: ~6 filas), el rendimiento es instantáneo.
+
+### 7.2 Caché de Búsquedas (Lookup Cache)
+
+Las búsquedas de usuarios y perfiles **sí** usan `CacheService` con TTL configurable, ya que son accesos frecuentes que no cambian a menudo:
 
 | Constante | Valor | Uso |
 |-----------|-------|-----|
-| `CACHE_TTL_DATA` | 600s (10 min) | Datos de hojas |
-| `CACHE_TTL_LOOKUP` | 300s (5 min) | Búsquedas de usuarios/perfiles |
+| `CACHE_TTL_LOOKUP` | 300s (5 min) | Búsquedas de usuarios/perfiles (`getUserById`, `getUserByUsername`) |
 
-### 6.2 Funciones de Caché
+### 7.3 Funciones de Caché
 
 ```javascript
-// Obtener datos cacheados
+// Obtener datos de hoja (lectura directa, sin cache)
 getCachedSheetData(ss, sheetName)
-
-// Invalidar caché específico
-clearCache(ssId, sheetName)
 
 // Invalidar por patrón (no-op — expira automáticamente)
 invalidateCache('u:')    // Solo log, no invalida realmente
 ```
 
-> **Nota v2.0:** `invalidateCache(pattern)` es un no-op. GAS CacheService no soporta invalidación por patrón. La expiración es automática por TTL.
+> **Nota v2.2:** `clearCache(ssId, sheetName)` fue eliminado. Ya no es necesario porque las hojas se leen directamente.
 
-### 6.3 Caché Intra-Batch (NUEVO)
+### 7.4 Caché Intra-Batch
 `batchExecute` implementa un caché en memoria dentro de una sola ejecución: cada hoja se carga una vez y se reutiliza para todas las operaciones del lote. Las hojas modificadas se escriben al final de la ejecución en un solo `setValues()`.
+
+### 7.5 Smart Key Lookup (v2.2)
+
+Para operaciones `save`, `delete`, `hardDelete`, `restore` en `batchExecute`, cuando la hoja no tiene una columna `id`, se usa la **primera columna** como clave de búsqueda:
+
+| Hoja | Columna Clave | Comportamiento |
+|------|--------------|----------------|
+| `Usuarios` | `id` | Busca por `data.id` |
+| `Perfiles` | `id` | Busca por `data.id` |
+| `Configuracion` | `clave` (primera columna) | Busca por `data.clave` |
+| `Registro_Plugins` | `plugin_id` (primera columna) | Busca por `data.plugin_id` |
+
+Esto permite que operaciones `save` en `Configuracion` actualicen filas existentes por `clave` en lugar de crear duplicados.
 
 ---
 
@@ -1377,4 +1405,4 @@ fetch(url, {
 
 ---
 
-*Documento actualizado el 2026-04-03 — v2.0.0*
+*Documento actualizado el 2026-04-06 — v2.2.0*

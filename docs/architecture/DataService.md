@@ -1,45 +1,52 @@
 # Congre-Admin: DataService — Arquitectura y Diseño
 
-> **Versión:** 1.0.0
-> **Última actualización:** 2026-03-31
+> **Versión:** 2.3.0
+> **Última actualización:** 2026-04-06
 > **Dependencias:** TanStack Query v5, JSONata v2, Google Apps Script (GAS)
 
 ---
 
 ## 1. Resumen Ejecutivo
 
-El DataService es la capa de abstracción del frontend que conecta la aplicación React con el backend GAS (Google Apps Script). Implementa una arquitectura de **tres capas** que combina fetching de datos, transformación con JSONata, y caché con TanStack Query.
+El DataService es la capa de abstracción del frontend que conecta la aplicación React con el backend GAS (Google Apps Script). Implementa fetching de datos, orquestación batch, gestión de archivos en Drive, y caché con TanStack Query.
 
-### Arquitectura de Tres Capas
+### Arquitectura Actual
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│  Layer 4: CacheService (cacheService.ts)          │
-│  - Memory + localStorage + 24h expiry             │
-│  - Module ssId resolution                          │
-│  - Config, perfil, permisos caching               │
-├─────────────────────────────────────────────────────┤
-│  Layer 3: TanStack Query Hooks (usePersonas, etc)│
-│  - Pre-built queries con caché                     │
-│  - Invalidación automática                         │
-├─────────────────────────────────────────────────────┤
-│  Layer 2: DataTransformService (jsonataService)   │
-│  - filter(), sanitize(), map(), sort(), validate()│
-├─────────────────────────────────────────────────────┤
-│  Layer 1: DataService (dataService.ts)            │
-│  - fetch(), getData(), saveData(), deleteData()   │
-│  - Flexible URL detection (Script ID ↔ full URL)  │
-│  - Module name resolution (personas → ssId)       │
+│  React Components (Dashboard, Settings, etc.)     │
+│  ↓                                                 │
+│  TanStack Query Hooks (useSheetData,               │
+│    useFilteredData, useCoreData, useSaveData,      │
+│    useDeleteData, useAuthMethods)                  │
+│  ↓                                                 │
+│  DataService (dataService.ts)                     │
+│  - HTTP client con in-flight dedup                │
+│  - JSONata transformations (filter, map, sort,    │
+│    sanitize) — client-side, zero GAS quota        │
+│  - Module resolution (ssId → module name)         │
+│  - batchExecute con chunking (max 50 ops)         │
+│  - File operations (upload, download, list, etc.) │
+│  - Settings cache (localStorage)                  │
+│  ↓                                                 │
+│  jsonataService (jsonataService.ts)               │
+│  - Expression caching                             │
+│  - filter, map, sort, sanitize, validate, process │
+│  ↓                                                 │
+│  GAS Backend (api.gs)                             │
+│  - doPost → dispatch map                          │
+│  - batchExecute orchestrator                      │
+│  - Auth, RBAC, CRUD, Drive ops                    │
 └─────────────────────────────────────────────────────┘
 ```
 
 ### Principios de Diseño
 
-1. **Separación de responsabilidades**: Cada capa tiene una función clara
-2. **Flexibilidad**: Usar capas inferiores cuando se necesita control
-3. **Conveniencia**: Capas superiores para casos comunes
-4. **Seguridad**: Validación antes de guardar (ahorra cuota GAS)
-5. **Rendimiento**: Caché con staleTime de 5 minutos
+1. **Zero-Knowledge**: El backend nunca accede a datos plaintext
+2. **Batch-first**: Operaciones agrupadas reducen latencia GAS
+3. **Cache inteligente**: In-flight dedup + localStorage + TanStack Query
+4. **Module resolution dinámico**: `Registro_Plugins` → ssId mapping, zero hardcoded
+5. **Error handling centralizado**: Códigos `ERR_*` traducidos a mensajes en español
 
 ---
 
@@ -50,18 +57,13 @@ El DataService es la capa de abstracción del frontend que conecta la aplicació
 ### Configuración del Fetch
 
 ```typescript
-async function fetchApi(url: string, options?: RequestInit) {
-  const response = await fetch(url, {
-    ...options,
-    mode: 'cors',
-    redirect: 'follow',
-    headers: {
-      'Content-Type': 'text/plain;charset=utf-8',
-      ...options?.headers,
-    },
-  });
-  return response.json();
-}
+fetch(url, {
+  method: 'POST',
+  headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+  body: JSON.stringify(body),
+  mode: 'cors',
+  redirect: 'follow',
+});
 ```
 
 ### Por qué funciona
@@ -71,18 +73,6 @@ async function fetchApi(url: string, options?: RequestInit) {
 | `mode: 'cors'` | Habilita explícitamente el modo CORS |
 | `redirect: 'follow'` | Permite seguir los redirects 302 de GAS |
 | `Content-Type: text/plain` | Evita preflight (OPTIONS) - es un "simple request" |
-
-### Configuración del Backend
-
-El backend **no necesita** headers CORS. Simplemente retorna JSON:
-
-```javascript
-function createResponse(data) {
-  return ContentService.createTextOutput(JSON.stringify(data))
-    .setMimeType(ContentService.MimeType.JSON);
-  // NO usar .setHeaders() - GAS lo ignora
-}
-```
 
 ### Errores comunes a evitar
 
@@ -94,9 +84,7 @@ function createResponse(data) {
 
 ## 3. Tipos TypeScript
 
-### 2.1 Estructura de Datos del Backend
-
-Los tipos reflejan la estructura definida en `Backend_API_Completa.md`.
+### 3.1 Estructura de Datos del Backend
 
 #### Tabla: `Usuarios`
 
@@ -105,20 +93,13 @@ interface AuthConfig {
   default_method: 'password' | 'passkey' | 'totp' | 'email_otp';
   password_hash?: string;
   recovery_enabled: boolean;
-  email_otp?: {
-    enabled: boolean;
-    created_at: string;
-  };
-  totp?: {
-    enabled: boolean;
-    secret?: string;
-    created_at: string;
-  };
+  email_otp?: { enabled: boolean; created_at: string };
+  totp?: { enabled: boolean; secret?: string; created_at: string };
   passkeys?: Passkey[];
 }
 
 interface Passkey {
-  id: string;           // base64url encoded credential ID
+  id: string;
   public_key?: string;
   device_name: string;
   created_at: string;
@@ -149,9 +130,10 @@ interface User {
 
 ```typescript
 type Permiso = 'R' | 'W' | 'RW';
+type ModulePermission = Permiso | Record<string, Permiso>;
 
 interface Permisos {
-  [modulo: string]: Permiso;
+  [modulo: string]: ModulePermission;
 }
 
 interface Perfil {
@@ -159,24 +141,6 @@ interface Perfil {
   nombre: string;
   permisos: Permisos;
   descripcion?: string;
-  _v: number;
-  _ts: string;
-  _deleted?: boolean;
-}
-```
-
-#### Tabla: `Registro_Plugins`
-
-```typescript
-interface PluginConfig {
-  [key: string]: any;
-}
-
-interface Plugin {
-  plugin_id: string;
-  ssId: string;
-  status: 'active' | 'suspended';
-  config?: PluginConfig;
   _v: number;
   _ts: string;
   _deleted?: boolean;
@@ -196,12 +160,25 @@ interface Configuracion {
 }
 ```
 
----
-
-### 2.2 Tipos de Respuesta de la API
+#### Tabla: `Registro_Plugins`
 
 ```typescript
-// Respuesta genérica del backend
+interface Plugin {
+  plugin_id: string;
+  ssId: string;
+  status: 'active' | 'suspended';
+  config?: Record<string, any>;
+  _v: number;
+  _ts: string;
+  _deleted?: boolean;
+}
+```
+
+---
+
+### 3.2 Tipos de Respuesta de la API
+
+```typescript
 interface ApiResponse<T = any> {
   success: boolean;
   error?: string;
@@ -209,269 +186,290 @@ interface ApiResponse<T = any> {
   data?: T;
 }
 
-// Para getData
 interface GetDataResponse<T = any[]> {
   success: true;
   data: T;
 }
 
-// Para saveData con conflicto de versión
-interface VersionConflictResponse {
-  success: false;
-  error: 'ERR_VERSION_CONFLICT';
-  message: string;
-  currentVersion: number;
-}
-
-// Para login
 interface LoginResponse {
   success: true;
   sessionToken: string;
   wrapped_mk?: string;
   expiresAt: string;
-  user: {
-    id: string;
-    username: string;
-    perfilId: string;
-  };
+  user: { id: string; username: string; perfilId: string };
 }
 
-// Login requiere segundo paso
 interface LoginStepResponse {
   success: false;
-  step: 'email_otp' | 'totp' | 'passkey';
-  availableMethods: string[];
+  step: 'email_otp' | 'totp' | 'passkey' | 'method';
+  availableMethods?: string[];
+  defaultMethod?: string;
   message: string;
+  error?: string;
+  requiresSetup?: boolean;
 }
 
-// Para validateSession
 interface ValidateSessionResponse {
   valid: boolean;
   userId?: string;
   username?: string;
   expiresAt?: string;
 }
-
-// Para getPerfiles
-interface GetPerfilesResponse {
-  success: true;
-  perfiles: Perfil[];
-}
-
-// Para getAuthMethods
-interface AuthMethodsResponse {
-  success: true;
-  methods: string[];
-  defaultMethod: string;
-  passkeys: Array<{
-    id: string;
-    deviceName: string;
-    createdAt: string;
-  }>;
-  totp: { enabled: boolean };
-  email_otp: { enabled: boolean };
-  recovery_enabled: boolean;
-}
 ```
 
 ---
 
-### 2.3 Tipos del DataService
+### 3.3 Tipos de Batch Execute
 
 ```typescript
-// Opciones para getData
-interface GetDataOptions {
-  filter?: string;       // Expresión JSONata: 'estado = "activo"'
-  map?: string;         // Transformación JSONata: '{nombre, telefono}'
-  sanitize?: boolean;   // Eliminar campos enc_*
-  sort?: string;        // Orden JSONata: 'nombre asc'
-  limit?: number;
-  offset?: number;
+type BatchMode = 'continue' | 'fail-fast';
+
+type BatchOp =
+  | { op: 'read'; sheet: string; filter?: Record<string, any> }
+  | { op: 'readById'; sheet: string; id: string }
+  | { op: 'save'; sheet: string; data: Record<string, any> }
+  | { op: 'delete'; sheet: string; id: string }
+  | { op: 'hardDelete'; sheet: string; id: string }
+  | { op: 'restore'; sheet: string; id: string }
+  | { op: 'initSheet'; sheet: string; headers: string[]; preserveExisting?: boolean }
+  | { op: 'uploadFile'; content: string; fileName: string; mimeType: string; subfolder?: string }
+  | { op: 'downloadFile'; fileId: string }
+  | { op: 'listFolderFiles'; subfolder?: string }
+  | { op: 'deleteFile'; fileId: string }
+  | { op: 'setFileSharing'; fileId: string; access: string; permission?: string }
+  | { op: 'moveFileToFolder'; fileId: string; subfolder?: string };
+
+interface BatchResult {
+  index: number;
+  op: string;
+  sheet?: string;
+  success: boolean;
+  error?: string;
+  data?: any;
 }
 
-// Opciones para saveData
-interface SaveDataOptions {
-  expectedVersion?: number;
-  onlyIfNew?: boolean;
-  validate?: string;    // JSONata validation
+interface BatchExecuteResponse {
+  success: boolean;
+  error?: string;
+  results?: BatchResult[];
+  totalOps?: number;
+  succeeded?: number;
+  failed?: number;
 }
-
-// Tipos de acción
-type DataAction = 'getData' | 'batchGetData' | 'saveData' | 'deleteData' | 'hardDelete' | 'restoreData';
-type AuthAction = 'login' | 'register' | 'logout' | 'validateSession' | 'refreshSession';
-type ProfileAction = 'getPerfiles' | 'createProfile' | 'updateProfile' | 'deleteProfile';
-type ConfigAction = 'getConfig' | 'setConfig';
 ```
 
 ---
 
-## 3. Layer 1: DataService
+### 3.4 Tipos de Operaciones de Archivo
 
-### 3.1 Propósito
+```typescript
+interface FileItem {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  created: string;
+  modified: string;
+  url: string;
+  shared: boolean;
+  access: string;
+  permission: string;
+}
+
+interface ListFilesResponse {
+  success: boolean;
+  files: FileItem[];
+}
+
+interface UploadFileResponse {
+  success: boolean;
+  fileId: string;
+  fileUrl: string;
+  fileName: string;
+  size: number;
+}
+
+interface DownloadFileResponse {
+  success: boolean;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  content: string;  // base64
+}
+
+interface SetSharingResponse {
+  success: boolean;
+  fileId: string;
+  access: string;
+  permission: string;
+  shareUrl: string;
+}
+
+interface MoveFileResponse {
+  success: boolean;
+  fileId: string;
+  fileName: string;
+  folderId: string;
+  fileUrl: string;
+}
+```
+
+---
+
+### 3.5 Tipos de Configuración de Tema e Icono
+
+```typescript
+type HarmonyMode = 'complementary' | 'analogous' | 'triadic' | 'split' | 'monochromatic';
+
+interface BgSetting {
+  mode: 'auto' | 'neutral' | 'custom';
+  value: string | null;
+}
+
+interface ThemeConfig {
+  primary: string;
+  harmony: HarmonyMode;
+  backgrounds: {
+    lightPage: BgSetting;
+    lightPanel: BgSetting;
+    darkPage: BgSetting;
+    darkPanel: BgSetting;
+  };
+}
+
+interface IconConfig {
+  mode: 'default' | 'custom';
+  text: string;
+  bgMode: 'primary' | 'custom';
+  bgColor: string;
+  textMode: 'white' | 'auto' | 'custom';
+  textColor: string;
+  sizes?: Record<string, string>;
+}
+```
+
+---
+
+## 4. DataService Class
+
+### 4.1 Propósito
 
 DataService es el cliente HTTP que comunica con el backend GAS. Maneja:
 - Detección flexible de URL (Script ID ↔ full URL)
-- Inyección automática de sessionToken
-- Manejo de errores del backend
-- Retry logic
+- Inyección automática de `sessionToken`, `coreSsId`, `module`
+- In-flight request deduplication
+- Module resolution desde `Registro_Plugins`
+- Batch execute con chunking automático (max 50 ops)
+- Operaciones de archivo (Drive)
+- Manejo de errores con mensajes en español
 
-### 3.2 Detección Flexible de URL
-
-El sistema acepta两种 formatos de URL:
-
-```typescript
-// Formato 1: Script ID (corto)
-// Ejemplo: '1Wse1_PzTarnbnBediQTtU5wf5WW9hVc7wnIU9vRt2RTmSp-EIy06Jrx5'
-// Se convierte automáticamente a:
-// 'https://script.google.com/macros/s/1Wse1_PzTarnbnBediQTtU5wf5WW9hVc7wnIU9vRt2RTmSp-EIy06Jrx5/exec'
-
-// Formato 2: URL completa (larga)
-// 'https://script.google.com/macros/s/AKfycby.../exec'
-// Se usa tal cual
-```
-
-**Ubicación de la URL:**
-- `localStorage` key: `'congre_admin_api_url'`
-- Configurada durante Setup Wizard
-
-### 3.3 Métodos Principales
+### 4.2 Métodos Principales
 
 ```typescript
 class DataService {
-  // === Métodos CRUD ===
+  // === Core ===
+  setApiUrl(url: string): void;
+  getApiUrl(): string | null;
+  resolveModule(sheetName: string, ssId: string): string | null;
+  async refreshModuleMap(): Promise<void>;
 
-  /**
-   * Obtiene datos de una hoja
-   * GET ?action=getData&sheet=NombreHoja&ssId=ID
-   */
-  async getData<T = any[]>(sheet: string, ssId: string): Promise<T>;
+  // === HTTP ===
+  async request<T>(action: string, payload?: Record<string, any>): Promise<T>;
 
-  /**
-   * Obtiene múltiples hojas en una petición
-   * GET ?action=batchGetData&sheets=H1,H2,H3&ssId=ID
-   */
-  async batchGetData<T = Record<string, any[]>>(
-    sheets: string[], 
-    ssId: string
-  ): Promise<T>;
+  // === CRUD (getData aplica JSONata client-side) ===
+  async getData<T>(sheet: string, ssId: string, options?: GetDataOptions): Promise<T>;
+  // GetDataOptions: { filter?, map?, sanitize?, sort?, limit?, offset? }
+  async saveData(sheet: string, ssId: string, payload: any, options?: SaveDataOptions): Promise<ApiResponse>;
+  async deleteData(sheet: string, ssId: string, id: string): Promise<ApiResponse>;
+  async hardDelete(sheet: string, ssId: string, id: string): Promise<ApiResponse>;
+  async restoreData(sheet: string, ssId: string, id: string): Promise<ApiResponse>;
 
-  /**
-   * Guarda o actualiza un registro (upsert)
-   * POST { action: 'saveData', sheet, ssId, payload, ... }
-   */
-  async saveData(
-    sheet: string, 
-    ssId: string, 
-    payload: any,
-    options?: SaveDataOptions
-  ): Promise<ApiResponse>;
+  // === Batch ===
+  async batchExecute(operations: BatchOp[], options?: {
+    mode?: BatchMode;
+    folderId?: string;
+    isSetup?: boolean;
+    ssId?: string;
+    onProgress?: (completed: number, total: number, result: BatchExecuteResponse) => void;
+  }): Promise<BatchExecuteResponse>;
 
-  /**
-   * Borra lógicamente un registro
-   * POST { action: 'deleteData', sheet, ssId, id }
-   */
-  async deleteData(
-    sheet: string, 
-    ssId: string, 
-    id: string
-  ): Promise<ApiResponse>;
-
-  /**
-   * Borra físicamente un registro
-   * POST { action: 'hardDelete', sheet, ssId, id }
-   */
-  async hardDelete(
-    sheet: string, 
-    ssId: string, 
-    id: string
-  ): Promise<ApiResponse>;
-
-  /**
-   * Restaura un registro borrado
-   * POST { action: 'restoreData', sheet, ssId, id }
-   */
-  async restoreData(
-    sheet: string, 
-    ssId: string, 
-    id: string
-  ): Promise<ApiResponse>;
-
-  // === Métodos de Autenticación ===
-
-  /**
-   * Login de usuario
-   * Soporta múltiples métodos: password, passkey, totp, email_otp
-   */
+  // === Auth ===
   async login(payload: LoginPayload): Promise<LoginResponse | LoginStepResponse>;
-
-  /**
-   * Registro de nuevo usuario
-   */
-  async register(payload: RegisterPayload): Promise<ApiResponse & { user: User }>;
-
-  /**
-   * Cierra sesión
-   */
+  async register(payload: { username: string; password: string; perfilId: string; email?: string }): Promise<ApiResponse & { user: any }>;
   async logout(sessionToken: string): Promise<ApiResponse>;
-
-  /**
-   * Valida sesión actual
-   */
   async validateSession(sessionToken: string): Promise<ValidateSessionResponse>;
-
-  /**
-   * Renueva token de sesión
-   */
   async refreshSession(sessionToken: string): Promise<ApiResponse & { sessionToken: string }>;
 
-  // === Métodos de Perfiles ===
+  // === Perfiles ===
+  async getPerfiles(ssId: string): Promise<Perfil[]>;
+  async createProfile(ssId: string, payload: Partial<Perfil>): Promise<ApiResponse>;
+  async updateProfile(ssId: string, payload: Partial<Perfil>): Promise<ApiResponse>;
+  async deleteProfile(ssId: string, profileId: string): Promise<ApiResponse>;
 
-  /**
-   * Obtiene todos los perfiles
-   */
-  async getPerfiles(): Promise<GetPerfilesResponse>;
+  // === Config ===
+  async getConfig(key: string, ssId: string): Promise<{ clave: string; valor: string } | null>;
+  async setConfig(key: string, value: string, ssId: string, isPublic?: boolean): Promise<ApiResponse>;
 
-  /**
-   * Crea perfil
-   */
-  async createProfile(payload: Partial<Perfil>): Promise<ApiResponse>;
-
-  /**
-   * Actualiza perfil
-   */
-  async updateProfile(payload: Partial<Perfil>): Promise<ApiResponse>;
-
-  /**
-   * Elimina perfil
-   */
-  async deleteProfile(profileId: string): Promise<ApiResponse>;
-
-  // === Métodos de Configuración ===
-
-  /**
-   * Obtiene valor de configuración
-   */
-  async getConfig(key: string, ssId: string): Promise<Configuracion | null>;
-
-  /**
-   * Guarda configuración
-   */
-  async setConfig(
-    key: string, 
-    value: string, 
-    ssId: string,
-    isPublic?: boolean
-  ): Promise<ApiResponse>;
+  // === File Operations (Drive) ===
+  async listFolderFiles(folderId?: string, subfolder?: string): Promise<ListFilesResponse>;
+  async uploadFile(content: string, fileName: string, mimeType: string, options?: { folderId?: string; subfolder?: string }): Promise<UploadFileResponse>;
+  async downloadFile(fileId: string): Promise<DownloadFileResponse>;
+  async deleteFile(fileId: string): Promise<ApiResponse>;
+  async setFileSharing(fileId: string, access: string, permission?: string): Promise<SetSharingResponse>;
+  async moveFileToFolder(fileId: string, options?: { folderId?: string; subfolder?: string }): Promise<MoveFileResponse>;
 }
 ```
 
-### 3.4 Manejo de Errores
+### 4.3 In-Flight Request Deduplication
 
-El backend retorna códigos de error prefixed con `ERR_`. DataService los parsea y lanza excepciones typed:
+El DataService previene requests duplicados concurrentes:
 
 ```typescript
-// Códigos de error del backend
-const ERROR_CODES = {
+private _inFlight = new Map<string, Promise<any>>();
+
+async request<T>(action: string, payload = {}) {
+  const key = `${action}:${JSON.stringify(payload)}`;
+  if (this._inFlight.has(key)) return this._inFlight.get(key);
+  
+  const promise = this._doRequest(action, payload);
+  this._inFlight.set(key, promise);
+  try { return await promise; }
+  finally { this._inFlight.delete(key); }
+}
+```
+
+Si dos componentes llaman `getData('Configuracion', ssId)` simultáneamente, solo se hace **un** request HTTP.
+
+### 4.4 Module Resolution
+
+```typescript
+resolveModule(sheetName: string, ssId: string): string | null {
+  // ssId === coreSsId → 'core'
+  // ssId en moduleMap → plugin_id
+  // else → null
+}
+
+async refreshModuleMap(): Promise<void> {
+  // Fetch Registro_Plugins → build map → localStorage
+  // { coreSsId: 'core', pluginSsId1: 'personas', pluginSsId2: 'reuniones' }
+}
+```
+
+### 4.5 Batch Execute con Chunking
+
+```typescript
+async batchExecute(operations, options) {
+  // Auto-chunks operations into batches of 50
+  // Supports 'continue' and 'fail-fast' modes
+  // isSetup: true bypasses auth for initSheet/save ops
+  // Returns aggregated results with correct indices
+}
+```
+
+### 4.6 Manejo de Errores
+
+```typescript
+const ERROR_MESSAGES: Record<string, string> = {
   ERR_AUTH_REQUIRED: 'Se requiere autenticación',
   ERR_AUTH_INVALID: 'Credenciales inválidas',
   ERR_SESSION_EXPIRED: 'La sesión ha expirado',
@@ -486,482 +484,362 @@ const ERROR_CODES = {
   ERR_PROFILE_EXISTS: 'El perfil ya existe',
   ERR_PROFILE_NOT_FOUND: 'Perfil no encontrado',
   ERR_PROFILE_IN_USE: 'El perfil está en uso',
-} as const;
+  ERR_SS_ID_REQUIRED: 'Se requiere ID de hoja de cálculo',
+  ERR_FILE_NOT_FOUND: 'Archivo no encontrado',
+  ERR_FILE_TOO_LARGE: 'Archivo demasiado grande (máx 37MB)',
+  ERR_INVALID_MIMETYPE: 'Tipo de archivo no permitido',
+  ERR_FOLDER_NOT_FOUND: 'Carpeta no encontrada',
+  ERR_SUBFOLDER_NOT_FOUND: 'Subcarpeta no encontrada',
+  ERR_INVALID_BASE64: 'Contenido inválido',
+  ERR_BATCH_EMPTY: 'No se proporcionaron operaciones',
+  ERR_BATCH_TOO_LARGE: 'Demasiadas operaciones (máx 50 por llamada)',
+  ERR_SKIPPED: 'Omitida por error anterior',
+  ERR_UNKNOWN_OP: 'Operación desconocida',
+};
 ```
 
 ---
 
-### 3.5 Sistema de Caché
+## 5. Sistema de Caché
 
-#### 3.5.1 Descripción
-
-El DataService implementa un sistema de caché de **tres niveles**:
+### 5.1 Arquitectura de Caché
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│  READ: Memory (fast)                               │
-│  ↓ (cache miss)                                    │
-│  READ: localStorage                                │
-│  ↓ (first load or stale)                           │
-│  FETCH: GSheets (source of truth)                 │
-│  ↓ (compare)                                       │
-│  UPDATE: Memory + localStorage if different        │
+│  TanStack Query (in-memory, 5min stale)            │
+│  ↓                                                 │
+│  DataService._inFlight (dedup concurrent requests) │
+│  ↓                                                 │
+│  settingsCache (localStorage, 15min stale)         │
+│  ↓                                                 │
+│  GAS Backend (source of truth)                     │
 └─────────────────────────────────────────────────────┘
 ```
 
-#### 3.5.2 Datos en Caché
+### 5.2 settingsCache (localStorage)
 
-| Data | Key | Source Table | Cache Expiry |
-|------|-----|--------------|--------------|
-| Module ssIds | `congre_cache_modules` | `Registro_Plugins` | 24 horas |
-| Config values | `congre_cache_config` | `Configuracion` | 24 horas |
-| User perfil | `congre_cache_user_perfil` | `Perfiles` | 24 horas |
-| User permisos | `congre_cache_user_permisos` | `Perfil.permisos` | 24 horas |
-| Public ssId | `congre_cache_public_ss` | `Configuracion` (key: `ss_publico`) | 24 horas |
+| Data | Key | Stale Time |
+|------|-----|------------|
+| All Configuracion rows | `congre_settings` | 15 minutos |
+| Theme config | (within congre_settings) | 15 minutos |
+| Icon config | (within congre_settings) | 15 minutos |
+| Module map | `congre_module_map` | Until refreshModuleMap() |
+| Dark mode preference | `congre_dark_mode` | Persistent |
 
-#### 3.5.3 Flujo de Inicialización
+### 5.3 Flujo de Inicialización
 
 ```typescript
-// On app load: initializeCache()
-1. Load all cached data from localStorage → Memory
-2. Mark cache as "loaded" (may be stale)
+// On login:
+1. Fetch Configuracion from GAS
+2. Parse into { clave: valor } map
+3. Store in localStorage: congre_settings
+4. ThemeContext reads from cache → applies theme
 
-// On login: refreshCacheOnLogin()
-1. Check cache expiry (24h). If expired or missing:
-2. Fetch fresh from GSheets (Registro_Plugins, Configuracion, Perfiles)
-3. Compare with memory cache
-4. Update if different
+// On mount (existing session):
+1. AuthContext restores session from localStorage
+2. AuthContext fetches Configuracion → caches
+3. ThemeContext reads cache → applies theme
+4. Components render with cached data instantly
 
-// On logout: clearAllCache()
-1. Clear memory cache
-2. Clear all localStorage cache keys
+// On settings save:
+1. Save to GAS via batchExecute
+2. Update localStorage cache optimistically
+3. Call updateThemeConfig() → instant theme update
 ```
 
-#### 3.5.4 Resolución de Módulos
+### 5.4 TanStack Query Integration
 
 ```typescript
-async resolveModule(moduleOrSsId: string): Promise<string> {
-  // Direct ssId (26+ chars)
-  if (moduleOrSsId.length > 20) return moduleOrSsId;
-  
-  // From cache (module name → ssId)
-  const cachedSsId = cacheService.getModuleSsId(moduleOrSsId);
-  if (cachedSsId) return cachedSsId;
-  
-  // Fetch from Registro_Plugins, cache, return
-  const ssId = await this.fetchModuleSsId(moduleOrSsId);
-  cacheService.setModuleSsId(moduleOrSsId, ssId);
-  return ssId;
-}
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000,    // 5 minutes
+      gcTime: 30 * 60 * 1000,      // 30 minutes
+      retry: 1,
+      refetchOnWindowFocus: false,
+      refetchOnMount: false,
+    },
+  },
+});
+
+// Offline persistence
+persistQueryClient({
+  queryClient,
+  persister: createSyncStoragePersister({ storage: localStorage }),
+  maxAge: 30 * 60 * 1000,
+});
 ```
 
 ---
 
-## 4. Layer 2: DataTransformService
+## 6. TanStack Query Hooks
 
-### 4.1 Propósito
+### 6.1 useSheetData
 
-DataTransformService aplica transformaciones JSONata sobre los datos obtenidos del backend. Permite:
-- Filtrado avanzado
-- Transformación de campos
-- Sanitización (eliminar campos sensibles)
-- Validación antes de guardar
-- Ordenamiento
-
-### 4.2 Métodos
+Hook genérico para fetch de cualquier hoja:
 
 ```typescript
-class DataTransformService {
-  /**
-   * Evalúa expresión JSONata sobre datos
-   */
-  evaluate<T = any>(expression: string, data: any): T;
-
-  /**
-   * Filtra datos usando expresión JSONata
-   * @example filter(data, 'estado = "activo"')
-   */
-  filter<T>(data: T[], filterExpr: string): T[];
-
-  /**
-   * Mapea/transforma campos
-   * @example map(data, '{nombre, telefono: enc_telefono}')
-   */
-  map<T, R>(data: T[], mapExpr: string): R[];
-
-  /**
-   * Ordena datos
-   * @example sort(data, 'nombre asc')
-   */
-  sort<T>(data: T[], sortExpr: string): T[];
-
-  /**
-   * Sanitiza: elimina todos los campos enc_*
-   * Útil para vista pública
-   */
-  sanitize<T>(data: T): T;
-  sanitize<T>(data: T[]): T[];
-
-  /**
-   * Valida datos contra expresión JSONata
-   * @example validate(data, '$count(errors) = 0')
-   * Retorna array de errores (vacío = válido)
-   */
-  validate<T>(data: T, validationExpr: string): string[];
-
-  /**
-   * Combina: filtra + mapea + ordena + limita
-   */
-  process<T>(
-    data: T[], 
-    options: {
-      filter?: string;
-      map?: string;
-      sort?: string;
-      limit?: number;
-      offset?: number;
-    }
-  ): T[];
+function useSheetData<T = any>(sheet: string, ssId: string, options = {}) {
+  return useQuery({
+    queryKey: ['sheet', sheet, ssId],
+    queryFn: () => dataService.getData<T>(sheet, ssId),
+    staleTime: 5 * 60 * 1000,
+    ...options,
+  });
 }
+
+// Usage:
+const { data: config, isLoading } = useSheetData('Configuracion', ssId, {
+  enabled: !!ssId,
+  refetchOnMount: true,
+});
 ```
 
-### 4.3 Expresiones JSONata Comunes
+### 6.2 useFilteredData
 
-#### Filtrar por estado
-```jsonata
-$filter(personas, function($p) { $p.estado = "activo" })
-```
+Hook para fetch de datos con transformaciones JSONata. Las expresiones se incluyen en el query key para cacheo correcto.
 
-#### Filtrar por grupo
-```jsonata
-$filter(personas, function($p) { $p.grupo = "A" })
-```
+```typescript
+function useFilteredData<T = any>(
+  sheet: string,
+  ssId: string,
+  options: {
+    filter?: string;      // JSONata filter expression
+    map?: string;         // JSONata map expression
+    sort?: string;        // JSONata sort expression
+    sanitize?: boolean;   // Remove enc_* fields
+    limit?: number;
+    offset?: number;
+  } = {},
+  queryOptions = {}
+) {
+  return useQuery({
+    queryKey: ['sheet', sheet, ssId, options.filter, options.map, options.sort, options.limit, options.offset],
+    queryFn: () => dataService.getData<T>(sheet, ssId, options),
+    staleTime: 5 * 60 * 1000,
+    ...queryOptions,
+  });
+}
 
-#### Búsqueda texto
-```jsonata
-$filter(personas, function($p) { $p.nombre =~ /juan/i })
-```
-
-#### Sanitizar campos cifrados
-```jsonata
-$map(personas, function($r) { 
-  $merge([$filter($r, function($v, $k) { not($k =~ "^enc_") }), {}]) 
-})
-```
-
-#### Mapear con renombrado
-```jsonata
-$map(personas, function($p) { 
+// Usage:
+const { data: activos, isLoading } = useFilteredData(
+  'Personas',
+  ssId,
   {
-    id: $p.id,
-    nombre: $p.nombre,
-    telefono: $p.enc_telefono,
-    direccion: $p.enc_direccion
+    filter: '[$.estado = "activo"]',
+    sort: '$sort($, function($a, $b) { $a.nombre < $b.nombre })',
+    limit: 20,
   }
-})
+);
 ```
 
-#### Ordenar
-```jsonata
-$sort(personas, function($a, $b) { $a.nombre < $b.nombre })
-```
+### 6.3 useCoreData
 
----
-
-## 5. Layer 3: TanStack Query Hooks
-
-### 5.1 Propósito
-
-Los hooks proporcionan una capa de conveniencia sobre DataService:
-- Fetching automático con caché
-- Estados de loading/error
-- Invalidación automática tras mutaciones
-- Keys consistentes para caché
-
-### 5.2 Query Keys (Flat)
+Batch hook que fetchea 3 tablas core en un solo request:
 
 ```typescript
-// Keys planos (una cache por tipo de dato)
-const QUERY_KEYS = {
-  personas: ['personas'],
-  perfiles: ['perfiles'],
-  config: (key: string) => ['config', key] as const,
-  session: ['session'],
-  authMethods: ['authMethods'],
-} as const;
+function useCoreData(ssId: string, options = {}) {
+  return useQuery({
+    queryKey: ['core-data', ssId],
+    queryFn: () => dataService.batchExecute([
+      { op: 'read', sheet: 'Perfiles' },
+      { op: 'read', sheet: 'Configuracion' },
+      { op: 'read', sheet: 'Registro_Plugins' },
+    ], { mode: 'continue' }),
+    staleTime: 5 * 60 * 1000,
+    select: (data) => ({
+      perfiles: data.results?.[0]?.data || [],
+      config: data.results?.[1]?.data || [],
+      plugins: data.results?.[2]?.data || [],
+    }),
+  });
+}
 ```
 
-### 5.3 Hooks Predefinidos
+### 6.4 useSaveData / useDeleteData
+
+Mutations con optimistic updates:
 
 ```typescript
-// === usePersonas ===
-
-function usePersonas(ssId: string | undefined) {
-  // Query: getData('Personas', ssId)
-  // Key: ['personas']
-  // StaleTime: 5 minutos
+function useSaveData(sheet: string, ssId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: any) => dataService.saveData(sheet, ssId, data),
+    onMutate: async (newData) => {
+      // Optimistic update
+      await queryClient.cancelQueries({ queryKey: ['sheet', sheet, ssId] });
+      const previous = queryClient.getQueryData(['sheet', sheet, ssId]);
+      queryClient.setQueryData(['sheet', sheet, ssId], (old: any[]) => {
+        const idx = old?.findIndex(r => r.id === newData.id);
+        if (idx >= 0) { const copy = [...old]; copy[idx] = { ...copy[idx], ...newData }; return copy; }
+        return [...(old || []), { ...newData, _v: 1, _ts: new Date().toISOString(), _deleted: false }];
+      });
+      return { previous };
+    },
+    onError: (err, newData, context: any) => {
+      if (context?.previous) queryClient.setQueryData(['sheet', sheet, ssId], context.previous);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['sheet', sheet, ssId] });
+    },
+  });
 }
+```
 
-function usePersonaFilter(ssId: string | undefined, filters: PersonaFilters) {
-  // Obtiene personas + aplica JSONata (filter, search, sort)
-  // Filtros: grupo?, estado?, search?
-}
+### 6.5 useSession / useAuthMethods
 
-function useActivos(ssId: string | undefined) {
-  // Filtra automáticamente: estado = "activo"
-}
-
-function useSavePersona() {
-  // Mutation: saveData + invalidateQueries(['personas'])
-}
-
-function useDeletePersona() {
-  // Mutation: deleteData + invalidateQueries(['personas'])
-}
-
-// === usePerfiles ===
-
-function usePerfiles() {
-  // Query: getPerfiles()
-  // Key: ['perfiles']
-}
-
-function useSavePerfil() {
-  // Mutation: createProfile/updateProfile + invalidate
-}
-
-function useDeletePerfil() {
-  // Mutation: deleteProfile + invalidate
-}
-
-// === useConfig ===
-
-function useConfig(ssId: string | undefined, key: string) {
-  // Query: getConfig(key, ssId)
-  // Key: ['config', key]
-}
-
-function useSetConfig() {
-  // Mutation: setConfig + invalidate(['config', key])
-}
-
-// === useSession ===
-
+```typescript
 function useSession() {
-  // Query: validateSession(token)
-  // Key: ['session']
-  // No cache - siempre refetch
+  return useQuery({
+    queryKey: ['session'],
+    queryFn: () => authService.validateSession(),
+    enabled: false,  // Manual trigger
+  });
 }
-
-function useLogout() {
-  // Mutation: logout + clear cache + redirect
-}
-
-// === useAuthMethods ===
 
 function useAuthMethods() {
-  // Query: getAuthMethods()
-  // Key: ['authMethods']
+  return useQuery({
+    queryKey: ['authMethods'],
+    queryFn: () => authService.getAuthMethods(),
+    refetchOnMount: true,
+  });
 }
-```
-
-### 5.4 Opciones por Defecto
-
-```typescript
-const defaultQueryOptions = {
-  staleTime: 5 * 60 * 1000,  // 5 minutos
-  retry: 1,
-  refetchOnWindowFocus: true,
-  refetchOnReconnect: true,
-};
-
-const defaultMutationOptions = {
-  retry: 0,
-  onError: (error) => {
-    // Mostrar toast de error
-  },
-};
 ```
 
 ---
 
-## 6. Servicios Adicionales
-
-### 6.1 AuthService
+## 7. AuthService
 
 Servicios de autenticación separados (para modularidad):
 
 ```typescript
 class AuthService {
-  // Login con método específico
-  async loginWithPassword(username: string, password: string): Promise<LoginResponse>;
-  async loginWithPasskey(username: string, assertion: any): Promise<LoginResponse>;
-  async loginWithTOTP(username: string, code: string): Promise<LoginResponse>;
-  async loginWithEmailOTP(username: string, code: string): Promise<LoginResponse>;
-
-  // Registro
-  async register(username: string, password: string, perfilId: string): Promise<ApiResponse>;
-
-  // Gestión de auth
-  async setupTOTP(username: string, password: string): Promise<{ secret: string; otpURI: string }>;
-  async confirmTOTP(username: string, code: string): Promise<ApiResponse>;
-  async setupPasskey(username: string, deviceName: string, origin: string): Promise<any>;
-  async confirmPasskey(username: string, attestation: any): Promise<ApiResponse>;
-  async deletePasskey(passkeyId: string): Promise<ApiResponse>;
-
-  // Cambio de contraseña
-  async changePassword(oldPassword: string, newPassword: string): Promise<ApiResponse>;
-}
-```
-
-### 6.2 PublicService
-
-Consumo de datos públicos via `/gviz/tq` (sin autenticación):
-
-```typescript
-class PublicService {
-  /**
-   * Obtiene datos públicos directamente del GSheet
-   * No usa GAS, usa Google Visualization API
-   */
-  async getPublicData<T = any[]>(
-    ssId: string, 
-    sheet: string,
-    query?: string  // SQL-like query
-  ): Promise<T>;
-
-  /**
-   * Obtiene múltiples hojas públicas
-   */
-  async batchGetPublicData(
-    ssId: string,
-    sheets: string[]
-  ): Promise<Record<string, any[]>>;
-}
-```
-
-**Nota**: PublicService es para la app pública (`/`). No inyecta sessionToken ni maneja errores de autenticación.
-
----
-
-## 7. Integración con AuthContext
-
-### 7.1 Flujo Actual (Sin DataService)
-
-```
-User → Login.tsx → AuthContext.login() → localStorage
-```
-
-### 7.2 Flujo Propuesto (Con DataService)
-
-```
-User → Login.tsx → authService.login() 
-                    ↓
-              AuthContext.setSession()
-                    ↓
-              localStorage + hooks disponibles
-```
-
-### 7.3 Cambios en AuthContext
-
-**Extraer a authService:**
-- `login()` → authService.login()
-- `logout()` → authService.logout()
-- `validateSession()` → authService.validateSession()
-
-**Mantener en AuthContext:**
-- `user` state
-- `isAuthenticated` derived
-- `sessionToken` getter
-- `wrapped_mk` getter
-
----
-
-## 8. Uso en Componentes
-
-### 8.1 Ejemplo: Lista de Personas
-
-```typescript
-import { usePersonaFilter, useSavePersona, useDeletePersona } from '@/hooks/usePersonas';
-
-interface Props {
-  ssId: string;
-}
-
-export function PersonaList({ ssId }: Props) {
-  const [search, setSearch] = useState('');
+  async loginWithPassword(username: string, password: string): Promise<LoginResponse | LoginStepResponse>;
+  async loginWithPasskey(username: string, assertion: any, password?: string): Promise<LoginResponse | LoginStepResponse>;
+  async loginWithTOTP(username: string, code: string, password?: string): Promise<LoginResponse | LoginStepResponse>;
+  async loginWithEmailOTP(username: string, code: string, password?: string): Promise<LoginResponse | LoginStepResponse>;
   
-  const { data: personas, isLoading, error } = usePersonaFilter(ssId, {
-    estado: 'activo',
-    search,
+  async getAuthMethods(): Promise<AuthMethodsResponse>;
+  async setDefaultAuthMethod(method: string): Promise<ApiResponse>;
+  async changePassword(oldPassword: string, newPassword: string): Promise<ApiResponse>;
+  async deletePasskey(passkeyId: string): Promise<ApiResponse>;
+  
+  async logout(): Promise<ApiResponse>;
+  async validateSession(): Promise<ValidateSessionResponse>;
+  async refreshSession(): Promise<ApiResponse & { sessionToken: string }>;
+}
+```
+
+---
+
+## 8. Integración con AuthContext
+
+### 8.1 Flujo de Login
+
+```
+User → Login.tsx → authService.login()
+                     ↓
+               AuthContext.setSession()
+                     ↓
+               Fetch Configuracion → setCachedSettings()
+                     ↓
+               Fetch Registro_Plugins → refreshModuleMap()
+                     ↓
+               localStorage + hooks disponibles
+```
+
+### 8.2 Flujo de Mount (Sesión Existente)
+
+```
+App loads → AuthContext useEffect
+              ↓
+         Restore session from localStorage
+              ↓
+         Fetch Configuracion → setCachedSettings()
+              ↓
+         ThemeContext reads cache → applies theme
+              ↓
+         Components render instantly
+```
+
+### 8.3 Flujo de Logout
+
+```
+User clicks logout → authService.logout()
+                       ↓
+                 clearCachedSettings()
+                 queryClient.clear()
+                 localStorage cleanup
+                       ↓
+                 Redirect to /admin/login
+```
+
+---
+
+## 9. Uso en Componentes
+
+### 9.1 Ejemplo: Lista de Datos con useSheetData
+
+```typescript
+import { useSheetData } from '@/hooks/useSession';
+
+export function ConfigList({ ssId }: Props) {
+  const { data: config, isLoading, error } = useSheetData('Configuracion', ssId, {
+    enabled: !!ssId,
   });
-
-  const savePersona = useSavePersona();
-  const deletePersona = useDeletePersona();
-
-  const handleDelete = async (id: string) => {
-    await deletePersona.mutateAsync({ ssId, id });
-  };
 
   if (isLoading) return <Skeleton />;
   if (error) return <Alert>{error.message}</Alert>;
 
   return (
-    <DataTable
-      data={personas}
-      onDelete={handleDelete}
-    />
+    <List>
+      {config?.map(item => (
+        <ListItem key={item.clave}>{item.clave}: {item.valor}</ListItem>
+      ))}
+    </List>
   );
 }
 ```
 
-### 8.2 Ejemplo: Raw Fetch + JSONata
+### 9.2 Ejemplo: Save con Optimistic Update
 
 ```typescript
-import { dataService } from '@/services/dataService';
-import { dataTransformService } from '@/services/dataTransformService';
+import { useSaveData } from '@/hooks/useSession';
 
-async function ejemploAvanzado(ssId: string) {
-  // Layer 1: Fetch raw
-  const raw = await dataService.getData('Personas', ssId);
-  
-  // Layer 2: Apply JSONata
-  const activos = dataTransformService.filter(raw, 'estado = "activo"');
-  const sanitized = dataTransformService.sanitize(activos);
-  const ordenados = dataTransformService.sort(sanitized, 'nombre asc');
-  
-  return ordenados;
+export function ConfigEditor({ ssId }: Props) {
+  const saveConfig = useSaveData('Configuracion', ssId);
+
+  const handleSave = async (key: string, value: string) => {
+    await saveConfig.mutateAsync({
+      clave: key,
+      valor: value,
+      is_public: true,
+    });
+  };
+
+  return <Button onClick={() => handleSave('nombre', 'Nuevo Nombre')}>Guardar</Button>;
 }
 ```
 
----
+### 9.3 Ejemplo: Raw Fetch + batchExecute
 
-## 9. Implementación Recomendada
+```typescript
+import { dataService } from '@/services/dataService';
 
-### Orden de Implementación
+async function initializeCore(ssId: string) {
+  const ops = [
+    { op: 'initSheet', sheet: 'Usuarios', headers: [...] },
+    { op: 'initSheet', sheet: 'Perfiles', headers: [...] },
+    { op: 'save', sheet: 'Perfiles', data: { id: 'p_admin', ... } },
+  ];
 
-1. **Types** (`src/types/*.ts`) — Interfaces primero
-2. **cacheService.ts** — Memory + localStorage with 24h expiry
-3. **dataService.ts** — Cliente HTTP + module resolution
-4. **dataTransformService.ts** — JSONata wrapper
-5. **authService.ts** — Auth operations
-6. **publicService.ts** — `/gviz/tq` fetcher
-7. **Hooks** — TanStack Query wrappers
-8. **main.tsx** — Add QueryClientProvider
-9. **AuthContext** — Integrate cache on login/logout
+  const result = await dataService.batchExecute(ops, {
+    mode: 'fail-fast',
+    isSetup: true,
+  });
 
-### Dependencies Internas
-
-```
-types/            ← Dependencias externas (ninguna)
-    ↑
-cacheService.ts   ← types/, idb-keyval
-    ↑
-dataService.ts    ← types/, cacheService
-    ↑
-dataTransformService.ts ← types/, jsonata
-    ↑
-hooks/            ← dataService, dataTransformService, @tanstack/react-query
+  console.log(`Succeeded: ${result.succeeded}, Failed: ${result.failed}`);
+}
 ```
 
 ---
@@ -970,37 +848,30 @@ hooks/            ← dataService, dataTransformService, @tanstack/react-query
 
 ```typescript
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ReactNode } from 'react';
+import { persistQueryClient } from '@tanstack/react-query-persist-client';
+import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 5 * 60 * 1000,
+      gcTime: 30 * 60 * 1000,
       retry: 1,
-      refetchOnWindowFocus: true,
-    },
-    mutations: {
-      retry: 0,
+      refetchOnWindowFocus: false,
+      refetchOnMount: false,
     },
   },
 });
 
+const persister = createSyncStoragePersister({ storage: localStorage });
+persistQueryClient({ queryClient, persister, maxAge: 30 * 60 * 1000 });
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider theme={theme}>
-        <CssBaseline />
-        <BrowserRouter>
-          <Routes>
-            <Route path="/admin/*" element={
-              <AuthProvider>
-                <AdminApp />
-              </AuthProvider>
-            } />
-            <Route path="/*" element={<PublicApp />} />
-          </Routes>
-        </BrowserRouter>
-      </ThemeProvider>
+      <ThemeContextProvider>
+        <AppShell />
+      </ThemeContextProvider>
     </QueryClientProvider>
   </React.StrictMode>
 );
@@ -1008,24 +879,86 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 
 ---
 
-## 11. Próximos Pasos
+## 11. jsonataService — Transformaciones Client-Side
 
-- [ ] Implementar tipos en `src/types/`
-- [ ] Implementar `dataService.ts`
-- [ ] Implementar `dataTransformService.ts`
-- [ ] Implementar `authService.ts`
-- [ ] Implementar `publicService.ts`
-- [ ] Implementar hooks en `src/hooks/`
-- [ ] Agregar QueryClientProvider a `main.tsx`
-- [ ] Refactorizar AuthContext para usar authService
+### 11.1 Propósito
+
+Servicio de transformación de datos usando JSONata. Se ejecuta **client-side** sobre los datos obtenidos del backend, sin costo de cuota GAS.
+
+### 11.2 Arquitectura
+
+```
+getData() → fetch from GAS → filter() → map() → sort() → sanitize() → return
+```
+
+### 11.3 Métodos
+
+| Método | Descripción | Ejemplo |
+|--------|-------------|---------|
+| `filter(data, expr)` | Filtra registros | `filter(personas, '[$.estado = "activo"]')` |
+| `map(data, expr)` | Transforma campos | `map(personas, '[{"id": id, "nombre": nombre}]')` |
+| `sort(data, expr)` | Ordena registros | `sort(personas, '$sort($, function($a, $b) { $a.nombre < $b.nombre })')` |
+| `sanitize(data)` | Elimina campos `enc_*` | `sanitize(personas)` |
+| `validate(data, expr)` | Valida datos | `validate(persona, '[ $$.nombre ? null : "requerido" ] ~> $filter($!=null)')` |
+| `process(data, opts)` | Pipeline: filter→map→sort→limit | `process(data, { filter: '...', sort: '...', limit: 10 })` |
+| `compile(expr)` | Compila y cachea expresión | `compile('[$.estado = "activo"]')` |
+
+### 11.4 Expression Cache
+
+Las expresiones JSONata se compilan y cachean automáticamente para evitar recompilación en llamadas repetidas:
+
+```typescript
+class JsonataService {
+  private _expressionCache = new Map<string, jsonata.Expression>();
+
+  compile(expression: string): jsonata.Expression {
+    if (!this._expressionCache.has(expression)) {
+      this._expressionCache.set(expression, jsonata(expression));
+    }
+    return this._expressionCache.get(expression)!;
+  }
+}
+```
+
+### 11.5 Expresiones JSONata Comunes
+
+| Caso de Uso | Expresión |
+|-------------|-----------|
+| Filtrar por estado | `[$.estado = "activo"]` |
+| Búsqueda por texto | `[$.nombre ~> $contains(/juan/i)]` |
+| Renombrar campos | `[{"id": id, "nombre": nombre, "telefono": enc_telefono}]` |
+| Ordenar por nombre | `$sort($, function($a, $b) { $a.nombre < $b.nombre })` |
+| Sanitizar (remover enc_*) | `$map($, function($r) { $r ~> $filter(function($v, $k) { $k ~> $not($contains(/^enc_/)) }) })` |
+| Contar activos | `$count($[estado="activo"])` |
+| Agrupar por campo | `$$.grupo ~> $distinct ~> $map(function($g) { {"grupo": $g, "count": $count($$[grupo=$g])} })` |
+
+### 11.6 Integración con getData
+
+```typescript
+// getData aplica JSONata automáticamente:
+const activos = await dataService.getData('Personas', ssId, {
+  filter: '[$.estado = "activo"]',
+  sort: '$sort($, function($a, $b) { $a.nombre < $b.nombre })',
+  limit: 20,
+  offset: 0,
+});
+
+// Sanitizar para vista pública:
+const publicData = await dataService.getData('Personas', ssId, {
+  sanitize: true,
+});
+```
 
 ---
 
 ## 12. Referencias
 
 - [Backend API Completa](./Backend_API_Completa.md)
+- [Backend](./Backend.md)
 - [Autenticación](./Autenticacion.md)
 - [TanStack Query Docs](https://tanstack.com/query)
 - [JSONata Docs](https://jsonata.org/)
-- [Estructura del Proyecto](./Estructura_Proyecto.md)
-- [Tecnología](./Tecnologia.md)
+
+---
+
+*Documento actualizado el 2026-04-06 — v2.3.0*

@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Drawer,
@@ -13,60 +13,29 @@ import {
   IconButton,
   useTheme,
   useMediaQuery,
-  AppBar,
-  Toolbar,
   Badge,
-  Menu,
-  MenuItem,
-  Popover
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
 } from '@mui/material';
 import {
-  Dashboard as DashboardIcon,
-  People as PeopleIcon,
-  EventNote as EventNoteIcon,
-  Campaign as CampaignIcon,
-  Map as MapIcon,
-  Settings as SettingsIcon,
-  Security as SecurityIcon,
   Menu as MenuIcon,
-  Backup as BackupIcon,
-  Person as PersonIcon,
-  Logout as LogoutIcon,
   Notifications as NotificationsIcon,
-  Brightness4 as DarkModeIcon,
-  Brightness7 as LightModeIcon,
-  Home as HomeIcon,
   ChevronLeft as ChevronLeftIcon,
-  ChevronRight as ChevronRightIcon,
-  Share as ShareIcon,
-  Business as BusinessIcon
+  ExpandMore as ExpandMoreIcon,
+  Business as BusinessIcon,
 } from '@mui/icons-material';
+import { alpha } from '@mui/material/styles';
 import { useAuth } from '../../context/AuthContext';
 import { useThemeContext } from '@/core/context/ThemeContext';
 import { getCachedSettings } from '@/utils/settingsCache';
+import { useMenuConfig, resolveIcon, type MenuItem, type MenuSection } from '@/admin/core/hooks/useMenuConfig';
 import ShareDialog from '../ShareDialog/ShareDialog';
 
 const DRAWER_WIDTH = 260;
-const COLLAPSED_WIDTH = 72;
-
-const menuItems = [
-  { label: 'Dashboard', icon: DashboardIcon, path: '/admin' },
-  { label: 'Personas', icon: PeopleIcon, path: '/admin/personas' },
-  { label: 'Reuniones', icon: EventNoteIcon, path: '/admin/reuniones' },
-  { label: 'Anuncios', icon: CampaignIcon, path: '/admin/anuncios' },
-  { label: 'Predicación', icon: MapIcon, path: '/admin/predicacion' },
-];
-
-const settingsMenuItems = [
-  { label: 'Sitio', icon: BusinessIcon, path: '/admin/settings/congregation' },
-  { label: 'Respaldo', icon: BackupIcon, path: '/admin/backup' },
-  { label: 'Modo Oscuro', icon: DarkModeIcon, action: 'toggleDarkMode' },
-  { label: 'Compartir', icon: ShareIcon, action: 'share' },
-];
-
-const userMenuItems = [
-  { label: 'Autenticación', icon: SecurityIcon, path: '/admin/settings/auth' },
-];
+const MINI_DRAWER_WIDTH = 60;
+const COLLAPSE_DELAY = 200;
+const ICON_COL_WIDTH = 40;
 
 export default function Sidebar() {
   const navigate = useNavigate();
@@ -75,77 +44,103 @@ export default function Sidebar() {
   const { mode, toggleDarkMode: toggleThemeMode } = useThemeContext();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const { topMenu, bottomSections } = useMenuConfig();
+
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
-  const [userMenuAnchor, setUserMenuAnchor] = useState<null | HTMLElement>(null);
-  const [settingsMenuAnchor, setSettingsMenuAnchor] = useState<null | HTMLElement>(null);
-  const [hoveredItem, setHoveredItem] = useState<string | null>(null);
-  const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [hoverAnchor, setHoverAnchor] = useState<null | HTMLElement>(null);
-  const [notificationCount] = useState(3);
+  const [hoverExpanded, setHoverExpanded] = useState(false);
+  const [expandedSection, setExpandedSection] = useState<string | null>(null);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const collapseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const cached = getCachedSettings();
   const congregationName = cached?.data.nombre_mostrar || cached?.data.nombre_congregacion || 'CongreAdmin';
-  const currentWidth = collapsed ? COLLAPSED_WIDTH : DRAWER_WIDTH;
   const adminSsId = localStorage.getItem('congre_admin_ss_id');
   const shareUrl = `${window.location.origin}/?ssid=${adminSsId || ''}`;
+
+  let iconPreviewUrl: string | null = null;
+  try {
+    const iconConfig = cached?.data.icon_config ? JSON.parse(cached.data.icon_config) : null;
+    iconPreviewUrl = iconConfig?.sizes?.['32'] || iconConfig?.sizes?.['48'] || null;
+  } catch { /* ignore */ }
+
+  const isExpanded = hoverExpanded;
+
+  const handleDrawerEnter = () => {
+    if (collapseTimeoutRef.current) clearTimeout(collapseTimeoutRef.current);
+    setHoverExpanded(true);
+  };
+
+  const handleDrawerLeave = () => {
+    collapseTimeoutRef.current = setTimeout(() => {
+      setHoverExpanded(false);
+      setExpandedSection(null);
+    }, COLLAPSE_DELAY);
+  };
+
+  useEffect(() => {
+    const currentSection = bottomSections.find((section: MenuSection) =>
+      section.children.some((child: MenuItem) => child.path === location.pathname)
+    );
+    if (currentSection && isExpanded) {
+      setExpandedSection(currentSection.id);
+    }
+  }, [location.pathname, isExpanded, bottomSections]);
 
   const handleNavigation = (path: string) => {
     navigate(path);
     if (isMobile) setMobileOpen(false);
   };
 
-  const handleLogout = () => {
-    setUserMenuAnchor(null);
-    logout();
-    navigate('/admin/login');
-  };
-
-  const toggleDarkMode = () => {
-    toggleThemeMode();
-    setSettingsMenuAnchor(null);
-  };
-
-  const handleMouseEnter = (itemLabel: string, event: React.MouseEvent<HTMLElement>) => {
-    if (collapsed && !isMobile) {
-      hoverTimeoutRef.current = setTimeout(() => {
-        setHoveredItem(itemLabel);
-        setHoverAnchor(event.currentTarget);
-      }, 300);
+  const handleChildAction = (child: MenuItem) => {
+    if (child.action === 'toggleDarkMode') {
+      toggleThemeMode();
+    } else if (child.action === 'share') {
+      setShareDialogOpen(true);
+    } else if (child.action === 'logout') {
+      logout();
+      navigate('/admin/login');
+    } else if (child.path) {
+      handleNavigation(child.path);
     }
   };
 
-  const handleMouseLeave = () => {
-    if (hoverTimeoutRef.current) {
-      clearTimeout(hoverTimeoutRef.current);
-    }
-    setTimeout(() => {
-      setHoveredItem(null);
-      setHoverAnchor(null);
-    }, 200);
+  const glassSx = {
+    backdropFilter: 'blur(12px)',
+    WebkitBackdropFilter: 'blur(12px)',
+    bgcolor: alpha(theme.palette.primary.main, 0.08),
   };
 
-  const desktopContent = (
+  const CongregationIcon = ({ size = 24, borderRadius = 1 }: { size?: number; borderRadius?: number }) => (
+    iconPreviewUrl ? (
+      <Box
+        component="img"
+        src={iconPreviewUrl}
+        alt=""
+        sx={{ width: size, height: size, borderRadius, flexShrink: 0 }}
+      />
+    ) : (
+      <BusinessIcon sx={{ flexShrink: 0, color: 'primary.main', fontSize: size }} />
+    )
+  );
+
+  const drawerContent = (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <Box sx={{ 
-        p: collapsed ? 1.5 : 3, 
-        display: 'flex', 
-        alignItems: 'center', 
-        justifyContent: collapsed ? 'center' : 'space-between'
+      {/* Header */}
+      <Box sx={{
+        px: 0,
+        display: 'flex',
+        alignItems: 'center',
+        minHeight: 56,
       }}>
-            {collapsed ? (
-              <IconButton size="small" onClick={() => setCollapsed(false)}>
-                <HomeIcon />
-          </IconButton>
-        ) : (
+        <Box sx={{ width: isExpanded ? ICON_COL_WIDTH : '100%', display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
+          <CongregationIcon size={24} borderRadius={1} />
+        </Box>
+        {isExpanded && (
           <>
-            <Box sx={{ textAlign: 'center', flex: 1 }}>
-              <Typography variant="h6" noWrap sx={{ fontWeight: 600 }}>
-                {congregationName}
-              </Typography>
-            </Box>
-            <IconButton size="small" onClick={() => setCollapsed(true)}>
+            <Typography variant="h6" noWrap sx={{ fontWeight: 600, flex: 1, px: 1.5 }}>
+              {congregationName}
+            </Typography>
+            <IconButton size="small" onClick={() => setHoverExpanded(false)} sx={{ mr: 1.5 }}>
               <ChevronLeftIcon />
             </IconButton>
           </>
@@ -153,204 +148,157 @@ export default function Sidebar() {
       </Box>
       <Divider />
 
-      <List sx={{ flex: 1, px: collapsed ? 1 : 2, pt: 2 }}>
-        {menuItems.map((item) => (
-          <ListItem 
-            key={item.path} 
-            disablePadding 
-            sx={{ mb: 0.5 }}
-            onMouseEnter={(e) => handleMouseEnter(item.label, e)}
-            onMouseLeave={handleMouseLeave}
-          >
-            <ListItemButton
-              selected={location.pathname === item.path}
-              onClick={() => handleNavigation(item.path)}
-              sx={{
-                borderRadius: 2,
-                minHeight: 48,
-                justifyContent: collapsed ? 'center' : 'flex-start',
-                px: collapsed ? 1 : 2,
-                '&.Mui-selected': {
-                  bgcolor: 'primary.light',
-                  color: 'primary.contrastText',
-                  '& .MuiListItemIcon-root': { color: 'inherit' },
-                  '&:hover': { bgcolor: 'primary.main' },
-                },
-              }}
-            >
-              <ListItemIcon sx={{ 
-                minWidth: collapsed ? 0 : 44, 
-                justifyContent: 'center',
-                color: location.pathname === item.path ? 'inherit' : 'text.primary'
-              }}>
-                <item.icon />
-              </ListItemIcon>
-              {!collapsed && <ListItemText primary={item.label} />}
-            </ListItemButton>
-          </ListItem>
-        ))}
+      {/* Top Menu Items */}
+      <List sx={{ px: 0, py: 1 }}>
+        {topMenu.map(item => {
+          const IconComponent = resolveIcon(item.icon);
+          return (
+            <ListItem key={item.label} disablePadding sx={{ mb: 0.5 }}>
+              <ListItemButton
+                selected={location.pathname === item.path}
+                onClick={() => handleNavigation(item.path!)}
+                sx={{
+                  borderRadius: 2,
+                  minHeight: 48,
+                  px: isExpanded ? 1.5 : 0,
+                  '&.Mui-selected': {
+                    bgcolor: 'primary.light',
+                    color: 'primary.contrastText',
+                    '& .MuiListItemIcon-root': { color: 'inherit' },
+                    '&:hover': { bgcolor: 'primary.main' },
+                  },
+                }}
+              >
+                <ListItemIcon sx={{ minWidth: isExpanded ? ICON_COL_WIDTH : 'unset', width: isExpanded ? ICON_COL_WIDTH : '100%', justifyContent: 'center' }}>
+                  <IconComponent />
+                </ListItemIcon>
+                {isExpanded && <ListItemText primary={item.label} sx={{ pr: 1.5 }} />}
+              </ListItemButton>
+            </ListItem>
+          );
+        })}
       </List>
 
-      <Popover
-        open={Boolean(hoveredItem && hoverAnchor)}
-        anchorEl={hoverAnchor}
-        onClose={() => setHoveredItem(null)}
-        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
-        sx={{ ml: 1 }}
-      >
-        <Typography variant="body2" sx={{ px: 2, py: 1, fontWeight: 500 }}>
-          {hoveredItem}
-        </Typography>
-      </Popover>
+      {/* Spacer */}
+      <Box sx={{ flex: 1 }} />
 
+      {/* Bottom: Notifications, Configuración, Usuario */}
       <Divider />
-
-      <List sx={{ px: collapsed ? 1 : 2 }}>
+      <List sx={{ px: 0, py: 0.5 }}>
+        {/* Notifications */}
         <ListItem disablePadding sx={{ mb: 0.5 }}>
           <ListItemButton
-            onClick={() => {}}
-            sx={{ 
+            sx={{
               borderRadius: 2,
               minHeight: 48,
-              justifyContent: collapsed ? 'center' : 'flex-start',
-              px: collapsed ? 1 : 2,
+              px: isExpanded ? 1.5 : 0,
             }}
           >
-            <ListItemIcon sx={{ 
-              minWidth: collapsed ? 0 : 44, 
-              justifyContent: 'center'
-            }}>
-              <Badge badgeContent={notificationCount} color="error">
+            <ListItemIcon sx={{ minWidth: isExpanded ? ICON_COL_WIDTH : 'unset', width: isExpanded ? ICON_COL_WIDTH : '100%', justifyContent: 'center' }}>
+              <Badge badgeContent={0} color="error">
                 <NotificationsIcon />
               </Badge>
             </ListItemIcon>
-            {!collapsed && <ListItemText primary="Notificaciones" />}
+            {isExpanded && <ListItemText primary="Notificaciones" sx={{ pr: 1.5 }} />}
           </ListItemButton>
         </ListItem>
-        <ListItem disablePadding sx={{ mb: 0.5 }}>
-          <ListItemButton
-            onClick={(e) => setUserMenuAnchor(e.currentTarget)}
-            sx={{ 
-              borderRadius: 2,
-              minHeight: 48,
-              justifyContent: collapsed ? 'center' : 'flex-start',
-              px: collapsed ? 1 : 2,
-            }}
-          >
-            <ListItemIcon sx={{ 
-              minWidth: collapsed ? 0 : 44, 
-              justifyContent: 'center'
-            }}>
-              <PersonIcon />
-            </ListItemIcon>
-            {!collapsed && <ListItemText primary={user?.username || 'Usuario'} />}
-          </ListItemButton>
-        </ListItem>
-        <ListItem disablePadding sx={{ mb: 0.5 }}>
-          <ListItemButton
-            onClick={(e) => setSettingsMenuAnchor(e.currentTarget)}
-            sx={{ 
-              borderRadius: 2,
-              minHeight: 48,
-              justifyContent: collapsed ? 'center' : 'flex-start',
-              px: collapsed ? 1 : 2,
-            }}
-          >
-            <ListItemIcon sx={{ 
-              minWidth: collapsed ? 0 : 44, 
-              justifyContent: 'center'
-            }}>
-              <SettingsIcon />
-            </ListItemIcon>
-            {!collapsed && <ListItemText primary="Configuración" />}
-          </ListItemButton>
-        </ListItem>
+
+        {/* Configuración & Usuario accordions */}
+        {bottomSections.map(section => {
+          const IconComponent = resolveIcon(section.icon);
+          return (
+            <Accordion
+              key={section.id}
+              expanded={isExpanded && expandedSection === section.id}
+              onChange={() => setExpandedSection(expandedSection === section.id ? null : section.id)}
+              disableGutters
+              sx={{
+                boxShadow: 'none',
+                '&:before': { display: 'none' },
+                bgcolor: 'transparent',
+                mb: 0.5,
+              }}
+            >
+              <AccordionSummary
+                expandIcon={isExpanded ? <ExpandMoreIcon /> : null}
+                sx={{ px: isExpanded ? 1.5 : 0, minHeight: 48, '& .MuiAccordionSummary-content': { my: 0 } }}
+              >
+                <ListItemIcon sx={{ minWidth: isExpanded ? ICON_COL_WIDTH : 'unset', width: isExpanded ? ICON_COL_WIDTH : '100%', justifyContent: 'center' }}>
+                  <IconComponent />
+                </ListItemIcon>
+                {isExpanded && (
+                  <ListItemText primary={section.label} primaryTypographyProps={{ fontWeight: 500 }} sx={{ pr: 1.5 }} />
+                )}
+              </AccordionSummary>
+              {isExpanded && (
+                <AccordionDetails sx={{ py: 0, px: 0 }}>
+                  {section.children.map(child => {
+                    const ChildIcon = resolveIcon(child.icon);
+                    return (
+                      <ListItemButton
+                        key={child.label}
+                        selected={location.pathname === child.path}
+                        onClick={() => handleChildAction(child)}
+                        sx={{
+                          borderRadius: 1.5,
+                          minHeight: 40,
+                          px: 0,
+                          mb: 0.25,
+                          '&.Mui-selected': {
+                            bgcolor: 'primary.light',
+                            color: 'primary.contrastText',
+                            '& .MuiListItemIcon-root': { color: 'inherit' },
+                            '&:hover': { bgcolor: 'primary.main' },
+                          },
+                        }}
+                      >
+                        <ListItemIcon sx={{ minWidth: ICON_COL_WIDTH, width: '100%', justifyContent: 'center' }}>
+                          <ChildIcon fontSize="small" />
+                        </ListItemIcon>
+                        <ListItemText
+                          primary={child.label}
+                          primaryTypographyProps={{ fontSize: '0.875rem' }}
+                          sx={{ pr: 1.5 }}
+                        />
+                      </ListItemButton>
+                    );
+                  })}
+                </AccordionDetails>
+              )}
+            </Accordion>
+          );
+        })}
       </List>
-
-      <Menu
-        anchorEl={settingsMenuAnchor}
-        open={Boolean(settingsMenuAnchor)}
-        onClose={() => setSettingsMenuAnchor(null)}
-        transformOrigin={{ horizontal: 'right', vertical: 'top' }}
-        anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
-      >
-        {settingsMenuItems.map((item) => (
-          <MenuItem 
-            key={item.label} 
-            onClick={() => { 
-              if (item.action === 'toggleDarkMode') {
-                toggleDarkMode();
-              } else if (item.action === 'share') {
-                setSettingsMenuAnchor(null);
-                setShareDialogOpen(true);
-              } else {
-                setSettingsMenuAnchor(null); 
-                handleNavigation(item.path!);
-              }
-            }}
-          >
-            <ListItemIcon>
-              {item.action === 'toggleDarkMode' 
-                ? (mode === 'dark' ? <LightModeIcon /> : <DarkModeIcon />)
-                : <item.icon fontSize="small" />
-              }
-            </ListItemIcon>
-            <ListItemText primary={item.label} />
-          </MenuItem>
-        ))}
-      </Menu>
-
-      <Menu
-        anchorEl={userMenuAnchor}
-        open={Boolean(userMenuAnchor)}
-        onClose={() => setUserMenuAnchor(null)}
-        transformOrigin={{ horizontal: 'right', vertical: 'top' }}
-        anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
-      >
-        <MenuItem disabled>
-          <ListItemIcon><PersonIcon fontSize="small" /></ListItemIcon>
-          <ListItemText primary={user?.username} />
-        </MenuItem>
-        {userMenuItems.map((item) => (
-          <MenuItem key={item.path} onClick={() => { setUserMenuAnchor(null); handleNavigation(item.path); }}>
-            <ListItemIcon><item.icon fontSize="small" /></ListItemIcon>
-            <ListItemText primary={item.label} />
-          </MenuItem>
-        ))}
-        <MenuItem onClick={handleLogout}>
-          <ListItemIcon><LogoutIcon fontSize="small" /></ListItemIcon>
-          <ListItemText>Cerrar Sesión</ListItemText>
-        </MenuItem>
-      </Menu>
     </Box>
   );
 
+  // Mobile: AppBar + temporary drawer
   if (isMobile) {
     return (
       <>
-        <AppBar
-          position="fixed"
-          elevation={0}
+        <Box
+          component="nav"
           sx={{
-            bgcolor: 'background.paper',
-            color: 'text.primary',
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: theme.zIndex.appBar,
+            ...glassSx,
             borderBottom: 1,
             borderColor: 'divider',
-            zIndex: theme.zIndex.drawer + 1,
           }}
         >
-          <Toolbar>
-            <Typography variant="h6" sx={{ flexGrow: 1, fontWeight: 600 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', px: 2, minHeight: 56 }}>
+            <CongregationIcon size={24} borderRadius={1} />
+            <Typography variant="h6" sx={{ flexGrow: 1, fontWeight: 600, ml: 1.5 }}>
               {congregationName}
             </Typography>
             <IconButton color="inherit" onClick={() => setMobileOpen(true)}>
-              <Badge badgeContent={notificationCount} color="error">
-                <MenuIcon />
-              </Badge>
+              <MenuIcon />
             </IconButton>
-          </Toolbar>
-        </AppBar>
+          </Box>
+        </Box>
 
         <Drawer
           variant="temporary"
@@ -359,153 +307,62 @@ export default function Sidebar() {
           ModalProps={{ keepMounted: true }}
           sx={{
             '& .MuiDrawer-paper': {
-              width: DRAWER_WIDTH,
+              width: Math.min(300, window.innerWidth),
               boxSizing: 'border-box',
-              display: 'flex',
-              flexDirection: 'column',
+              ...glassSx,
             },
           }}
         >
-          <List sx={{ flex: 1, px: 2, pt: 2 }}>
-            {menuItems.map((item) => (
-              <ListItem key={item.path} disablePadding sx={{ mb: 0.5 }}>
-                <ListItemButton
-                  selected={location.pathname === item.path}
-                  onClick={() => handleNavigation(item.path)}
-                  sx={{ borderRadius: 2 }}
-                >
-                  <ListItemIcon sx={{ minWidth: 44 }}>
-                    <item.icon />
-                  </ListItemIcon>
-                  <ListItemText primary={item.label} />
-                </ListItemButton>
-              </ListItem>
-            ))}
-          </List>
-
-          <Divider />
-
-          <List sx={{ px: 2 }}>
-            <ListItem disablePadding sx={{ mb: 0.5 }}>
-              <ListItemButton sx={{ borderRadius: 2 }}>
-                <ListItemIcon sx={{ minWidth: 44 }}>
-                  <Badge badgeContent={notificationCount} color="error">
-                    <NotificationsIcon />
-                  </Badge>
-                </ListItemIcon>
-                <ListItemText primary="Notificaciones" />
-              </ListItemButton>
-            </ListItem>
-            <ListItem disablePadding sx={{ mb: 0.5 }}>
-              <ListItemButton
-                onClick={(e) => setUserMenuAnchor(e.currentTarget)}
-                sx={{ borderRadius: 2 }}
-              >
-                <ListItemIcon sx={{ minWidth: 44 }}>
-                  <PersonIcon />
-                </ListItemIcon>
-                <ListItemText primary={user?.username || 'Usuario'} />
-              </ListItemButton>
-            </ListItem>
-            <ListItem disablePadding sx={{ mb: 0.5 }}>
-              <ListItemButton
-                onClick={(e) => setSettingsMenuAnchor(e.currentTarget)}
-                sx={{ borderRadius: 2 }}
-              >
-                <ListItemIcon sx={{ minWidth: 44 }}>
-                  <SettingsIcon />
-                </ListItemIcon>
-                <ListItemText primary="Configuración" />
-              </ListItemButton>
-            </ListItem>
-          </List>
-
-          <Menu
-            anchorEl={settingsMenuAnchor}
-            open={Boolean(settingsMenuAnchor)}
-            onClose={() => setSettingsMenuAnchor(null)}
-            transformOrigin={{ horizontal: 'right', vertical: 'top' }}
-            anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
-          >
-            {settingsMenuItems.map((item) => (
-              <MenuItem 
-                key={item.label} 
-                onClick={() => { 
-                  if (item.action === 'toggleDarkMode') {
-                    toggleDarkMode();
-                  } else if (item.action === 'share') {
-                    setSettingsMenuAnchor(null);
-                    setShareDialogOpen(true);
-                  } else {
-                    setSettingsMenuAnchor(null); 
-                    handleNavigation(item.path!);
-                  }
-                }}
-              >
-                <ListItemIcon>
-                  {item.action === 'toggleDarkMode' 
-                    ? (mode === 'dark' ? <LightModeIcon /> : <DarkModeIcon />)
-                    : <item.icon fontSize="small" />
-                  }
-                </ListItemIcon>
-                <ListItemText primary={item.label} />
-              </MenuItem>
-            ))}
-          </Menu>
-
-          <Menu
-            anchorEl={userMenuAnchor}
-            open={Boolean(userMenuAnchor)}
-            onClose={() => setUserMenuAnchor(null)}
-            transformOrigin={{ horizontal: 'right', vertical: 'top' }}
-            anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
-          >
-            <MenuItem disabled>
-              <ListItemIcon><PersonIcon fontSize="small" /></ListItemIcon>
-              <ListItemText primary={user?.username} />
-            </MenuItem>
-            {userMenuItems.map((item) => (
-              <MenuItem key={item.path} onClick={() => { setUserMenuAnchor(null); handleNavigation(item.path); }}>
-                <ListItemIcon><item.icon fontSize="small" /></ListItemIcon>
-                <ListItemText primary={item.label} />
-              </MenuItem>
-            ))}
-            <MenuItem onClick={handleLogout}>
-              <ListItemIcon><LogoutIcon fontSize="small" /></ListItemIcon>
-              <ListItemText>Cerrar Sesión</ListItemText>
-            </MenuItem>
-          </Menu>
+          {drawerContent}
         </Drawer>
 
-        <Toolbar />
+        <Box sx={{ minHeight: 56 }} />
       </>
     );
   }
 
+  // Desktop: persistent overlay drawer with hover expand
   return (
     <>
-      <Drawer
-        variant="permanent"
+      <Box
+        onMouseEnter={handleDrawerEnter}
+        onMouseLeave={handleDrawerLeave}
         sx={{
-          width: currentWidth,
+          width: MINI_DRAWER_WIDTH,
           flexShrink: 0,
-          '& .MuiDrawer-paper': {
-            width: currentWidth,
-            boxSizing: 'border-box',
-            borderRight: 1,
-            borderColor: 'divider',
-            transition: theme.transitions.create('width', {
-              easing: theme.transitions.easing.sharp,
-              duration: theme.transitions.duration.enteringScreen,
-            }),
-          },
+          position: 'relative',
+          zIndex: theme.zIndex.appBar + 1,
         }}
       >
-        {desktopContent}
-      </Drawer>
+        <Drawer
+          variant="persistent"
+          open={true}
+          sx={{
+            flexShrink: 0,
+            '& .MuiDrawer-paper': {
+              width: isExpanded ? DRAWER_WIDTH : MINI_DRAWER_WIDTH,
+              boxSizing: 'border-box',
+              height: '100vh',
+              position: 'absolute',
+              left: 0,
+              borderRight: isExpanded ? 1 : 0,
+              borderColor: 'divider',
+              boxShadow: isExpanded ? '4px 0 24px rgba(0,0,0,0.12)' : 'none',
+              ...glassSx,
+              transition: theme.transitions.create('width', {
+                easing: theme.transitions.easing.sharp,
+                duration: 300,
+              }),
+              overflowX: 'hidden',
+            },
+          }}
+        >
+          {drawerContent}
+        </Drawer>
+      </Box>
 
-      <ShareDialog 
-        open={shareDialogOpen} 
+      <ShareDialog
+        open={shareDialogOpen}
         onClose={() => setShareDialogOpen(false)}
         shareUrl={shareUrl}
         title="Compartir Página Pública"

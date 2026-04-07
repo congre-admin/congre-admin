@@ -69,6 +69,31 @@ export function useSheetData<T = any>(sheet: string, ssId: string, options = {})
 }
 
 /**
+ * Hook for fetching sheet data with JSONata filtering, mapping, and sorting.
+ * The filter/map/sort expressions are included in the query key for proper caching.
+ */
+export function useFilteredData<T = any>(
+  sheet: string,
+  ssId: string,
+  options: {
+    filter?: string;
+    map?: string;
+    sort?: string;
+    limit?: number;
+    offset?: number;
+    sanitize?: boolean;
+  } = {},
+  queryOptions = {}
+) {
+  return useQuery({
+    queryKey: ['sheet', sheet, ssId, options.filter, options.map, options.sort, options.limit, options.offset],
+    queryFn: () => dataService.getData<T>(sheet, ssId, options),
+    staleTime: 5 * 60 * 1000,
+    ...queryOptions,
+  });
+}
+
+/**
  * Batch hook that fetches core tables in a single HTTP call.
  * Returns { perfiles, config, plugins } from one batchExecute.
  */

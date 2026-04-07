@@ -48,6 +48,20 @@ export function createCongregacionTheme(config?: Partial<ThemeConfig>): { light:
       h3: { fontSize: '1.75rem', fontWeight: 500 },
     },
     components: {
+      MuiCssBaseline: {
+        styleOverrides: `
+          body {
+            font-family: 'Google Sans Flex', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+            font-variation-settings: 'wdth' 85;
+          }
+          @media (min-width: 600px) {
+            body { font-variation-settings: 'wdth' 92; }
+          }
+          @media (min-width: 1200px) {
+            body { font-variation-settings: 'wdth' 100; }
+          }
+        `,
+      },
       MuiButton: { styleOverrides: { root: { textTransform: 'none', borderRadius: 8 } } },
       MuiCard: { styleOverrides: { root: { borderRadius: 12 } } },
       MuiTextField: { styleOverrides: { root: { borderRadius: 8 } } },

@@ -1,4 +1,5 @@
 import { cacheService } from '../cache/cacheService';
+import { jsonataService } from './jsonataService';
 import type {
   ApiResponse,
   GetDataOptions,
@@ -247,12 +248,30 @@ export class DataService {
 
   async getData<T = any[]>(sheet: string, ssId: string, options?: GetDataOptions): Promise<T> {
     const result = await this.request<GetDataResponse<T>>('getData', {
-      ...options,
       sheet,
       ssId,
     });
 
-    return result.data;
+    let data = result.data as any[];
+
+    if (options?.filter) {
+      data = await jsonataService.filter(data, options.filter);
+    }
+    if (options?.map) {
+      data = await jsonataService.map(data, options.map);
+    }
+    if (options?.sanitize) {
+      data = await jsonataService.sanitize(data);
+    }
+    if (options?.sort) {
+      data = await jsonataService.sort(data, options.sort);
+    }
+    if (options?.limit !== undefined) {
+      const start = options.offset || 0;
+      data = data.slice(start, start + options.limit);
+    }
+
+    return data as T;
   }
 
   async saveData(
