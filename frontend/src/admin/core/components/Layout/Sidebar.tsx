@@ -1,56 +1,222 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { Sidebar, Menu, MenuItem, SubMenu } from 'react-pro-sidebar';
 import {
-  Drawer,
-  List,
-  ListItem,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
   Box,
   Typography,
-  Divider,
   IconButton,
   useTheme,
   useMediaQuery,
-  Badge,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
+  Divider,
 } from '@mui/material';
 import {
   Menu as MenuIcon,
   Notifications as NotificationsIcon,
-  ChevronLeft as ChevronLeftIcon,
-  ExpandMore as ExpandMoreIcon,
   Business as BusinessIcon,
+  Home as HomeIcon,
+  Dashboard as DashboardIcon,
+  People as PeopleIcon,
+  EventNote as EventNoteIcon,
+  Campaign as CampaignIcon,
+  Map as MapIcon,
+  Settings as SettingsIcon,
+  Backup as BackupIcon,
+  Brightness4 as DarkModeIcon,
+  Share as ShareIcon,
+  Person as PersonIcon,
+  Security as SecurityIcon,
+  Logout as LogoutIcon,
 } from '@mui/icons-material';
 import { alpha } from '@mui/material/styles';
 import { useAuth } from '../../context/AuthContext';
 import { useThemeContext } from '@/core/context/ThemeContext';
 import { getCachedSettings } from '@/utils/settingsCache';
-import { useMenuConfig, resolveIcon, type MenuItem, type MenuSection } from '@/admin/core/hooks/useMenuConfig';
+import { useMenuConfig, type MenuItem as MenuItemType, type MenuSection } from '@/admin/core/hooks/useMenuConfig';
 import ShareDialog from '../ShareDialog/ShareDialog';
 
 const DRAWER_WIDTH = 260;
-const MINI_DRAWER_WIDTH = 60;
-const COLLAPSE_DELAY = 200;
-const ICON_COL_WIDTH = 40;
+const MINI_DRAWER_WIDTH = 72;
 
-export default function Sidebar() {
+// Icon resolver
+const iconMap: Record<string, React.ComponentType<{ fontSize?: string }>> = {
+  Home: HomeIcon,
+  Dashboard: DashboardIcon,
+  People: PeopleIcon,
+  EventNote: EventNoteIcon,
+  Campaign: CampaignIcon,
+  Map: MapIcon,
+  Settings: SettingsIcon,
+  Business: BusinessIcon,
+  Backup: BackupIcon,
+  DarkMode: DarkModeIcon,
+  Share: ShareIcon,
+  Person: PersonIcon,
+  Security: SecurityIcon,
+  Logout: LogoutIcon,
+  Notifications: NotificationsIcon,
+};
+
+function resolveMuiIcon(iconName: string) {
+  return iconMap[iconName] || SettingsIcon;
+}
+
+function SidebarContent({ onNavigate, congregationName, congregationIcon: CongregationIcon, collapsed }: { onNavigate: (path: string) => void; congregationName: string; congregationIcon: React.ComponentType<{ size?: number }>; collapsed: boolean }) {
+  const { topMenu, bottomSections } = useMenuConfig();
+  const location = useLocation();
+  const theme = useTheme();
+
+  const isActive = (path?: string) => location.pathname === path;
+  const isParentActive = (section: MenuSection) => 
+    section.children.some(child => child.path === location.pathname);
+
+  const handleAction = (item: MenuItemType) => {
+    if (item.action === 'toggleDarkMode') {
+      onNavigate('toggleDarkMode');
+    } else if (item.action === 'share') {
+      onNavigate('share');
+    } else if (item.action === 'logout') {
+      onNavigate('logout');
+    } else if (item.path) {
+      onNavigate(item.path);
+    }
+  };
+
+  const menuItemStyles = {
+    root: {
+      '& .pro-menu-item': {
+        backgroundColor: 'transparent !important',
+      },
+      '& .pro-inner-item': {
+        backgroundColor: 'transparent !important',
+        '&:hover': {
+          backgroundColor: alpha(theme.palette.primary.main, 0.08) + ' !important',
+        },
+        '&.active, &.ps-menu-item-selected': {
+          backgroundColor: alpha(theme.palette.primary.main, 0.15) + ' !important',
+          color: theme.palette.primary.main + ' !important',
+        },
+      },
+      '& .ps-submenu-content': {
+        backgroundColor: 'transparent !important',
+        '& .pro-menu-item': {
+          backgroundColor: 'transparent !important',
+        },
+        '& .pro-inner-item': {
+          backgroundColor: 'transparent !important',
+          '&:hover': {
+            backgroundColor: alpha(theme.palette.primary.main, 0.08) + ' !important',
+          },
+          '&.active, &.ps-menu-item-selected': {
+            backgroundColor: alpha(theme.palette.primary.main, 0.15) + ' !important',
+            color: theme.palette.primary.main + ' !important',
+          },
+        },
+      },
+    },
+    button: {
+      borderRadius: 0,
+      backgroundColor: 'transparent !important',
+      '&.active, &.ps-menu-item-selected': {
+        backgroundColor: alpha(theme.palette.primary.main, 0.15) + ' !important',
+        color: theme.palette.primary.main,
+      },
+      '&:hover': {
+        backgroundColor: alpha(theme.palette.primary.main, 0.08) + ' !important',
+      },
+    },
+    subMenuContent: {
+      backgroundColor: 'transparent !important',
+    },
+  };
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Header as MenuItem - matches other items exactly */}
+      <Menu menuItemStyles={menuItemStyles}>
+        <MenuItem icon={<CongregationIcon size={20} />}>
+          {congregationName}
+        </MenuItem>
+      </Menu>
+
+      <Divider sx={{ mx: 1 }} />
+
+      {/* Top Menu Items */}
+      <Menu menuItemStyles={menuItemStyles}>
+        {topMenu.map(item => {
+          const IconComponent = resolveMuiIcon(item.icon);
+          return (
+            <MenuItem
+              key={item.label}
+              active={isActive(item.path)}
+              onClick={() => item.path && onNavigate(item.path)}
+              icon={<IconComponent fontSize="small" />}
+            >
+              {item.label}
+            </MenuItem>
+          );
+        })}
+      </Menu>
+
+      <Divider sx={{ mx: 1 }} />
+
+      {/* Notifications */}
+      <Menu menuItemStyles={menuItemStyles}>
+        <MenuItem icon={<NotificationsIcon fontSize="small" />}>
+          Notificaciones
+        </MenuItem>
+      </Menu>
+
+      {/* Bottom sections */}
+      <Divider sx={{ mx: 1 }} />
+      <Menu menuItemStyles={menuItemStyles}>
+        {bottomSections.map(section => {
+          const IconComponent = resolveMuiIcon(section.icon);
+          const isSectionActive = isParentActive(section);
+          return (
+            <SubMenu
+              key={section.id}
+              label={section.label}
+              icon={<IconComponent fontSize="small" />}
+              active={isSectionActive}
+              defaultOpen={isSectionActive}
+              style={{
+                backgroundColor: isSectionActive ? alpha(theme.palette.primary.main, 0.1) : 'transparent',
+              }}
+            >
+              {section.children.map(child => {
+                const ChildIcon = resolveMuiIcon(child.icon);
+                // When collapsed, only highlight parent, not children
+                const isChildActive = collapsed ? false : isActive(child.path);
+                return (
+                  <MenuItem
+                    key={child.label}
+                    active={isChildActive}
+                    onClick={() => handleAction(child)}
+                    icon={<ChildIcon fontSize="small" />}
+                  >
+                    {child.label}
+                  </MenuItem>
+                );
+              })}
+            </SubMenu>
+          );
+        })}
+      </Menu>
+    </Box>
+  );
+}
+
+export default function AdminSidebar() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, logout } = useAuth();
-  const { mode, toggleDarkMode: toggleThemeMode } = useThemeContext();
+  const { logout } = useAuth();
+  const { toggleDarkMode: toggleThemeMode } = useThemeContext();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-  const { topMenu, bottomSections } = useMenuConfig();
 
+  const [collapsed, setCollapsed] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [hoverExpanded, setHoverExpanded] = useState(false);
-  const [expandedSection, setExpandedSection] = useState<string | null>(null);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
-  const collapseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const cached = getCachedSettings();
   const congregationName = cached?.data.nombre_mostrar || cached?.data.nombre_congregacion || 'CongreAdmin';
@@ -63,216 +229,43 @@ export default function Sidebar() {
     iconPreviewUrl = iconConfig?.sizes?.['32'] || iconConfig?.sizes?.['48'] || null;
   } catch { /* ignore */ }
 
-  const isExpanded = hoverExpanded;
-
-  const handleDrawerEnter = () => {
-    if (collapseTimeoutRef.current) clearTimeout(collapseTimeoutRef.current);
-    setHoverExpanded(true);
-  };
-
-  const handleDrawerLeave = () => {
-    collapseTimeoutRef.current = setTimeout(() => {
-      setHoverExpanded(false);
-      setExpandedSection(null);
-    }, COLLAPSE_DELAY);
-  };
-
-  useEffect(() => {
-    const currentSection = bottomSections.find((section: MenuSection) =>
-      section.children.some((child: MenuItem) => child.path === location.pathname)
-    );
-    if (currentSection && isExpanded) {
-      setExpandedSection(currentSection.id);
-    }
-  }, [location.pathname, isExpanded, bottomSections]);
-
-  const handleNavigation = (path: string) => {
-    navigate(path);
-    if (isMobile) setMobileOpen(false);
-  };
-
-  const handleChildAction = (child: MenuItem) => {
-    if (child.action === 'toggleDarkMode') {
+  const handleNavigate = (pathOrAction: string) => {
+    if (pathOrAction === 'toggleDarkMode') {
       toggleThemeMode();
-    } else if (child.action === 'share') {
+    } else if (pathOrAction === 'share') {
       setShareDialogOpen(true);
-    } else if (child.action === 'logout') {
+    } else if (pathOrAction === 'logout') {
       logout();
       navigate('/admin/login');
-    } else if (child.path) {
-      handleNavigation(child.path);
+    } else if (pathOrAction.startsWith('/')) {
+      navigate(pathOrAction);
+      if (isMobile) setMobileOpen(false);
     }
   };
 
-  const glassSx = {
-    backdropFilter: 'blur(12px)',
-    WebkitBackdropFilter: 'blur(12px)',
-    bgcolor: alpha(theme.palette.primary.main, 0.08),
-  };
-
-  const CongregationIcon = ({ size = 24, borderRadius = 1 }: { size?: number; borderRadius?: number }) => (
+  const CongregationIcon = ({ size = 24 }: { size?: number }) => (
     iconPreviewUrl ? (
       <Box
         component="img"
         src={iconPreviewUrl}
         alt=""
-        sx={{ width: size, height: size, borderRadius, flexShrink: 0 }}
+        sx={{ width: size, height: size, borderRadius: 1, flexShrink: 0 }}
       />
     ) : (
       <BusinessIcon sx={{ flexShrink: 0, color: 'primary.main', fontSize: size }} />
     )
   );
 
-  const drawerContent = (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Header */}
-      <Box sx={{
-        px: 0,
-        display: 'flex',
-        alignItems: 'center',
-        minHeight: 56,
-      }}>
-        <Box sx={{ width: isExpanded ? ICON_COL_WIDTH : '100%', display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
-          <CongregationIcon size={24} borderRadius={1} />
-        </Box>
-        {isExpanded && (
-          <>
-            <Typography variant="h6" noWrap sx={{ fontWeight: 600, flex: 1, px: 1.5 }}>
-              {congregationName}
-            </Typography>
-            <IconButton size="small" onClick={() => setHoverExpanded(false)} sx={{ mr: 1.5 }}>
-              <ChevronLeftIcon />
-            </IconButton>
-          </>
-        )}
-      </Box>
-      <Divider />
-
-      {/* Top Menu Items */}
-      <List sx={{ px: 0, py: 1 }}>
-        {topMenu.map(item => {
-          const IconComponent = resolveIcon(item.icon);
-          return (
-            <ListItem key={item.label} disablePadding sx={{ mb: 0.5 }}>
-              <ListItemButton
-                selected={location.pathname === item.path}
-                onClick={() => handleNavigation(item.path!)}
-                sx={{
-                  borderRadius: 2,
-                  minHeight: 48,
-                  px: isExpanded ? 1.5 : 0,
-                  '&.Mui-selected': {
-                    bgcolor: 'primary.light',
-                    color: 'primary.contrastText',
-                    '& .MuiListItemIcon-root': { color: 'inherit' },
-                    '&:hover': { bgcolor: 'primary.main' },
-                  },
-                }}
-              >
-                <ListItemIcon sx={{ minWidth: isExpanded ? ICON_COL_WIDTH : 'unset', width: isExpanded ? ICON_COL_WIDTH : '100%', justifyContent: 'center' }}>
-                  <IconComponent />
-                </ListItemIcon>
-                {isExpanded && <ListItemText primary={item.label} sx={{ pr: 1.5 }} />}
-              </ListItemButton>
-            </ListItem>
-          );
-        })}
-      </List>
-
-      {/* Spacer */}
-      <Box sx={{ flex: 1 }} />
-
-      {/* Bottom: Notifications, Configuración, Usuario */}
-      <Divider />
-      <List sx={{ px: 0, py: 0.5 }}>
-        {/* Notifications */}
-        <ListItem disablePadding sx={{ mb: 0.5 }}>
-          <ListItemButton
-            sx={{
-              borderRadius: 2,
-              minHeight: 48,
-              px: isExpanded ? 1.5 : 0,
-            }}
-          >
-            <ListItemIcon sx={{ minWidth: isExpanded ? ICON_COL_WIDTH : 'unset', width: isExpanded ? ICON_COL_WIDTH : '100%', justifyContent: 'center' }}>
-              <Badge badgeContent={0} color="error">
-                <NotificationsIcon />
-              </Badge>
-            </ListItemIcon>
-            {isExpanded && <ListItemText primary="Notificaciones" sx={{ pr: 1.5 }} />}
-          </ListItemButton>
-        </ListItem>
-
-        {/* Configuración & Usuario accordions */}
-        {bottomSections.map(section => {
-          const IconComponent = resolveIcon(section.icon);
-          return (
-            <Accordion
-              key={section.id}
-              expanded={isExpanded && expandedSection === section.id}
-              onChange={() => setExpandedSection(expandedSection === section.id ? null : section.id)}
-              disableGutters
-              sx={{
-                boxShadow: 'none',
-                '&:before': { display: 'none' },
-                bgcolor: 'transparent',
-                mb: 0.5,
-              }}
-            >
-              <AccordionSummary
-                expandIcon={isExpanded ? <ExpandMoreIcon /> : null}
-                sx={{ px: isExpanded ? 1.5 : 0, minHeight: 48, '& .MuiAccordionSummary-content': { my: 0 } }}
-              >
-                <ListItemIcon sx={{ minWidth: isExpanded ? ICON_COL_WIDTH : 'unset', width: isExpanded ? ICON_COL_WIDTH : '100%', justifyContent: 'center' }}>
-                  <IconComponent />
-                </ListItemIcon>
-                {isExpanded && (
-                  <ListItemText primary={section.label} primaryTypographyProps={{ fontWeight: 500 }} sx={{ pr: 1.5 }} />
-                )}
-              </AccordionSummary>
-              {isExpanded && (
-                <AccordionDetails sx={{ py: 0, px: 0 }}>
-                  {section.children.map(child => {
-                    const ChildIcon = resolveIcon(child.icon);
-                    return (
-                      <ListItemButton
-                        key={child.label}
-                        selected={location.pathname === child.path}
-                        onClick={() => handleChildAction(child)}
-                        sx={{
-                          borderRadius: 1.5,
-                          minHeight: 40,
-                          px: 0,
-                          mb: 0.25,
-                          '&.Mui-selected': {
-                            bgcolor: 'primary.light',
-                            color: 'primary.contrastText',
-                            '& .MuiListItemIcon-root': { color: 'inherit' },
-                            '&:hover': { bgcolor: 'primary.main' },
-                          },
-                        }}
-                      >
-                        <ListItemIcon sx={{ minWidth: ICON_COL_WIDTH, width: '100%', justifyContent: 'center' }}>
-                          <ChildIcon fontSize="small" />
-                        </ListItemIcon>
-                        <ListItemText
-                          primary={child.label}
-                          primaryTypographyProps={{ fontSize: '0.875rem' }}
-                          sx={{ pr: 1.5 }}
-                        />
-                      </ListItemButton>
-                    );
-                  })}
-                </AccordionDetails>
-              )}
-            </Accordion>
-          );
-        })}
-      </List>
-    </Box>
+  const sidebarContent = (
+    <SidebarContent onNavigate={handleNavigate} congregationName={congregationName} congregationIcon={CongregationIcon} collapsed={collapsed} />
   );
 
-  // Mobile: AppBar + temporary drawer
+  const glassSx = {
+    backgroundColor: alpha(theme.palette.primary.main, 0.08),
+    backdropFilter: 'blur(12px)',
+  };
+
+  // Mobile
   if (isMobile) {
     return (
       <>
@@ -290,7 +283,7 @@ export default function Sidebar() {
           }}
         >
           <Box sx={{ display: 'flex', alignItems: 'center', px: 2, minHeight: 56 }}>
-            <CongregationIcon size={24} borderRadius={1} />
+            <CongregationIcon size={24} />
             <Typography variant="h6" sx={{ flexGrow: 1, fontWeight: 600, ml: 1.5 }}>
               {congregationName}
             </Typography>
@@ -300,66 +293,47 @@ export default function Sidebar() {
           </Box>
         </Box>
 
-        <Drawer
-          variant="temporary"
-          open={mobileOpen}
-          onClose={() => setMobileOpen(false)}
-          ModalProps={{ keepMounted: true }}
-          sx={{
-            '& .MuiDrawer-paper': {
-              width: Math.min(300, window.innerWidth),
-              boxSizing: 'border-box',
-              ...glassSx,
-            },
-          }}
-        >
-          {drawerContent}
-        </Drawer>
-
         <Box sx={{ minHeight: 56 }} />
       </>
     );
   }
 
-  // Desktop: persistent overlay drawer with hover expand
+  // Desktop: single sidebar with hover expand
   return (
     <>
       <Box
-        onMouseEnter={handleDrawerEnter}
-        onMouseLeave={handleDrawerLeave}
+        onMouseEnter={() => setCollapsed(false)}
+        onMouseLeave={() => setCollapsed(true)}
         sx={{
-          width: MINI_DRAWER_WIDTH,
-          flexShrink: 0,
-          position: 'relative',
+          position: 'fixed',
+          left: 0,
+          top: 0,
+          height: '100vh',
+          width: collapsed ? MINI_DRAWER_WIDTH : DRAWER_WIDTH,
           zIndex: theme.zIndex.appBar + 1,
+          transition: theme.transitions.create('width', {
+            easing: theme.transitions.easing.easeInOut,
+            duration: 200,
+          }),
         }}
       >
-        <Drawer
-          variant="persistent"
-          open={true}
-          sx={{
-            flexShrink: 0,
-            '& .MuiDrawer-paper': {
-              width: isExpanded ? DRAWER_WIDTH : MINI_DRAWER_WIDTH,
-              boxSizing: 'border-box',
+        <Sidebar collapsed={collapsed}>
+          <Box
+            sx={{
               height: '100vh',
-              position: 'absolute',
-              left: 0,
-              borderRight: isExpanded ? 1 : 0,
-              borderColor: 'divider',
-              boxShadow: isExpanded ? '4px 0 24px rgba(0,0,0,0.12)' : 'none',
-              ...glassSx,
-              transition: theme.transitions.create('width', {
-                easing: theme.transitions.easing.sharp,
-                duration: 300,
-              }),
-              overflowX: 'hidden',
-            },
-          }}
-        >
-          {drawerContent}
-        </Drawer>
+              bgcolor: alpha(theme.palette.primary.main, 0.08),
+              backdropFilter: 'blur(12px)',
+              borderRight: `1px solid ${theme.palette.divider}`,
+              overflow: 'hidden',
+            }}
+          >
+            {sidebarContent}
+          </Box>
+        </Sidebar>
       </Box>
+
+      {/* Spacer - always collapsed width */}
+      <Box sx={{ width: MINI_DRAWER_WIDTH, flexShrink: 0 }} />
 
       <ShareDialog
         open={shareDialogOpen}
