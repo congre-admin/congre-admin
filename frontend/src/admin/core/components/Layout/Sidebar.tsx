@@ -133,12 +133,13 @@ function SidebarContent({ onNavigate, congregationName, congregationIcon: Congre
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* Header as MenuItem - matches other items exactly */}
       <Menu menuItemStyles={menuItemStyles}>
-        <MenuItem icon={<CongregationIcon size={20} />}>
+        <MenuItem 
+          icon={<CongregationIcon size={20} />}
+          style={{ fontWeight: 600, fontSize: '1.25em' }}
+        >
           {congregationName}
         </MenuItem>
       </Menu>
-
-      <Divider sx={{ mx: 1 }} />
 
       {/* Top Menu Items */}
       <Menu menuItemStyles={menuItemStyles}>
@@ -292,6 +293,50 @@ export default function AdminSidebar() {
             </IconButton>
           </Box>
         </Box>
+
+        {/* Mobile sidebar - shows when open */}
+        <Box
+          sx={{
+            position: 'fixed',
+            left: 0,
+            top: 0,
+            height: '100vh',
+            width: mobileOpen ? DRAWER_WIDTH : 0,
+            zIndex: theme.zIndex.appBar - 1,
+            overflow: 'hidden',
+            transition: theme.transitions.create('width', {
+              easing: theme.transitions.easing.easeInOut,
+              duration: 200,
+            }),
+          }}
+        >
+          <Sidebar collapsed={false}>
+            <Box
+              sx={{
+                height: '100vh',
+                bgcolor: alpha(theme.palette.primary.main, 0.08),
+                backdropFilter: 'blur(12px)',
+              }}
+            >
+              {sidebarContent}
+            </Box>
+          </Sidebar>
+        </Box>
+
+        {/* Mobile overlay - click to close */}
+        {mobileOpen && (
+          <Box
+            onClick={() => setMobileOpen(false)}
+            sx={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: theme.zIndex.appBar - 2,
+            }}
+          />
+        )}
 
         <Box sx={{ minHeight: 56 }} />
       </>

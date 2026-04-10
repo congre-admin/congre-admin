@@ -51,7 +51,7 @@ export default function Dashboard() {
   return (
     <Box>
       <Typography variant="h4" gutterBottom>
-        Dashboard
+        Tablero
       </Typography>
       <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
         Bienvenido a {congregationName}

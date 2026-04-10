@@ -16,6 +16,8 @@ import {
   Logout as LogoutIcon,
   Folder as FolderIcon,
   Notifications as NotificationsIcon,
+  Extension as ExtensionIcon,
+  Group as GroupIcon,
 } from '@mui/icons-material';
 import type { SvgIconComponent } from '@mui/icons-material';
 
@@ -37,6 +39,8 @@ export const ICON_REGISTRY: Record<string, SvgIconComponent> = {
   Logout: LogoutIcon,
   Folder: FolderIcon,
   Notifications: NotificationsIcon,
+  Extension: ExtensionIcon,
+  Group: GroupIcon,
 };
 
 /**
@@ -61,25 +65,48 @@ export interface MenuSection {
   children: MenuItem[];
 }
 
-// Static placeholder menu config
-// Later replaced by loading from Registro_Plugins + module manifests
-const STATIC_TOP_MENU: MenuItem[] = [
-  { label: 'Dashboard', icon: 'Dashboard', path: '/admin' },
+export type MenuMode = 'public' | 'admin';
+
+// Public menu - no auth required
+const PUBLIC_TOP_MENU: MenuItem[] = [
+  { label: 'Inicio', icon: 'Home', path: '/' },
+  { label: 'Reuniones', icon: 'EventNote', path: '/reuniones' },
+  { label: 'Anuncios', icon: 'Campaign', path: '/anuncios' },
+  { label: 'Modo oscuro', icon: 'DarkMode', action: 'toggleDarkMode' },
+  { label: 'Compartir', icon: 'Share', action: 'share' },
+];
+
+const PUBLIC_BOTTOM_SECTIONS: MenuSection[] = [
+  {
+    id: 'usuario',
+    label: 'Usuario',
+    icon: 'Person',
+    children: [
+      { label: 'Ingresar', icon: 'Security', action: 'admin' },
+    ],
+  },
+];
+
+// Admin menu - auth required
+const ADMIN_TOP_MENU: MenuItem[] = [
+  { label: 'Tablero', icon: 'Dashboard', path: '/admin' },
   { label: 'Personas', icon: 'People', path: '/admin/personas' },
   { label: 'Reuniones', icon: 'EventNote', path: '/admin/reuniones' },
   { label: 'Anuncios', icon: 'Campaign', path: '/admin/anuncios' },
   { label: 'Predicación', icon: 'Map', path: '/admin/predicacion' },
 ];
 
-const STATIC_BOTTOM_SECTIONS: MenuSection[] = [
+const ADMIN_BOTTOM_SECTIONS: MenuSection[] = [
   {
     id: 'configuracion',
     label: 'Configuración',
     icon: 'Settings',
     children: [
-      { label: 'Sitio', icon: 'Business', path: '/admin/settings/congregation' },
+      { label: 'Módulos', icon: 'Extension', path: '/admin/plugins' },
+      { label: 'Usuarios', icon: 'Group', path: '/admin/users' },
+      { label: 'Congregación', icon: 'Business', path: '/admin/settings/congregation' },
       { label: 'Respaldo', icon: 'Backup', path: '/admin/backup' },
-      { label: 'Modo Oscuro', icon: 'DarkMode', action: 'toggleDarkMode' },
+      { label: 'Modo oscuro', icon: 'DarkMode', action: 'toggleDarkMode' },
       { label: 'Compartir', icon: 'Share', action: 'share' },
     ],
   },
@@ -89,19 +116,27 @@ const STATIC_BOTTOM_SECTIONS: MenuSection[] = [
     icon: 'Person',
     children: [
       { label: 'Autenticación', icon: 'Security', path: '/admin/settings/auth' },
-      { label: 'Cerrar Sesión', icon: 'Logout', action: 'logout' },
+      { label: 'Cerrar sesión', icon: 'Logout', action: 'logout' },
     ],
   },
 ];
 
 /**
- * Hook that returns the menu configuration.
+ * Hook that returns the menu configuration based on mode.
  * Currently returns static data — will later fetch from Registro_Plugins
  * and merge with each module's manifest navigation definitions.
  */
-export function useMenuConfig(): { topMenu: MenuItem[]; bottomSections: MenuSection[] } {
-  return useMemo(() => ({
-    topMenu: STATIC_TOP_MENU,
-    bottomSections: STATIC_BOTTOM_SECTIONS,
-  }), []);
+export function useMenuConfig(mode: MenuMode = 'admin'): { topMenu: MenuItem[]; bottomSections: MenuSection[] } {
+  return useMemo(() => {
+    if (mode === 'public') {
+      return {
+        topMenu: PUBLIC_TOP_MENU,
+        bottomSections: PUBLIC_BOTTOM_SECTIONS,
+      };
+    }
+    return {
+      topMenu: ADMIN_TOP_MENU,
+      bottomSections: ADMIN_BOTTOM_SECTIONS,
+    };
+  }, [mode]);
 }

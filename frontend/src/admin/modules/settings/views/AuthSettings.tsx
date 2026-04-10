@@ -196,7 +196,7 @@ export default function AuthSettings() {
   return (
     <Box sx={{ p: 3, maxWidth: 800, mx: 'auto' }}>
       <Typography variant="h4" gutterBottom>
-        Configuración de Autenticación
+        Configuración de autenticación
       </Typography>
       <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
         Gestione sus métodos de autenticación y seguridad de cuenta

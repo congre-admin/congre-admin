@@ -159,11 +159,11 @@ export default function BackupExport() {
   return (
     <Box sx={{ maxWidth: 600, mx: 'auto', p: 3 }}>
       <Typography variant="h5" gutterBottom>
-        Respaldo de Clave Maestra
+        Respaldo de clave maestra
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
         Exporte su clave maestra cifrada para crear un respaldo de seguridad, 
-        o restaure un respaldo previamente guardado.
+        o restaure un respaldo previamente guardado
       </Typography>
 
       <Paper variant="outlined" sx={{ mb: 3 }}>

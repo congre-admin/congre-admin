@@ -249,7 +249,9 @@ export default function SetupWizard() {
         'numero_congregacion': numeroCongregacion,
         'nombre_mostrar': nombreMostrar.trim() || `Co. ${nombreCongregacion}`,
         'ss_publico': publicSsId,
-        'linked_public_ss': publicSsId
+        'linked_public_ss': publicSsId,
+        'ss_core': coreSsId,
+        'gas_url': apiUrl
       };
       
       const configWithMeta = coreConfigSeed.map((c: any) => ({
@@ -766,7 +768,7 @@ export default function SetupWizard() {
           <Box sx={{ maxWidth: 500, mx: 'auto', textAlign: 'center' }}>
             <CheckCircle sx={{ fontSize: 64, color: 'success.main', mb: 2 }} />
             <Typography variant="h5" gutterBottom>
-              ¡Instalación Completada!
+              ¡Instalación completada!
             </Typography>
             <Typography variant="body1" color="text.secondary">
               Redirigiendo al login...

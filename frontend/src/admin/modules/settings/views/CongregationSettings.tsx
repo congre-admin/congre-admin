@@ -371,7 +371,7 @@ export default function CongregationSettings() {
   return (
     <Box sx={{ p: 3, maxWidth: 800, mx: 'auto' }}>
       <Typography variant="h4" gutterBottom>
-        Configuración de la Congregación
+        Configuración de la congregación
       </Typography>
       <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
         Configure la información, apariencia e icono del sitio público

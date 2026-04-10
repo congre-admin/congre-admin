@@ -1,11 +1,10 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider, CssBaseline, Box, CircularProgress } from '@mui/material';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { persistQueryClient } from '@tanstack/react-query-persist-client';
 import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
-import PublicApp from './public/App';
 import AdminApp from './admin/AdminApp';
 import { AuthProvider } from './admin/core/context/AuthContext';
 import { ThemeContextProvider, useThemeContext } from './core/context/ThemeContext';
@@ -49,12 +48,17 @@ function AppShell() {
       <CssBaseline />
       <BrowserRouter>
         <Routes>
+          {/* Public routes - no auth required */}
+          <Route path="/" element={<AdminApp />} />
+          <Route path="/reuniones" element={<AdminApp />} />
+          <Route path="/anuncios" element={<AdminApp />} />
+          
+          {/* Admin routes - auth required */}
           <Route path="/admin/*" element={
             <AuthProvider>
               <AdminApp />
             </AuthProvider>
           } />
-          <Route path="/*" element={<PublicApp />} />
         </Routes>
       </BrowserRouter>
     </ThemeProvider>
