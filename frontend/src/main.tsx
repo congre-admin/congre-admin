@@ -1,3 +1,4 @@
+// @ts-expect-error - suppress React Router v6 deprecation warnings in dev
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
@@ -46,12 +47,16 @@ function AppShell() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <BrowserRouter>
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <Routes>
+          {/* Setup routes - no auth */}
+          <Route path="/setup" element={<AdminApp />} />
+          <Route path="/setup/*" element={<AdminApp />} />
+          <Route path="/setup-totp" element={<AdminApp />} />
+          <Route path="/setup-passkey" element={<AdminApp />} />
+          
           {/* Public routes - no auth required */}
-          <Route path="/" element={<AdminApp />} />
-          <Route path="/reuniones" element={<AdminApp />} />
-          <Route path="/anuncios" element={<AdminApp />} />
+          <Route path="/*" element={<AdminApp />} />
           
           {/* Admin routes - auth required */}
           <Route path="/admin/*" element={

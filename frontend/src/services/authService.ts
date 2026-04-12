@@ -163,6 +163,20 @@ export class AuthService {
     return dataService.request<ApiResponse>('setDefaultAuthMethod', { method });
   }
 
+  async confirmAction(sessionToken: string, code?: string, passkeyAssertion?: any): Promise<{
+    confirmed: boolean;
+    error?: string;
+    locked?: boolean;
+    needsConfirmation?: boolean;
+    remainingAttempts?: number;
+  }> {
+    return dataService.request('confirmAction', {
+      sessionToken,
+      code,
+      passkeyAssertion,
+    });
+  }
+
   async enableRecovery(): Promise<ApiResponse> {
     return dataService.request<ApiResponse>('enableRecovery');
   }

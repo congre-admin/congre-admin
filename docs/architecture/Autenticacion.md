@@ -1,7 +1,7 @@
 # Congre-Admin: Sistema de Autenticación
 
-> **Versión:** 1.0.0
-> **Última actualización:** 2026-03-30
+> **Versión:** 2.3.0
+> **Última actualización:** 2026-04-11
 
 ---
 
@@ -223,24 +223,27 @@ sequenceDiagram
 | **SetupTOTP** | `modules/setup/views/SetupTOTP.tsx` | Configuración de TOTP |
 | **AuthSettings** | `modules/settings/views/AuthSettings.tsx` | Gestión de métodos auth |
 
-### 4.2 API del Backend
+### 4.2 API del Backend (v2.3)
 
 | Acción | Descripción |
 |--------|-------------|
 | `login` | Autenticación principal (password + MFA) |
-| `register` | Crear nuevo usuario |
+| `register` | Crear nuevo usuario (requiere sesión si ya existen usuarios) |
 | `challenge` | Generar desafío para passkey login |
 | `setupPasskey` | Generar desafío para registrar passkey |
 | `confirmPasskey` | Confirmar registro de passkey |
 | `deletePasskey` | Eliminar passkey |
 | `setupTOTP` | Iniciar configuración de TOTP |
 | `confirmTOTP` | Confirmar TOTP con código |
-| `disableTOTP` | Desactivar TOTP |
 | `requestOTP` | Enviar código por email |
 | `getAuthMethods` | Obtener métodos habilitados |
-| `updateAuthConfig` | Actualizar configuración |
+| `setDefaultAuthMethod` | Establecer método de autenticación predeterminado |
+| `confirmAction` | Verificar 2FA para acciones sensibles (v2.3) |
 | `changePassword` | Cambiar contraseña |
-| `deleteAccount` | Eliminar cuenta |
+| `requestPasswordReset` | Solicitar email de restablecimiento |
+| `confirmPasswordReset` | Confirmar restablecimiento de contraseña |
+
+> **Nota v2.0+:** Las acciones `disableTOTP`, `deleteAccount`, `updateAuthConfig` fueron eliminadas. Usar `saveData` en la tabla `Usuarios` para estas operaciones.
 
 ---
 

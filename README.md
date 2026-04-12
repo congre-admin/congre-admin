@@ -55,9 +55,8 @@ Toda la especificación técnica y de diseño se encuentra en la carpeta `/docs`
 |------------|--------|-------|
 | Especificación AI | ✅ Completa | Sistema production-ready |
 | Documentación Técnica | ✅ ~95% | Ver `/docs/CHANGELOG.md` |
-| Backend (`api.gs`) | ✅ Completo | Auth, Sessions, RBAC, CRUD, Versioning (3293 líneas) |
+| Backend (`api.gs`) | ✅ Completo | Auth, Sessions, RBAC, CRUD, Versioning, v2.3 security (2279 líneas) |
 | Frontend Core | ✅ Completo | Shell, Auth, Setup Wizard, Dashboard, AuthSettings, BackupExport |
-| Frontend Módulos | 🟡 Pendiente | Admin_Personas, Admin_Registros, Admin_Usuarios, etc. |
-| Services Layer | ❌ Vacío | `frontend/src/services/` — DataService no implementado |
-| Types Layer | ❌ Vacío | `frontend/src/types/` — Interfaces no definidas |
-| Backend | 🟡 Referencia | `api.gs` requiere evolución (ver `Backend.md`) |
+| Frontend Módulos | 🟡 Parcial | Admin_Users, Admin_Plugins, Settings (implementados) |
+| Services Layer | ✅ Completo | DataService, AuthService, PublicService, DataTransformService |
+| Types Layer | ✅ Completo | Auth, User, Data, Config, Plugin interfaces | |

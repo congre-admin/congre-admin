@@ -11,15 +11,57 @@ export function parseCsvToJson(csv: string): Record<string, string>[] {
   const lines = csv.trim().split('\n');
   if (lines.length < 2) return [];
   
-  const headers = lines[0].split(',').map(h => h.trim());
+  // Parse headers, handling quoted field names
+  const headers = parseCSVLine(lines[0]).map(h => h.trim().replace(/^"|"$/g, ''));
+  
   return lines.slice(1).map(line => {
-    const values = line.split(',');
+    const values = parseCSVLine(line);
     const obj: Record<string, string> = {};
     headers.forEach((header, i) => {
-      obj[header] = values[i]?.trim() || '';
+      // Remove quotes from value if present
+      const val = values[i]?.trim() || '';
+      obj[header] = val.replace(/^"|"$/g, '');
     });
     return obj;
   });
+}
+
+/**
+ * Parse a single CSV line handling quoted fields
+ */
+function parseCSVLine(line: string): string[] {
+  const result: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    const nextChar = line[i + 1];
+    
+    if (inQuotes) {
+      if (char === '"' && nextChar === '"') {
+        // Escaped quote
+        current += '"';
+        i++; // Skip next quote
+      } else if (char === '"') {
+        // End of quoted field
+        inQuotes = false;
+      } else {
+        current += char;
+      }
+    } else {
+      if (char === '"') {
+        inQuotes = true;
+      } else if (char === ',') {
+        result.push(current);
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+  }
+  result.push(current);
+  return result;
 }
 
 /**

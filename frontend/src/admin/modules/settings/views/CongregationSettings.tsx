@@ -5,6 +5,7 @@ import {
   Typography,
   TextField,
   Button,
+  ButtonProps,
   Alert,
   CircularProgress,
   Grid2,
@@ -34,6 +35,7 @@ import {
 } from '@/utils/color';
 import ThemePreview from '@/core/components/ThemePreview';
 import IconCreator from '@/core/components/IconCreator';
+import Page from '@/admin/core/components/Page';
 
 const ADMIN_SS_ID_KEY = 'congre_admin_ss_id';
 const PUBLIC_SS_ID_KEY = 'congre_public_ss_id';
@@ -83,7 +85,15 @@ const HARMONY_OPTIONS: { value: HarmonyMode; label: string }[] = [
   { value: 'monochromatic', label: 'Monocromático' },
 ];
 
-const PUBLIC_FIELDS: (keyof CongregacionSettings)[] = ['nombre_mostrar', 'ciudad', 'provincia'];
+// All these fields will be synced to the public sheet (is_public=true)
+// Remove from this list if you want a field to stay private
+const PUBLIC_FIELDS: (keyof CongregacionSettings)[] = [
+  'nombre_mostrar',
+  'ciudad',
+  'provincia',
+  'nombre_congregacion',
+  'numero_congregacion',
+];
 
 export default function CongregationSettings() {
   const adminSsId = localStorage.getItem(ADMIN_SS_ID_KEY);
@@ -362,33 +372,38 @@ export default function CongregationSettings() {
 
   if (isInitializing) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
-        <CircularProgress />
-      </Box>
+      <Page title="Configuración de la congregación" loading={true}>
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
+          <CircularProgress />
+        </Box>
+      </Page>
     );
   }
 
   return (
-    <Box sx={{ p: 3, maxWidth: 800, mx: 'auto' }}>
-      <Typography variant="h4" gutterBottom>
-        Configuración de la congregación
-      </Typography>
-      <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-        Configure la información, apariencia e icono del sitio público
-      </Typography>
+    <Page
+      title="Configuración de la congregación"
+      subtitle="Configure la información, apariencia e icono del sitio público"
+      actions={{
+        primary: {
+          children: 'Guardar',
+          startIcon: <SaveIcon />,
+          onClick: handleSaveBasic,
+        } as ButtonProps,
+      }}
+    >
+      <Box sx={{ maxWidth: 800 }}>
+        {error && (
+          <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
+            {error}
+          </Alert>
+        )}
+        {success && (
+          <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess(null)}>
+            {success}
+          </Alert>
+        )}
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
-          {error}
-        </Alert>
-      )}
-      {success && (
-        <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess(null)}>
-          {success}
-        </Alert>
-      )}
-
-      <Box sx={{ maxWidth: 800, mx: 'auto' }}>
         {/* Información Básica */}
         <Paper sx={{ p: 3, mb: 3 }}>
           <Typography variant="h6" sx={{ mb: 2 }}>Información Básica</Typography>
@@ -593,7 +608,7 @@ export default function CongregationSettings() {
           </Box>
         </Paper>
       </Box>
-    </Box>
+    </Page>
   );
 }
 

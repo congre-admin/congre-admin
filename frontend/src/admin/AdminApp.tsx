@@ -1,19 +1,20 @@
-import { lazy, Suspense } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
-import { CssBaseline } from '@mui/material';
+import { lazy, Suspense, useState, useEffect } from 'react';
+import { Routes, Route, Navigate, useNavigate, Link } from 'react-router-dom';
+import { CssBaseline, Button } from '@mui/material';
 import { useAuth } from './core/context/AuthContext';
 import SetupWizard from './modules/setup/views/SetupWizard';
 import Login from './modules/setup/views/Login';
 import SetupTOTP from './modules/setup/views/SetupTOTP';
 import SetupPasskey from './modules/setup/views/SetupPasskey';
 import Shell from './core/shell/Shell';
+import PublicSSIDModal from './core/components/PublicSSIDModal/PublicSSIDModal';
 
 // Public plugin routes (no auth required)
 const PublicHome = lazy(() => import('./modules/publico/views/PublicHome'));
 const PublicReuniones = lazy(() => import('./modules/publico/views/PublicReuniones'));
 const PublicAnuncios = lazy(() => import('./modules/publico/views/PublicAnuncios'));
 
-// Admin routes (auth required)
+// Admin views (lazy-loaded individually)
 const Dashboard = lazy(() => import('./modules/dashboard/views/Dashboard'));
 const BackupExport = lazy(() => import('./modules/admin/views/BackupExport'));
 const AdminPlugins = lazy(() => import('./modules/admin/views/AdminPlugins'));
@@ -91,16 +92,54 @@ function AuthenticatedApp() {
   );
 }
 
+const PUBLIC_SS_ID_KEY = 'congre_public_ss_id';
+
 // Public routes - no auth required, wrapped in Shell
 function PublicAppRoutes() {
+  const navigate = useNavigate();
+  const [showSSIDModal, setShowSSIDModal] = useState(false);
+  const [ssidFromUrl, setSsidFromUrl] = useState<string | null>(null);
+
+  // Check for SSID in URL params on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlSsId = params.get('ssid');
+    if (urlSsId) {
+      localStorage.setItem(PUBLIC_SS_ID_KEY, urlSsId);
+      // Clean URL
+      window.history.replaceState({}, '', window.location.pathname);
+      setSsidFromUrl(urlSsId);
+    }
+  }, []);
+
+  // Check if SSID is configured
+  useEffect(() => {
+    const storedSsId = localStorage.getItem(PUBLIC_SS_ID_KEY);
+    if (!storedSsId && !ssidFromUrl) {
+      setShowSSIDModal(true);
+    }
+  }, [ssidFromUrl]);
+
+  const handleSetupWizard = () => {
+    setShowSSIDModal(false);
+    navigate('/setup');
+  };
+
   return (
-    <Shell>
-      <Routes>
-        <Route path="" element={<PublicHome />} />
-        <Route path="reuniones" element={<PublicReuniones />} />
-        <Route path="anuncios" element={<PublicAnuncios />} />
-      </Routes>
-    </Shell>
+    <>
+      <Shell>
+        <Routes>
+          <Route path="/*" element={<PublicHome />} />
+          <Route path="reuniones/*" element={<PublicReuniones />} />
+          <Route path="anuncios/*" element={<PublicAnuncios />} />
+        </Routes>
+      </Shell>
+      <PublicSSIDModal 
+        open={showSSIDModal} 
+        onClose={() => setShowSSIDModal(false)}
+        onSetupWizard={handleSetupWizard}
+      />
+    </>
   );
 }
 
@@ -123,6 +162,7 @@ export default function AdminApp() {
     <Suspense fallback={<LoadingFallback />}>
       <Routes>
         <Route path="setup" element={<SetupWizard />} />
+        <Route path="setup/*" element={<SetupWizard />} />
         
         <Route path="login" element={
           <AuthRoute>
@@ -135,9 +175,7 @@ export default function AdminApp() {
         <Route path="setup-passkey" element={<SetupPasskey />} />
         
         {/* Public routes - no auth, shared Shell */}
-        <Route path="" element={<PublicAppRoutes />} />
-        <Route path="reuniones" element={<PublicAppRoutes />} />
-        <Route path="anuncios" element={<PublicAppRoutes />} />
+        <Route path="/*" element={<PublicAppRoutes />} />
         
         <Route path="*" element={<AuthenticatedApp />} />
       </Routes>

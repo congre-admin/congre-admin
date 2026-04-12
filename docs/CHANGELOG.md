@@ -14,6 +14,33 @@ Cada entrada debe incluir:
 
 ---
 
+## 2026-04-11
+
+### Nuevo
+
+- **Modo Público (`mode: 'public'`):** Nuevo parámetro en payload que filtra filas `is_public=true` y elimina campos `enc_*` de la respuesta.
+- **Protección de Registro:** `action=register` ahora requiere sesión si ya existen usuarios. Solo permite registro sin sesión durante la instalación inicial.
+- **Detección Server-side de Setup:** Nueva función `_hasExistingUsers()` que detecta automáticamente si el sistema está en modo instalación.
+- **Step-Up Authentication:** Nueva acción `confirmAction` que verifica 2FA para acciones sensibles (delete, change password, inactividad).
+
+### Modificado
+
+- **batchExecute (backend):** El flag `isSetup` del cliente ya no es confiable. El servidor ahora detecta automáticamente el modo setup.
+- **DataService (frontend):** Añadido parámetro `mode` en las peticiones para soportar acceso público.
+- **Configuración Pública:** Las filas con `is_public=true` se sincronizan automáticamente al GSheet público al guardar en `Configuracion`.
+
+### Fixes
+
+- **Sanitización en respuestas públicas:** Los campos cifrados (`enc_*`) nunca se exponen en respuestas `mode: 'public'`.
+- **Register bypass explotable:** Corregido exploit donde alguien podía crear usuarios admin después de la instalación sin sesión.
+
+### Documentación actualizada
+
+- `docs/architecture/Backend.md`: Añadida sección "Modo Público (v2.3+)"
+- `docs/architecture/Backend_API_Completa.md`: Actualizado a v2.3.0 con todas las nuevas características
+
+---
+
 ## 2026-03-27
 
 ### Nuevo
@@ -649,6 +676,7 @@ Se aplicaron parches quirúrgicos para corregir inconsistencias críticas encont
 
 | Fecha | Versión | Descripción |
 |-------|---------|-------------|
+| 2026-04-11 | 4.3.0 | Modo Público + Register Protection + Step-Up Auth |
 | 2026-03-27 | 4.2.0 | Autenticación TOTP completa + Password SHA-256 |
 | 2026-03-20 | 4.1.2 | Importación IA integrada en Admin_Sistema |
 | 2026-03-20 | 4.1.1 | System Patches Round 1 & 2 + Version Consistency |
@@ -661,4 +689,4 @@ Se aplicaron parches quirúrgicos para corregir inconsistencias críticas encont
 
 ---
 
-*Última actualización: 2026-03-27*
+*Última actualización: 2026-04-11*

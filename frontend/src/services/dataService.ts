@@ -11,6 +11,7 @@ import type {
   GetPerfilesResponse,
   GetDataResponse,
   Perfil,
+  AdminUser,
   BatchOp,
   BatchMode,
   BatchExecuteResponse,
@@ -143,11 +144,11 @@ export class DataService {
     return plugin.ssId;
   }
 
-  async request<T = any>(action: string, payload: Record<string, any> = {}): Promise<T> {
+  async request<T = any>(action: string, payload: Record<string, any> = {}, options?: { mode?: 'admin' | 'public' }): Promise<T> {
     const key = `${action}:${JSON.stringify(payload)}`;
     if (this._inFlight.has(key)) return this._inFlight.get(key) as Promise<T>;
 
-    const promise = this._doRequest<T>(action, payload);
+    const promise = this._doRequest<T>(action, payload, options?.mode);
     this._inFlight.set(key, promise);
     try {
       return await promise;
@@ -156,7 +157,7 @@ export class DataService {
     }
   }
 
-  private async _doRequest<T = any>(action: string, payload: Record<string, any> = {}): Promise<T> {
+  private async _doRequest<T = any>(action: string, payload: Record<string, any> = {}, accessMode?: 'admin' | 'public'): Promise<T> {
     this.apiUrl = localStorage.getItem('congre_admin_api_url') || this.apiUrl;
     
     if (!this.apiUrl) {
@@ -172,7 +173,10 @@ export class DataService {
       payload,
     };
 
-    if (sessionToken && !['login', 'register', 'challenge', 'requestOTP', 'install'].includes(action)) {
+    // Public mode: skip session, pass mode flag
+    if (accessMode === 'public') {
+      body.payload = { ...body.payload, mode: 'public' };
+    } else if (sessionToken && !['login', 'register', 'challenge', 'requestOTP', 'install'].includes(action)) {
       body.sessionToken = sessionToken;
     }
 
@@ -250,7 +254,7 @@ export class DataService {
     const result = await this.request<GetDataResponse<T>>('getData', {
       sheet,
       ssId,
-    });
+    }, { mode: options?.isPublic ? 'public' : 'admin' });
 
     let data = result.data as any[];
 
@@ -397,21 +401,38 @@ export class DataService {
     return this.getData<Perfil[]>('Perfiles', ssId);
   }
 
-  async createProfile(ssId: string, payload: Partial<Perfil>): Promise<ApiResponse> {
-    return this.saveData('Perfiles', ssId, {
-      ...payload,
-      _v: 1,
-      _ts: new Date().toISOString(),
-      _deleted: false,
-    });
+  // --- User & Profile Admin Actions (via admin actions API) ---
+  
+  async getUsers(ssId: string): Promise<AdminUser[]> {
+    return this.request<{ success: boolean; users: AdminUser[] }>('getUsers', { ssId }).then(r => r.users);
   }
-
-  async updateProfile(ssId: string, payload: Partial<Perfil>): Promise<ApiResponse> {
-    return this.saveData('Perfiles', ssId, payload);
+  
+  async createUser(ssId: string, payload: { username: string; email?: string; password: string; perfilIds?: string[]; wrapped_mk?: string }): Promise<ApiResponse> {
+    return this.request<ApiResponse>('createUser', { ssId, ...payload });
   }
-
+  
+  async updateUser(ssId: string, payload: { id: string; username?: string; email?: string; perfilIds?: string[]; active?: boolean }): Promise<ApiResponse> {
+    return this.request<ApiResponse>('updateUser', { ssId, ...payload });
+  }
+  
+  async deleteUser(ssId: string, userId: string): Promise<ApiResponse> {
+    return this.request<ApiResponse>('deleteUser', { ssId, id: userId });
+  }
+  
+  async getPerfilesAdmin(ssId: string): Promise<Perfil[]> {
+    return this.request<{ success: boolean; perfiles: Perfil[] }>('getPerfiles', { ssId }).then(r => r.perfiles);
+  }
+  
+  async createProfile(ssId: string, payload: { id: string; nombre: string; descripcion?: string; permisos: Record<string, any> }): Promise<ApiResponse> {
+    return this.request<ApiResponse>('createProfile', { ssId, ...payload });
+  }
+  
+  async updateProfile(ssId: string, payload: { id: string; nombre?: string; descripcion?: string; permisos?: Record<string, any> }): Promise<ApiResponse> {
+    return this.request<ApiResponse>('updateProfile', { ssId, ...payload });
+  }
+  
   async deleteProfile(ssId: string, profileId: string): Promise<ApiResponse> {
-    return this.deleteData('Perfiles', ssId, profileId);
+    return this.request<ApiResponse>('deleteProfile', { ssId, id: profileId });
   }
 
   async getConfig(key: string, ssId: string): Promise<{ clave: string; valor: string } | null> {

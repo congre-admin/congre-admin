@@ -23,7 +23,7 @@ export default function PublicReuniones() {
   const loadReuniones = async () => {
     const ssId = localStorage.getItem(PUBLIC_SS_ID_KEY);
     if (!ssId) {
-      setError('No se ha configurado la hoja pública');
+      // Let modal handle this - just show loading until modal appears
       setLoading(false);
       return;
     }

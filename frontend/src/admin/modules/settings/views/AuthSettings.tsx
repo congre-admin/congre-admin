@@ -37,6 +37,7 @@ import { useAuthMethods } from '@/hooks/useSession';
 import { authService } from '@/services/authService';
 import { dataService } from '@/services/dataService';
 import { useQueryClient } from '@tanstack/react-query';
+import Page from '@/admin/core/components/Page';
 
 export default function AuthSettings() {
   const navigate = useNavigate();
@@ -187,22 +188,21 @@ export default function AuthSettings() {
 
   if (loading) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
-        <CircularProgress />
-      </Box>
+      <Page title="Configuración de autenticación" loading={true}>
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
+          <CircularProgress />
+        </Box>
+      </Page>
     );
   }
 
   return (
-    <Box sx={{ p: 3, maxWidth: 800, mx: 'auto' }}>
-      <Typography variant="h4" gutterBottom>
-        Configuración de autenticación
-      </Typography>
-      <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-        Gestione sus métodos de autenticación y seguridad de cuenta
-      </Typography>
-
-      {error && (
+    <Page
+      title="Configuración de autenticación"
+      subtitle="Gestione sus métodos de autenticación y seguridad de cuenta"
+    >
+      <Box sx={{ maxWidth: 800 }}>
+        {error && (
         <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
           {error}
         </Alert>
@@ -422,5 +422,6 @@ export default function AuthSettings() {
         </DialogActions>
       </Dialog>
     </Box>
+    </Page>
   );
 }

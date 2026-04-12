@@ -294,6 +294,14 @@ export function useAuth() {
       login: async () => {},
       logout: async () => {},
       session: null,
+      user: null,
+      masterKey: null,
+      wrapped_mk: null,
+      sessionToken: null,
+      apiUrl: null,
+      validateSession: async () => {},
+      setMasterKey: () => {},
+      setSession: () => {},
     };
   }
   return context;

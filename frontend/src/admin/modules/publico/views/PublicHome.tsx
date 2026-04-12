@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Container,
@@ -8,7 +8,6 @@ import {
   CardContent,
   Grid2,
   CircularProgress,
-  Alert,
 } from '@mui/material';
 import {
   Event as EventIcon,
@@ -20,7 +19,6 @@ const PUBLIC_SS_ID_KEY = 'congre_public_ss_id';
 
 export default function PublicHome() {
   const navigate = useNavigate();
-  const location = useLocation();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [congregacion, setCongregacion] = useState<{
@@ -36,7 +34,7 @@ export default function PublicHome() {
     if (storedSsId) {
       loadPublicData(storedSsId);
     } else {
-      setError('No se ha configurado la hoja pública');
+      // No SSID - let modal handle this, show loading until modal appears
       setLoading(false);
     }
   }, []);
@@ -54,16 +52,57 @@ export default function PublicHome() {
       const gvizUrl = `https://docs.google.com/spreadsheets/d/${ssId}/gviz/tq?tqx=out:csv&sheet=Configuracion`;
       const configResponse = await fetch(gvizUrl);
       const configText = await configResponse.text();
+      
+      // Check if response is HTML error instead of CSV
+      if (configText.trim().startsWith('<') || configResponse.status !== 200) {
+        setError(`Error: ${configResponse.status} - La hoja de cálculo no es pública o no existe`);
+        setLoading(false);
+        return;
+      }
+      
       const configData = parseCsvToJson(configText);
       
+      // Store ALL config keys in localStorage
+      const publicConfig: Record<string, string> = {};
+      
+      // First pass: collect all raw key-value pairs
+      for (const row of configData) {
+        const clave = row.clave;
+        const valor = row.valor;
+        
+        if (clave && valor !== undefined) {
+          publicConfig[clave] = valor;
+        }
+      }
+      
+      // Second pass: extract specific formatted values for display
       for (const row of configData) {
         const clave = row.clave;
         const valor = row.valor;
         
         if (clave === 'nombre_mostrar') nombreMostrar = valor;
-        if (clave === 'tema_color') temaColor = valor;
-        if (clave === 'tema_color_secundario') temaColorSecundario = valor;
-        if (clave === 'icono_url') iconoUrl = valor;
+        
+        // theme_config is a JSON object with primary color
+        if (clave === 'theme_config') {
+          try {
+            const themeConfig = JSON.parse(valor);
+            temaColor = themeConfig.primary;
+          } catch { /* ignore */ }
+        }
+        
+        // icon_config is a JSON object with icon data - extract URL if available
+        if (clave === 'icon_config') {
+          try {
+            const iconConfig = JSON.parse(valor);
+            // Check for text-based icon URL (not emoji)
+            iconoUrl = iconConfig.url || iconConfig.text || undefined;
+          } catch { /* ignore */ }
+        }
+      }
+      
+      // Store each config key as its own localStorage entry
+      for (const [key, value] of Object.entries(publicConfig)) {
+        localStorage.setItem(`congre_public_${key}`, value);
       }
       
       if (temaColor) {
@@ -80,6 +119,7 @@ export default function PublicHome() {
         iconoUrl
       });
     } catch (err) {
+      console.error('Error loading public data:', err);
       setError('Error al cargar datos públicos');
     } finally {
       setLoading(false);
@@ -100,9 +140,9 @@ export default function PublicHome() {
 
   if (error) {
     return (
-      <Alert severity="error" sx={{ mb: 3 }}>
-        {error}
-      </Alert>
+      <Box sx={{ p: 2 }}>
+        <Typography color="error">{error}</Typography>
+      </Box>
     );
   }
 

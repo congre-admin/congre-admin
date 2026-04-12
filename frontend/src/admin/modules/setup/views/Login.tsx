@@ -336,8 +336,32 @@ export default function Login() {
 
       let credential: PublicKeyCredential | null = null;
       
+      // Check WebAuthn support - be more robust
+      // Use window.credentials which is the global reference
+      const creds = (window as any).credentials || (navigator as any).credentials;
+      const hasWebAuthn = creds && typeof creds.get === 'function';
+      
+      // Additional check: WebAuthn requires secure context (HTTPS or localhost)
+      const isSecureContext = window.isSecureContext || (window.location.protocol === 'https:') || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+      
+      if (!hasWebAuthn || !isSecureContext) {
+        console.error('WebAuthn not supported:', { 
+          windowCredentials: !!(window as any).credentials,
+          navigatorCredentials: !!creds,
+          getFn: typeof creds?.get,
+          isSecureContext,
+          location: window.location.href
+        });
+        if (!isSecureContext) {
+          throw new Error('WebAuthn requiere contexto seguro (HTTPS o localhost). URL actual: ' + window.location.href);
+        }
+        throw new Error('WebAuthn no disponible en este navegador. Use Chrome, Edge o Firefox.');
+      }
+      
+      console.log('Passkey challenge:', { rpId: challengeData.rpId, allowCredentials: challengeData.allowCredentials });
+      
       try {
-        credential = await navigator.credentials.get({ publicKey }) as PublicKeyCredential;
+        credential = await creds.get({ publicKey }) as PublicKeyCredential;
       } catch (webAuthnErr) {
         console.error('WebAuthn error:', webAuthnErr);
         throw new Error('Error al usar passkey. ¿Canceló la autenticación?');

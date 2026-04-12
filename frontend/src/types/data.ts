@@ -88,6 +88,7 @@ export interface GetDataOptions {
   sort?: string;
   limit?: number;
   offset?: number;
+  isPublic?: boolean; // Use public mode (no auth, filter is_public, strip enc_)
 }
 
 export interface SaveDataOptions {

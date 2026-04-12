@@ -26,9 +26,38 @@ Cualquier implementación de backend debe cumplir con las siguientes normas estr
 ### Seguridad del Recurso
 El backend debe validar que el `ssId` solicitado sea un recurso autorizado por el Núcleo para evitar accesos a archivos externos no relacionados con el sistema. **Todas las operaciones de escritura requieren sesión válida y permisos RBAC.** Las operaciones de lectura validan permisos si se proporciona sessionToken.
 
+### Modo Público (v2.3+)
+El backend soporta el parámetro `mode: 'public'` en el payload para acceder a datos públicos sin autenticación:
+
+```javascript
+{
+  "action": "getData",
+  "payload": { "ssId": "PUBLIC_SS_ID", "mode": "public" },
+  "sheet": "Configuracion"
+}
+```
+
+Cuando `mode: 'public'`:
+- No requiere sesión
+- Filtra filas donde `is_public !== false`
+- Elimina campos con prefijo `enc_` (cifrados)
+- Solo permite operaciones `read` en `batchExecute`
+
+### Auto-Sync Configuración (v2.3+)
+Al guardar en Configuracion, se sincronizan automáticamente las filas `is_public=true` a la hoja pública (`ss_publico`).
+
+### Step-Up Authentication (v2.3+)
+Nueva acción `confirmAction` que verifica 2FA para acciones sensibles:
+
+- Delete own user
+- Change password
+- Inactividad (30 min default)
+
+Usa el método default del usuario (passkey, TOTP, o Email OTP). 5 intentos máximos antes de bloquearse.
+
 ## 2. Validaciones
 Las validaciones de esquema se ejecutan en el **Frontend** mediante JSONata antes de enviar los datos al backend. El backend confiablemente recepta los datos y los persiste.
-- **Sanitización:** El backend aplica un filtro simple para el GSheet Público que elimina campos con prefijo `enc_`.
+- **Sanitización:** El backend aplica filtro para mode=public que elimina campos con prefijo `enc_`.
 
 ---
 

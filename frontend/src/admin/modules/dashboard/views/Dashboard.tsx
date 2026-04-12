@@ -2,6 +2,7 @@ import { Box, Typography, Grid, Card, CardContent, CardHeader, CircularProgress 
 import { People, EventNote, Campaign, Map } from '@mui/icons-material';
 import { useSheetData } from '@/hooks/useSession';
 import { useCongregacion } from '@/hooks/useCongregacion';
+import Page from '@/admin/core/components/Page';
 import type { Perfil } from '@/types';
 
 const ADMIN_SS_ID_KEY = 'congre_admin_ss_id';
@@ -49,30 +50,21 @@ export default function Dashboard() {
   const congregationName = congregacion?.nombre || 'CongreAdmin';
 
   return (
-    <Box>
-      <Typography variant="h4" gutterBottom>
-        Tablero
-      </Typography>
-      <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
-        Bienvenido a {congregationName}
-      </Typography>
-
+    <Page
+      title="Tablero"
+      subtitle={`Bienvenido a ${congregationName}`}
+      loading={isLoading}
+    >
       <Grid container spacing={3}>
-        <Grid item xs={12} sm={6} md={3}>
-          {isLoading ? (
-            <Card sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2 }}>
-              <CircularProgress size={32} />
-            </Card>
-          ) : (
-            <StatCard 
-              title="Perfiles" 
-              value={perfiles?.length || 0} 
-              icon={<People />} 
-              color="#1976d2" 
-            />
-          )}
+        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+          <StatCard 
+            title="Perfiles" 
+            value={perfiles?.length || 0} 
+            icon={<People />} 
+            color="#1976d2" 
+          />
         </Grid>
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
           <StatCard 
             title="Reuniones Hoy" 
             value="0" 
@@ -80,7 +72,7 @@ export default function Dashboard() {
             color="#2e7d32" 
           />
         </Grid>
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
           <StatCard 
             title="Anuncios Activos" 
             value="0" 
@@ -88,7 +80,7 @@ export default function Dashboard() {
             color="#ed6c02" 
           />
         </Grid>
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
           <StatCard 
             title="Territorios" 
             value="0" 
@@ -99,7 +91,7 @@ export default function Dashboard() {
       </Grid>
 
       <Grid container spacing={3} sx={{ mt: 3 }}>
-        <Grid item xs={12} md={6}>
+        <Grid size={{ xs: 12, md: 6 }}>
           <Card>
             <CardHeader title="Próximas Asignaciones" />
             <CardContent>
@@ -109,7 +101,7 @@ export default function Dashboard() {
             </CardContent>
           </Card>
         </Grid>
-        <Grid item xs={12} md={6}>
+        <Grid size={{ xs: 12, md: 6 }}>
           <Card>
             <CardHeader title="Anuncios Recientes" />
             <CardContent>
@@ -120,6 +112,6 @@ export default function Dashboard() {
           </Card>
         </Grid>
       </Grid>
-    </Box>
+    </Page>
   );
 }

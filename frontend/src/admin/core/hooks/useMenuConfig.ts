@@ -62,26 +62,35 @@ export interface MenuSection {
   id: string;
   label: string;
   icon: string;
+  path?: string;
+  action?: 'toggleDarkMode' | 'share' | 'logout';
   children: MenuItem[];
 }
 
 export type MenuMode = 'public' | 'admin';
 
 // Public menu - no auth required
+// Structure: Inicio → Module stubs → Divider → Notifications → "Más" (dark mode, share, login)
 const PUBLIC_TOP_MENU: MenuItem[] = [
   { label: 'Inicio', icon: 'Home', path: '/' },
   { label: 'Reuniones', icon: 'EventNote', path: '/reuniones' },
   { label: 'Anuncios', icon: 'Campaign', path: '/anuncios' },
-  { label: 'Modo oscuro', icon: 'DarkMode', action: 'toggleDarkMode' },
-  { label: 'Compartir', icon: 'Share', action: 'share' },
 ];
 
 const PUBLIC_BOTTOM_SECTIONS: MenuSection[] = [
   {
-    id: 'usuario',
-    label: 'Usuario',
-    icon: 'Person',
+    id: 'notificaciones',
+    label: 'Notificaciones',
+    icon: 'Notifications',
+    path: '/notificaciones',
+  },
+  {
+    id: 'mas',
+    label: 'Más',
+    icon: 'Folder',
     children: [
+      { label: 'Modo oscuro', icon: 'DarkMode', action: 'toggleDarkMode' },
+      { label: 'Compartir', icon: 'Link', action: 'share' },
       { label: 'Ingresar', icon: 'Security', action: 'admin' },
     ],
   },
@@ -106,8 +115,8 @@ const ADMIN_BOTTOM_SECTIONS: MenuSection[] = [
       { label: 'Usuarios', icon: 'Group', path: '/admin/users' },
       { label: 'Congregación', icon: 'Business', path: '/admin/settings/congregation' },
       { label: 'Respaldo', icon: 'Backup', path: '/admin/backup' },
-      { label: 'Modo oscuro', icon: 'DarkMode', action: 'toggleDarkMode' },
-      { label: 'Compartir', icon: 'Share', action: 'share' },
+{ label: 'Modo oscuro', icon: 'DarkMode', action: 'toggleDarkMode' },
+      { label: 'Compartir', icon: 'Link', action: 'share' },
     ],
   },
   {

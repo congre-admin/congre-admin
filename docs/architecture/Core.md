@@ -1,7 +1,7 @@
 # Congre-Admin: Arquitectura del Núcleo (Core)
 
-> **Versión:** 1.0.0
-> **Última actualización:** 2026-03-30
+> **Versión:** 2.3.0
+> **Última actualización:** 2026-04-11
 
 ---
 
@@ -178,16 +178,16 @@ El campo `metadata` en la tabla Usuarios es un objeto JSON que almacena informac
 | `failed_login_attempts` | número | Contador de intentos de inicio de sesión fallidos |
 | `created_from_ip` | string | Dirección IP desde donde se creó la cuenta |
 
-### 2.4 Gestión de Sesiones
+### 2.4 Gestión de Sesiones (v2.3)
 
 El sistema usa un índice híbrido de 3 niveles para validar sesiones:
 
 ```mermaid
 flowchart LR
     A[Petición] --> B{Validar Token}
-    B -->|Nivel 1| C[Memoria Global<br/>_sessionIndex]
-    B -->|Nivel 2| D[CacheService<br/>TTL: 24h]
-    B -->|Nivel 3| E[PropertiesService<br/>Persistencia]
+    B -->|nivel 1| C[Memoria Global<br/>_sessionIndex]
+    B -->|nivel 2| D[CacheService<br/>TTL: 24h]
+    B -->|nivel 3| E[PropertiesService<br/>Persistencia]
     
     C -->|Hit| F[✓ Válida]
     D -->|Hit| F
@@ -200,6 +200,8 @@ flowchart LR
 | 1 | Variable global `_sessionIndex` | Runtime | Acceso instantáneo |
 | 2 | `CacheService` | 24 horas | Persistencia entre requests |
 | 3 | `PropertiesService` | Permanente | Backup/recuperación |
+
+> **Nota v2.3:** Para la tabla de datos, se usa lectura directa (`getCachedSheetData`) en lugar de CacheService, ya que v2.2 eliminó el caché para hojas de datos.
 
 ---
 
@@ -380,6 +382,31 @@ El Core proporciona variables globales para todas las expresiones JSONata:
 
 ---
 
+### 2.5 Detección de Setup Server-Side (v2.3)
+
+El backend ahora detecta automáticamente si el sistema está en modo instalación:
+
+```javascript
+// Función en api.gs
+function _hasExistingUsers(ssId) {
+  const ss = SpreadsheetApp.openById(ssId);
+  const sheet = ss.getSheetByName('Usuarios');
+  const data = sheet.getDataRange().getValues();
+  // Cuenta filas que no estén borradas lógicamente
+  return data.slice(1).some(row => !row[columnIndex('_deleted')]);
+}
+```
+
+**Flujo:**
+1. Frontend envía `batchExecute` con o sin `isSetup: true`
+2. Backend verifica `_hasExistingUsers()` primero
+3. Si retorna `false`: permite operaciones sin sesión (setup mode)
+4. Si retorna `true`: requiere sesión válida (normal mode)
+
+> **Seguridad v2.3:** El flag `isSetup` del cliente ya no es confiable. Solo tiene efecto si el servidor confirma que no hay usuarios existentes.
+
+---
+
 ## 6. Archivos Relacionados
 
 | Archivo | Descripción |
@@ -392,4 +419,4 @@ El Core proporciona variables globales para todas las expresiones JSONata:
 
 ---
 
-*Documento generado el 2026-03-30*
+*Documento actualizado el 2026-04-11 — v2.3.0*

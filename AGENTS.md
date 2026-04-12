@@ -12,18 +12,16 @@ Modular congregation management system with **Zero-Knowledge** architecture and 
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| Backend (api.gs) | ✅ Complete | Auth, Sessions, RBAC, CRUD, Versioning |
-| Frontend Core | ✅ Complete | Shell, Auth, Setup Wizard, Dashboard |
-| Frontend Modules | 🟡 Pending | Only setup and dashboard implemented |
-| Services Layer | ❌ Empty | `frontend/src/services/` — DataService needed |
-| Types Layer | ❌ Empty | `frontend/src/types/` — Interfaces needed |
+| Backend (api.gs) | ✅ Complete | Auth, Sessions, RBAC, CRUD, Versioning, v2.3 security |
+| Frontend Core | ✅ Complete | Shell, Auth, Setup Wizard, Dashboard, AuthSettings, BackupExport |
+| Frontend Modules | 🟡 Partial | Admin_Users, Admin_Plugins, Settings (implemented); Personas, Registros, Predicacion (pending) |
+| Services Layer | ✅ Complete | DataService, AuthService, PublicService, DataTransformService |
+| Types Layer | ✅ Complete | Auth, User, Data, Config, Plugin types |
 
-## Critical: Known Gaps
+## Remaining Gaps (Post v2.3)
 
-- **CRUD without RBAC** (`api.gs:70-160`): `deleteData`/`hardDelete`/`saveData` don't validate session or permissions
-- **No DataService adapter**: `frontend/src/services/` is empty
-- **No TypeScript types**: `frontend/src/types/` is empty
-- **TanStack Query not wired**: `QueryClientProvider` exists in orphan `admin/entry.tsx`, not used in `main.tsx`
+- **TanStack Query hooks**: UsePersonas, UseConfig, UseSession implemented but not wired in all components
+- **First CRUD module**: Admin_Personas not implemented yet (pending Phase 2)
 
 ## Developer Commands
 
@@ -51,15 +49,17 @@ npm run clasp:deploy              # Deploy GAS as web app
 | `frontend/src/admin/core/context/AuthContext.tsx` | Auth state management |
 | `frontend/src/admin/core/crypto/cryptoUtils.ts` | AES-GCM 256-bit, PBKDF2 (600K iters) |
 | `frontend/src/admin/core/shell/Shell.tsx` | Main layout (Sidebar + Navbar + Outlet) |
-| `backend/src/api.gs` | Complete backend (3293 lines) |
+| `backend/src/api.gs` | Complete backend (2279 lines) |
 | `docs/architecture/Backend_API_Completa.md` | Full API reference |
 
-## Immediate Priorities (Phase 2)
+## v2.3 Security Features
 
-1. **DataService adapter** — API client for GAS backend
-2. **TypeScript types** — Interfaces for all entities
-3. **Admin_Personas module** — First CRUD module
-4. **TanStack Query integration** — Wire hooks to DataService
+| Feature | Description |
+|---------|------------|
+| **Mode Public** | `mode: 'public'` filters `is_public` rows, strips `enc_*` fields |
+| **Register Protection** | Requires session if users already exist |
+| **Server-side Setup** | `_hasExistingUsers()` detects setup mode automatically |
+| **Step-Up Auth** | `confirmAction` for 2FA on sensitive actions |
 
 ## Naming Conventions
 

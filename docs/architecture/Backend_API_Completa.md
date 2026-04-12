@@ -1,7 +1,7 @@
 # Congre-Admin: Documentación Técnica del Backend API
 
-> **Versión:** 2.2.0
-> **Última actualización:** 2026-04-06
+> **Versión:** 2.3.0
+> **Última actualización:** 2026-04-11
 > **Archivo fuente:** `backend/src/api.gs`
 > **Plataforma:** Google Apps Script (GAS)
 
@@ -10,6 +10,17 @@
 ## 1. Resumen Ejecutivo
 
 El Backend de Congre-Admin es un proveedor de servicios implementado como Google Apps Script que utiliza Google Sheets como base de datos distribuida. El sistema sigue una arquitectura de **Segmentación Física de Datos** donde cada módulo/plugin tiene su propio spreadsheet.
+
+### Cambios en v2.3
+
+| Cambio | Descripción |
+|--------|-------------|
+| **Modo público implementado** | Parámetro `mode: 'public'` en payload filtra `is_public` rows y elimina campos `enc_*` |
+| **Protección register** | `action=register` requiere sesión si ya existen usuarios. Solo permite registro sin sesión durante instalación |
+| **Setup server-side** | `batchExecute` detecta modo setup automáticamente chequeando si hay usuarios existentes. No depende de flag del cliente |
+| **Sanitización automática** | Eliminación de campos `enc_*` en respuestas públicas |
+| **Auto-sync Configuración** | Al guardar en Configuracion, se sincronizan automáticamente filas `is_public=true` a la hoja pública |
+| **Step-Up Auth** | Nueva acción `confirmAction` para verificar 2FA en acciones sensibles (delete, change password, inactividad) |
 
 ### Cambios en v2.2
 
@@ -210,12 +221,19 @@ Todas las peticiones se envían vía `POST` al endpoint del GAS:
     "ssId": "ID_DEL_SPREADSHEET",
     "coreSsId": "ID_DEL_CORE_SPREADSHEET",
     "module": "nombre_del_modulo",
-    "sessionToken": "TOKEN_DE_SESION"
+    "sessionToken": "TOKEN_DE_SESION",
+    "mode": "admin" // o "public" para acceso sin autenticación
   },
   "sheet": "NOMBRE_DE_HOJA",
   "expectedVersion": NUMERO
 }
 ```
+
+> **Nota v2.3:** El parámetro `mode` puede ser `'admin'` (default) o `'public'`. En modo público:
+> - No requiere sesión
+> - Solo permite operaciones `read`
+> - Filtra filas donde `is_public !== false`
+> - Elimina campos con prefijo `enc_`
 
 > **Nota v2.0:** `ssId` y `sessionToken` pueden estar en `payload` o al nivel superior de la petición. El backend los extrae de ambos lugares.
 
@@ -256,8 +274,10 @@ Ejecuta múltiples operaciones en una sola llamada API. Reemplaza `batchGetData`
 - `continue` (default): Ejecuta todas las operaciones, retorna éxito parcial
 - `fail-fast`: Detiene al primer error
 
-**Modo setup (v2.1):**
-- `isSetup: true`: Bypass de sesión y RBAC para operaciones `initSheet` y `save` únicamente. Usado durante la instalación inicial.
+**Modo setup (v2.3 - automático):**
+- El backend detecta automáticamente si está en modo instalación checking si hay usuarios existentes en la hoja `Usuarios`
+- El flag `isSetup` del cliente se mantiene por compatibilidad pero solo tiene efecto si el servidor confirma que no hay usuarios
+- Permite operaciones `initSheet` y `save` sin sesión solo durante la primera instalación
 
 ```javascript
 {
@@ -269,7 +289,6 @@ Ejecuta múltiples operaciones en una sola llamada API. Reemplaza `batchGetData`
     "folderId": "DRIVE_FOLDER_ID",
     "sessionToken": "TOKEN",
     "mode": "continue",
-    "isSetup": false,
     "operations": [
       { "op": "read", "sheet": "Configuracion" },
       { "op": "read", "sheet": "Perfiles" },
@@ -411,9 +430,10 @@ Limpia el contenido de una hoja manteniendo las cabeceras. Requiere sesión + pe
 #### B. Acciones de Autenticación
 
 ##### `register`
-Crea un nuevo usuario.
+Crea un nuevo usuario. A partir de v2.3, si ya existen usuarios en el sistema, requiere sesión válida con permisos de admin.
 
 ```javascript
+// Antes de instalación (sin usuarios):
 {
   "action": "register",
   "payload": {
@@ -425,6 +445,23 @@ Crea un nuevo usuario.
     "perfilId": "p_admin"
   }
 }
+
+// Después de instalado (requiere sesión):
+{
+  "action": "register",
+  "payload": {
+    "ssId": "CORE_SS_ID",
+    "sessionToken": "TOKEN",
+    "username": "nuevo_usuario",
+    "email": "usuario@congregacion.com",
+    "password": "MiContraseña123!",
+    "wrapped_mk": "MASTER_KEY_CIFRADA",
+    "perfilId": "p_publicador"
+  }
+}
+
+// Response si ya hay usuarios y no hay sesión:
+{ "success": false, "error": "ERR_AUTH_REQUIRED: Sistema ya inicializado. Inicia sesión primero." }
 ```
 
 ##### `login`
@@ -629,6 +666,48 @@ Establece el método de autenticación predeterminado. Requiere sesión.
   }
 }
 ```
+
+##### `confirmAction` (NUEVO — v2.3)
+Verifica 2FA para acciones sensibles (delete, change password, inactividad). Usa el método default del usuario.
+
+```javascript
+{
+  "action": "confirmAction",
+  "payload": {
+    "ssId": "CORE_SS_ID",
+    "sessionToken": "TOKEN",
+    "code": "123456"  // TOTP o Email OTP
+    // O bien:
+    "passkeyAssertion": { "credentialId": "..." }
+  }
+}
+
+// Response - Success
+{ "confirmed": true }
+
+// Response - Failure
+{ "confirmed": false, "error": "ERR_INVALID_CODE", "remainingAttempts": 4 }
+
+// Response - Locked
+{ "confirmed": false, "error": "ERR_ACCOUNT_LOCKED", "locked": true }
+
+// Response - Inactivity timeout
+{ "confirmed": false, "error": "ERR_CONFIRM_REQUIRED_INACTIVITY", "needsConfirmation": true, "idleSeconds": 1801 }
+```
+
+**Errores:**
+
+| Error                              | Descripción                                                |
+| ----------------------------------- | ---------------------------------------------------------- |
+| `ERR_AUTH_INVALID`                   | Sesión inválida                                             |
+| `ERR_ACCOUNT_LOCKED`                 | Cuenta bloqueada tras 5 intentos fallidos                     |
+| `ERR_2FA_NOT_CONFIGURED`           | Usuario no tiene 2FA configurado                            |
+| `ERR_CODE_REQUIRED`                | Se requiere código TOTP/Email                             |
+| `ERR_PASSKEY_REQUIRED`              | Se requiere passkey                                      |
+| `ERR_INVALID_CODE`                 | Código inválido                                            |
+| `ERR_CONFIRM_REQUIRED_INACTIVITY`    | Requiere confirmación por inactividad (30 min default)       |
+
+**Rate Limiting:** 5 intentos máximos. Al 5to intento fallido, la cuenta se bloquea. Solo superuser puede desbloquear.
 
 ##### `changePassword`
 Cambia la contraseña del usuario. Requiere sesión.
@@ -1405,4 +1484,4 @@ fetch(url, {
 
 ---
 
-*Documento actualizado el 2026-04-06 — v2.2.0*
+*Documento actualizado el 2026-04-11 — v2.3.0*

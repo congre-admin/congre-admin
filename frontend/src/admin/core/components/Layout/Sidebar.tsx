@@ -22,7 +22,7 @@ import {
   Settings as SettingsIcon,
   Backup as BackupIcon,
   Brightness4 as DarkModeIcon,
-  Share as ShareIcon,
+  Link as LinkIcon,
   Person as PersonIcon,
   Security as SecurityIcon,
   Logout as LogoutIcon,
@@ -31,11 +31,12 @@ import { alpha } from '@mui/material/styles';
 import { useAuth } from '../../context/AuthContext';
 import { useThemeContext } from '@/core/context/ThemeContext';
 import { getCachedSettings } from '@/utils/settingsCache';
-import { useMenuConfig, type MenuItem as MenuItemType, type MenuSection } from '@/admin/core/hooks/useMenuConfig';
+import { useMenuConfig, type MenuItem as MenuItemType, type MenuSection, type MenuMode } from '@/admin/core/hooks/useMenuConfig';
 import ShareDialog from '../ShareDialog/ShareDialog';
 
 const DRAWER_WIDTH = 260;
 const MINI_DRAWER_WIDTH = 72;
+const PUBLIC_SS_ID_KEY = 'congre_public_ss_id';
 
 // Icon resolver
 const iconMap: Record<string, React.ComponentType<{ fontSize?: string }>> = {
@@ -49,7 +50,7 @@ const iconMap: Record<string, React.ComponentType<{ fontSize?: string }>> = {
   Business: BusinessIcon,
   Backup: BackupIcon,
   DarkMode: DarkModeIcon,
-  Share: ShareIcon,
+  Link: LinkIcon,
   Person: PersonIcon,
   Security: SecurityIcon,
   Logout: LogoutIcon,
@@ -60,14 +61,15 @@ function resolveMuiIcon(iconName: string) {
   return iconMap[iconName] || SettingsIcon;
 }
 
-function SidebarContent({ onNavigate, congregationName, congregationIcon: CongregationIcon, collapsed }: { onNavigate: (path: string) => void; congregationName: string; congregationIcon: React.ComponentType<{ size?: number }>; collapsed: boolean }) {
-  const { topMenu, bottomSections } = useMenuConfig();
+function SidebarContent({ onNavigate, congregationName, congregationIcon: CongregationIcon, collapsed, mode }: { onNavigate: (path: string) => void; congregationName: string; congregationIcon: React.ComponentType<{ size?: number }>; collapsed: boolean; mode: MenuMode }) {
+  const { topMenu, bottomSections } = useMenuConfig(mode);
   const location = useLocation();
   const theme = useTheme();
 
   const isActive = (path?: string) => location.pathname === path;
   const isParentActive = (section: MenuSection) => 
-    section.children.some(child => child.path === location.pathname);
+    section.path === location.pathname || 
+    (section.children?.some(child => child.path === location.pathname) ?? false);
 
   const handleAction = (item: MenuItemType) => {
     if (item.action === 'toggleDarkMode') {
@@ -96,6 +98,14 @@ function SidebarContent({ onNavigate, congregationName, congregationIcon: Congre
           color: theme.palette.primary.main + ' !important',
         },
       },
+      '& .ps-menu-icon': {
+        opacity: '1 !important',
+        display: 'flex !important',
+        visibility: 'visible !important',
+      },
+      '& .ps-menu-label': {
+        opacity: '1 !important',
+      },
       '& .ps-submenu-content': {
         backgroundColor: 'transparent !important',
         '& .pro-menu-item': {
@@ -123,9 +133,24 @@ function SidebarContent({ onNavigate, congregationName, congregationIcon: Congre
       '&:hover': {
         backgroundColor: alpha(theme.palette.primary.main, 0.08) + ' !important',
       },
+      '& .ps-menu-icon': {
+        opacity: '1 !important',
+        display: 'flex !important',
+        visibility: 'visible !important',
+      },
     },
     subMenuContent: {
       backgroundColor: 'transparent !important',
+      '& .ps-menu-icon': {
+        opacity: '1 !important',
+        display: 'flex !important',
+        visibility: 'visible !important',
+      },
+    },
+    icon: {
+      opacity: '1 !important',
+      display: 'flex !important',
+      visibility: 'visible !important',
     },
   };
 
@@ -149,8 +174,8 @@ function SidebarContent({ onNavigate, congregationName, congregationIcon: Congre
             <MenuItem
               key={item.label}
               active={isActive(item.path)}
-              onClick={() => item.path && onNavigate(item.path)}
-              icon={<IconComponent fontSize="small" />}
+              onClick={() => item.path ? onNavigate(item.path) : item.action && handleAction(item)}
+              icon={<IconComponent fontSize="small" sx={{ opacity: 1, display: 'flex', visibility: 'visible' }} />}
             >
               {item.label}
             </MenuItem>
@@ -160,19 +185,27 @@ function SidebarContent({ onNavigate, congregationName, congregationIcon: Congre
 
       <Divider sx={{ mx: 1 }} />
 
-      {/* Notifications */}
-      <Menu menuItemStyles={menuItemStyles}>
-        <MenuItem icon={<NotificationsIcon fontSize="small" />}>
-          Notificaciones
-        </MenuItem>
-      </Menu>
-
       {/* Bottom sections */}
-      <Divider sx={{ mx: 1 }} />
       <Menu menuItemStyles={menuItemStyles}>
         {bottomSections.map(section => {
           const IconComponent = resolveMuiIcon(section.icon);
           const isSectionActive = isParentActive(section);
+          
+          // If no children, render as direct MenuItem (opens on click)
+          if (!section.children || section.children.length === 0) {
+            return (
+              <MenuItem
+                key={section.id}
+                active={isSectionActive}
+                onClick={() => section.path ? onNavigate(section.path) : section.action && onNavigate(section.action)}
+                icon={<IconComponent fontSize="small" />}
+              >
+                {section.label}
+              </MenuItem>
+            );
+          }
+          
+          // Otherwise, render as SubMenu
           return (
             <SubMenu
               key={section.id}
@@ -210,7 +243,7 @@ function SidebarContent({ onNavigate, congregationName, congregationIcon: Congre
 export default function AdminSidebar() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { logout } = useAuth();
+  const { logout, isAuthenticated } = useAuth();
   const { toggleDarkMode: toggleThemeMode } = useThemeContext();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
@@ -219,14 +252,31 @@ export default function AdminSidebar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
 
-  const cached = getCachedSettings();
-  const congregationName = cached?.data.nombre_mostrar || cached?.data.nombre_congregacion || 'CongreAdmin';
-  const adminSsId = localStorage.getItem('congre_admin_ss_id');
-  const shareUrl = `${window.location.origin}/?ssid=${adminSsId || ''}`;
+  // Determine menu mode based on auth state (public menu for non-authenticated users)
+  // This shows simplified menu: Inicio + module stubs → divider → Notificaciones → "Más"
+  const mode: MenuMode = isAuthenticated ? 'admin' : 'public';
 
+  // Get congregation name from appropriate config based on mode
+  let congregationName = 'CongreAdmin';
+  if (mode === 'public') {
+    congregationName = localStorage.getItem('congre_public_nombre_mostrar') || 'CongreAdmin';
+  } else {
+    const cached = getCachedSettings();
+    congregationName = cached?.data.nombre_mostrar || cached?.data.nombre_congregacion || 'CongreAdmin';
+  }
+  const publicSsId = localStorage.getItem(PUBLIC_SS_ID_KEY);
+  const shareUrl = `${window.location.origin}/?ssid=${publicSsId || ''}`;
+
+  // Get icon from appropriate config based on mode
   let iconPreviewUrl: string | null = null;
   try {
-    const iconConfig = cached?.data.icon_config ? JSON.parse(cached.data.icon_config) : null;
+    let iconConfigStr: string | null = null;
+    if (mode === 'public') {
+      iconConfigStr = localStorage.getItem('congre_public_icon_config');
+    } else {
+      iconConfigStr = cached?.data.icon_config;
+    }
+    const iconConfig = iconConfigStr ? JSON.parse(iconConfigStr) : null;
     iconPreviewUrl = iconConfig?.sizes?.['32'] || iconConfig?.sizes?.['48'] || null;
   } catch { /* ignore */ }
 
@@ -238,6 +288,8 @@ export default function AdminSidebar() {
     } else if (pathOrAction === 'logout') {
       logout();
       navigate('/admin/login');
+    } else if (pathOrAction === 'admin') {
+      navigate('/admin');
     } else if (pathOrAction.startsWith('/')) {
       navigate(pathOrAction);
       if (isMobile) setMobileOpen(false);
@@ -258,7 +310,7 @@ export default function AdminSidebar() {
   );
 
   const sidebarContent = (
-    <SidebarContent onNavigate={handleNavigate} congregationName={congregationName} congregationIcon={CongregationIcon} collapsed={collapsed} />
+    <SidebarContent onNavigate={handleNavigate} congregationName={congregationName} congregationIcon={CongregationIcon} collapsed={collapsed} mode={mode} />
   );
 
   const glassSx = {

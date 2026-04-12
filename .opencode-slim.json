@@ -1,0 +1,21 @@
+{
+  "project": "congre-admin",
+  "description": "Congregation management system with Zero-Knowledge encryption",
+  "stack": {
+    "frontend": "React 19, Vite, TypeScript, MUI, TanStack Query",
+    "backend": "Google Apps Script, Google Sheets",
+    "crypto": "AES-GCM 256-bit, PBKDF2"
+  },
+  "commands": {
+    "dev": "cd frontend && npm run dev",
+    "build": "cd frontend && npm run build",
+    "lint": "cd frontend && npm run lint",
+    "test": "cd frontend && npm run test"
+  },
+  "priorities": [
+    "Build DataService adapter (services/DataService.ts)",
+    "Create TypeScript types (types/*.ts)",
+    "Implement Admin_Personas module",
+    "Wire TanStack Query hooks"
+  ]
+}

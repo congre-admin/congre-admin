@@ -6,6 +6,7 @@ import {
   Tabs,
   Tab,
   Button,
+  ButtonProps,
   Chip,
   IconButton,
   TextField,
@@ -29,6 +30,7 @@ import {
   Checkbox,
   ListItemText,
   OutlinedInput,
+  SelectChangeEvent,
 } from '@mui/material';
 import {
   Person as PersonIcon,
@@ -39,6 +41,7 @@ import {
   AdminPanelSettings as ProfileIcon,
   VpnKey as PermissionIcon,
 } from '@mui/icons-material';
+import Page from '@/admin/core/components/Page';
 
 interface User {
   id: string;
@@ -170,15 +173,34 @@ export default function AdminUsers() {
     return acc;
   }, {} as Record<string, Permission[]>);
 
-  return (
-    <Box>
-      <Typography variant="h5" gutterBottom>
-        Gestión de usuarios y permisos
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        Administra usuarios, perfiles y permisos del sistema
-      </Typography>
+  const getPageActions = () => {
+    if (tab === 'users') {
+      return {
+        primary: {
+          children: 'Nuevo usuario',
+          startIcon: <PersonAddIcon />,
+          onClick: () => openUserDialog(),
+        } as ButtonProps,
+      };
+    }
+    if (tab === 'profiles') {
+      return {
+        primary: {
+          children: 'Nuevo perfil',
+          startIcon: <ProfileIcon />,
+          onClick: () => openProfileDialog(),
+        } as ButtonProps,
+      };
+    }
+    return undefined;
+  };
 
+  return (
+    <Page
+      title="Gestión de usuarios y permisos"
+      subtitle="Administra usuarios, perfiles y permisos del sistema"
+      actions={getPageActions()}
+    >
       <Paper sx={{ mb: 3 }}>
         <Tabs value={tab} onChange={handleTabChange} sx={{ borderBottom: 1, borderColor: 'divider' }}>
           <Tab icon={<PersonIcon />} iconPosition="start" label={`Usuarios (${users.length})`} value="users" />
@@ -190,12 +212,6 @@ export default function AdminUsers() {
       {/* USERS TAB */}
       {tab === 'users' && (
         <Box>
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
-            <Button variant="contained" startIcon={<PersonAddIcon />} onClick={() => openUserDialog()}>
-              Nuevo usuario
-            </Button>
-          </Box>
-          
           <TableContainer component={Paper}>
             <Table>
               <TableHead>
@@ -413,6 +429,6 @@ export default function AdminUsers() {
           </Button>
         </DialogActions>
       </Dialog>
-    </Box>
+    </Page>
   );
 }

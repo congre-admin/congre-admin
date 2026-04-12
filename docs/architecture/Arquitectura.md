@@ -1,5 +1,8 @@
 # Congre-Admin: Arquitectura de Núcleo y Plug-ins
 
+> **Versión:** 2.3.0
+> **Última actualización:** 2026-04-11
+
 El sistema se basa en un marco de trabajo central (**Core**) que orquesta una serie de módulos independientes (**Plug-ins**), utilizando una estrategia de **Segmentación Física de Datos** para garantizar máxima privacidad y escalabilidad.
 
 ## 1. Modelo de Dos Aplicaciones
@@ -47,12 +50,24 @@ flowchart LR
 | **Permisos** | Sin permisos (lectura pública) | RBAC por módulo |
 | **Hojas accesibles** | `Indice`, `Anuncios`, `Reuniones` | `Usuarios`, `Perfiles`, `Configuracion`, etc. |
 
-### Flujo de Sincronización Pública
+### Flujo de Sincronización Pública (v2.3)
 
-1. El administrador marca datos como "publicados" en los GSheets operativos.
+1. El administrador marca datos como "publicados" en los GSheets operativos (`is_public: true`).
 2. El backend (`api.gs`) sincroniza esos datos al **GSheet Público** (un GSheet físico distinto, creado en paralelo durante `install`).
 3. La app pública consume directamente el GSheet Público via `/gviz/tq`, sin pasar por GAS.
-4. Esto permite que cualquier visitante vea la información pública sin necesidad de autenticación ni consumo de cuota GAS.
+4. Alternativamente, se puede usar `mode: 'public'` en el payload de la API para obtener datos públicos sin autenticación:
+   - Filtra automáticamente filas donde `is_public !== false`
+   - Elimina campos con prefijo `enc_*` (cifrados)
+
+### Step-Up Authentication (v2.3)
+
+Para acciones sensibles (delete user, change password, inactividad), el sistema requiere verificación adicional:
+
+1. La UI solicita confirmación (TOTP, Passkey, o Email OTP)
+2. El frontend envía el código a `confirmAction`
+3. El backend verifica y retorna `confirmed: true` o error
+
+Esto impide que alguien con acceso a la sesión pueda realizar acciones críticas sin verificación adicional.
 
 ### Creación durante la Instalación
 

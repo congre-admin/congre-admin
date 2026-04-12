@@ -27,6 +27,7 @@ import {
 import { useAuth } from '../../../core/context/AuthContext';
 import { dataService } from '@/services/dataService';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import Page from '@/admin/core/components/Page';
 
 // Static plugin manifests - in production these would be loaded dynamically
 const BUILT_IN_PLUGINS = [
@@ -214,21 +215,19 @@ export default function AdminPlugins() {
 
   if (isLoading) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
-        <CircularProgress />
-      </Box>
+      <Page title="Gestión de módulos" loading={true}>
+        <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+          <CircularProgress />
+        </Box>
+      </Page>
     );
   }
 
   return (
-    <Box>
-      <Typography variant="h5" gutterBottom>
-        Gestión de módulos
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        Instala y configura los módulos de la aplicación. Cada módulo puede tener su propia hoja de cálculo
-      </Typography>
-
+    <Page
+      title="Gestión de módulos"
+      subtitle="Instala y configura los módulos de la aplicación. Cada módulo puede tener su propia hoja de cálculo"
+    >
       <Box>
         {BUILT_IN_PLUGINS.map((plugin) => {
           const installed = isInstalled(plugin.id);
@@ -369,6 +368,6 @@ export default function AdminPlugins() {
           </Button>
         </DialogActions>
       </Dialog>
-    </Box>
+    </Page>
   );
 }
