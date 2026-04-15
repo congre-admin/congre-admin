@@ -161,7 +161,7 @@ export default function AuthSettings() {
 
   const handleDeleteAccount = async () => {
     if (!deletePassword) {
-      setError('Ingrese su contraseña');
+      setError('Ingresá tu contraseña');
       return;
     }
     
@@ -199,7 +199,7 @@ export default function AuthSettings() {
   return (
     <Page
       title="Configuración de autenticación"
-      subtitle="Gestione sus métodos de autenticación y seguridad de cuenta"
+      subtitle="Gestione tus métodos de autenticación y seguridad de cuenta"
     >
       <Box sx={{ maxWidth: 800 }}>
         {error && (
@@ -378,9 +378,9 @@ export default function AuthSettings() {
           Zona de Peligro
         </Typography>
         
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Eliminar su cuenta es irreversible. Todos sus datos serán eliminados permanentemente.
-        </Typography>
+<Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Eliminar tu cuenta es irreversible. Todos tus datos van a ser eliminados permanentemente.
+          </Typography>
         
         <Button
           variant="outlined"
@@ -393,17 +393,17 @@ export default function AuthSettings() {
       </Paper>
 
       <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ color: 'error.main' }}>
-          ¿Está seguro de eliminar su cuenta?
-        </DialogTitle>
+<DialogTitle sx={{ color: 'error.main' }}>
+            ¿Estás seguro de eliminar tu cuenta?
+          </DialogTitle>
         <DialogContent>
           <Alert severity="error" sx={{ mb: 2 }}>
-            Esta acción es irreversible. Todos sus datos serán eliminados permanentemente.
+            Esta acción es irreversible. Todos tus datos van a ser eliminados permanentemente.
           </Alert>
           <TextField
             fullWidth
             type="password"
-            label="Ingrese su contraseña para confirmar"
+            label="Ingresá tu contraseña para confirmar"
             value={deletePassword}
             onChange={(e) => setDeletePassword(e.target.value)}
             sx={{ mt: 2 }}

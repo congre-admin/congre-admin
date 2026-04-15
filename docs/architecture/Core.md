@@ -88,7 +88,7 @@ erDiagram
         string username UK
         string email
         string wrapped_mk
-        string perfilId FK
+        string perfilIds FK  "JSON array, e.g., ['p_admin']"
         json auth_config
         json metadata
         timestamp created_at
@@ -126,7 +126,7 @@ erDiagram
         boolean _deleted
     }
     
-    USUARIOS }|--|| PERFILES : "perfilId"
+    USUARIOS }|--|| PERFILES : "perfilIds"
 ```
 
 ### 2.2 Estructura de `auth_config`
@@ -359,7 +359,7 @@ El Core proporciona variables globales para todas las expresiones JSONata:
 |----------|-------------|---------|
 | `$personas` | Listado completo de personas | `$personas[nombre ~> /Pérez/]` |
 | `$config` | Diccionario de configuración | `$config.idioma_predeterminado` |
-| `$usuario` | Sesión activa | `$usuario.perfilId` |
+| `$usuario` | Sesión activa | `$usuario.perfilIds` |
 | `$ahora` | Fecha/hora actual | `$ahora` |
 
 ### 5.2 Reglas de Cifrado
@@ -379,6 +379,108 @@ El Core proporciona variables globales para todas las expresiones JSONata:
 | `p_super_grupo` | R: personas; RW: registros |
 | `p_siervo_territorios` | RW: predicación |
 | `p_publicador` | R: reuniones, predicación |
+
+---
+
+### 5.4 Sistema de Versiones Paralelas de Módulos
+
+Para mantener múltiples versiones de un módulo simultáneamente, permitiendo a usuarios migrate cuando estén listos.
+
+#### 5.4.1 Estructura de Archivos
+
+```
+modules/
+  personas/
+    index.ts          → re-exporta versión actual (v2)
+    v1/
+      handler.ts     → implementación original (deprecated)
+      manifest.ts    → metadata v1
+    v2/
+      handler.ts     → nueva implementación
+      manifest.ts    → metadata v2
+```
+
+#### 5.4.2 Manifest por Versión
+
+```typescript
+// modules/personas/v2/manifest.ts
+export const manifest = {
+  id: 'personas',
+  version: 'v2',
+  label: 'Personas',
+  status: 'stable',  // 'stable' | 'deprecated' | 'legacy'
+  deprecatedBy: 'v3',  // next version that replaces this
+  fields: [...],
+  permissions: [...],
+};
+```
+
+#### 5.4.3 API con Versionado
+
+```javascript
+// Backend: api.gs
+function doGet(e) {
+  const v = e.parameter.v || 'v2';  // default a versión estable
+  
+  if (v === 'v1') return handleModuleV1(e);
+  if (v === 'v2') return handleModuleV2(e);
+  return handleModuleV2(e);  // fallback a actual
+}
+
+// Registro de versiones disponibles
+const MODULE_VERSIONS = {
+  personas: { v1: 'legacy', v2: 'stable' },
+  reuniones: { v1: 'stable' },
+};
+```
+
+#### 5.4.4 Migración con Spreadsheets Separados
+
+Para cambios que rompen compatibilidad, usar spreadsheets separados:
+
+```
+Core_V1 (spreadsheet original)        → se mantiene para rollback
+├─hoja: Personas
+├─hoja: Configuracion
+
+Core_V2 (nuevo spreadsheet)         → nueva hoja (sin sufijos)
+├─hoja: Personas      (nueva estructura)
+├─hoja: Roles         (nueva estructura)
+├─hoja: Configuracion
+```
+
+**Proceso de Migración:**
+1. Crear nuevo spreadsheet (copia template con cambios)
+2. Migrar datos: script copia V1 → V2, transforma según cambios
+3. Mantener hoja original como backup (no toca)
+4. Guardar versión en Configuracion: `version: 'v2'`
+5. Usuario registra nuevo SS en Settings → Módulos
+
+**Rollback:** Usuario cambia referencia al SS anterior
+
+**Ventajas:**
+- Sin conflictos de esquema
+- Rollback simple (cambia SS reference)
+- Separación clara
+- Migración corre una sola vez
+
+#### 5.4.5 Migración de Usuario
+
+1. En Admin → Módulos, usuario selecciona versión:
+   - Versión actual recomendada (stable)
+   - Versiones anteriores disponibles (deprecated/legacy)
+
+2. Migración copia datos del formato anterior al nuevo
+
+3. Sin migración automática - usuario elige cuándo
+
+#### 5.4.6 Reglas
+
+| Estado | Comportamiento |
+|--------|--------------|
+| `stable` | Recomendado, nuevo desarrollo aquí |
+| `deprecated` | Funciona, no recibefeatures, migración sugerida |
+| `legacy` | Funciona para usuarios existentes, no recomendado |
 
 ---
 

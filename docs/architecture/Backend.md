@@ -68,7 +68,7 @@ Para inicializar el sistema, el archivo GSheet maestro debe contener las siguien
 - `id`: UUID único.
 - `username`: Correo electrónico.
 - `wrapped_mk`: Master Key cifrada.
-- `perfilId`: ID del perfil asignado.
+- `perfilIds`: Array JSON de IDs de perfiles (ej: `["p_admin"]`). Antes `perfilId` (singular, deprecado).
 - `auth_config`: Objeto JSON con configuración de autenticación (ver abajo).
 - `metadata`: Objeto JSON con metadatos del usuario (ver abajo).
 - `created_at`: Fecha de creación (ISO 8601).

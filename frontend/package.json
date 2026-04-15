@@ -6,7 +6,7 @@
   "homepage": "https://congre-admin.github.io",
   "scripts": {
     "predev": "node -e \"const fs=require('fs');const p='../backend/src/api.gs';const d='public/api/api.gs';if(fs.existsSync(p)){fs.mkdirSync('public/api',{recursive:true});fs.copyFileSync(p,d);console.log('✓ api.gs synced')}\"",
-    "prebuild": "node -e \"const fs=require('fs');const p='../backend/src/api.gs';const d='public/api/api.gs';if(fs.existsSync(p)){fs.mkdirSync('public/api',{recursive:true});fs.copyFileSync(p,d);console.log('✓ api.gs synced')}\"",
+    "prebuild": "node -e \"const fs=require('fs');const p='../backend/src/api.gs';d='public/api/api.gs';if(fs.existsSync(p)){fs.mkdirSync('public/api',{recursive:true});fs.copyFileSync(p,d);console.log('✓ api.gs synced')}\"",
     "dev": "vite",
     "dev:spa": "node dev-server.js",
     "build": "vite build --config vite.config.ts",
@@ -14,6 +14,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "deploy": "gh-pages -d dist",
+    "gen-cert": "node -e \"const {generateKeyPairSync}=require('crypto');const {writeFileSync}=require('fs');const {k:key}=generateKeyPairSync('rsa',{modulusLength:4096,privateKeyEncoding:{type:'pkcs8',format:'pem'},publicKeyEncoding:{type:'spki',format:'pem'}});writeFileSync('vite-key.pem',key.privateKey);writeFileSync('vite-cert.pem',key.publicKey);console.log('✓ Certificates generated')\"",
     "clasp:push": "cd ../backend && npx @google/clasp push",
     "clasp:pull": "cd ../backend && npx @google/clasp pull",
     "clasp:deploy": "cd ../backend && npx @google/clasp deploy",

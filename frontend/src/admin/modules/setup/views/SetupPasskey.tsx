@@ -20,35 +20,7 @@ import {
 import { Security, CheckCircle, Devices, Keyboard, PhoneIphone } from '@mui/icons-material';
 import { useAuth } from '../../../core/context/AuthContext';
 import { useCongregacion } from '@/hooks/useCongregacion';
-
-const API_URL_KEY = 'congre_admin_api_url';
-
-async function fetchApi(url: string, options?: RequestInit) {
-  const response = await fetch(url, {
-    ...options,
-    mode: 'cors',
-    redirect: 'follow',
-    headers: {
-      'Content-Type': 'text/plain;charset=utf-8',
-      ...options?.headers,
-    },
-  });
-  return response.json();
-}
-
-interface PasskeyChallenge {
-  challenge: string;
-  rpId: string;
-  timeout: number;
-  user: {
-    id: string;
-    name: string;
-    displayName: string;
-  };
-  pubKeyCredParams: Array<{ type: string; alg: number }>;
-  attestation: string;
-  excludeCredentials: Array<{ id: string; type: string }>;
-}
+import { authService } from '@/services/authService';
 
 export default function SetupPasskey() {
   const navigate = useNavigate();
@@ -121,41 +93,16 @@ export default function SetupPasskey() {
     setError(null);
 
     try {
-      const apiUrl = localStorage.getItem(API_URL_KEY);
-      if (!apiUrl) {
-        throw new Error('API URL no configurada');
-      }
-
-      const payload: Record<string, string> = {
+      const challenge = await authService.setupPasskey(
         username,
         deviceName,
-        origin: window.location.origin
-      };
+        sessionToken,
+        window.location.origin
+      );
 
-      if (isAuthenticated && sessionToken) {
-        payload.sessionToken = sessionToken;
-      } else {
-        payload.password = password;
+      if (!challenge.success) {
+        throw new Error(challenge.error || 'Error al iniciar configuración de passkey');
       }
-
-      const ssId = localStorage.getItem('congre_admin_ss_id');
-      if (ssId) {
-        payload.ssId = ssId;
-      }
-
-      const data = await fetchApi(apiUrl, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'setupPasskey',
-          payload
-        })
-      });
-
-      if (!data.success) {
-        throw new Error(data.error || 'Error al iniciar configuración de passkey');
-      }
-
-      const challenge: PasskeyChallenge = data;
 
       const publicKey: PublicKeyCredentialCreationOptions = {
         challenge: Uint8Array.from(atob(challenge.challenge), c => c.charCodeAt(0)),
@@ -207,29 +154,11 @@ export default function SetupPasskey() {
         }
       };
 
-      const confirmPayload: Record<string, any> = {
+      const confirmData = await authService.confirmPasskey(
         username,
-        attestation
-      };
-
-      if (isAuthenticated && sessionToken) {
-        confirmPayload.sessionToken = sessionToken;
-      } else {
-        confirmPayload.password = password;
-      }
-
-      const confirmSsId = localStorage.getItem('congre_admin_ss_id');
-      if (confirmSsId) {
-        confirmPayload.ssId = confirmSsId;
-      }
-
-      const confirmData = await fetchApi(apiUrl, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'confirmPasskey',
-          payload: confirmPayload
-        })
-      });
+        attestation,
+        sessionToken
+      );
 
       if (!confirmData.success) {
         throw new Error(confirmData.error || 'Error al confirmar passkey');

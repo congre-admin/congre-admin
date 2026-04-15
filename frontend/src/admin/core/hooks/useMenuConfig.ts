@@ -91,7 +91,7 @@ const PUBLIC_BOTTOM_SECTIONS: MenuSection[] = [
     children: [
       { label: 'Modo oscuro', icon: 'DarkMode', action: 'toggleDarkMode' },
       { label: 'Compartir', icon: 'Link', action: 'share' },
-      { label: 'Ingresar', icon: 'Security', action: 'admin' },
+      { label: 'Iniciar sesión', icon: 'Security', action: 'admin' },
     ],
   },
 ];

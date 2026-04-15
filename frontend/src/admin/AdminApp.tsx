@@ -122,7 +122,7 @@ function PublicAppRoutes() {
 
   const handleSetupWizard = () => {
     setShowSSIDModal(false);
-    navigate('/setup');
+    navigate('/admin/setup');
   };
 
   return (
@@ -151,7 +151,7 @@ function AuthRoute({ children }: { children: React.ReactNode }) {
   }
   
   if (isAuthenticated) {
-    return <Navigate to="" replace />;
+    return <Navigate to="/admin" replace />;
   }
   
   return <>{children}</>;
@@ -161,23 +161,30 @@ export default function AdminApp() {
   return (
     <Suspense fallback={<LoadingFallback />}>
       <Routes>
-        <Route path="setup" element={<SetupWizard />} />
-        <Route path="setup/*" element={<SetupWizard />} />
+        {/* Setup routes - no auth */}
+        <Route path="/admin/setup" element={<SetupWizard />} />
+        <Route path="/admin/setup/*" element={<SetupWizard />} />
+        <Route path="/admin/setup-totp" element={<SetupTOTP />} />
+        <Route path="/admin/setup-passkey" element={<SetupPasskey />} />
         
-        <Route path="login" element={
+        {/* Login routes - no auth */}
+        <Route path="/login" element={
+          <AuthRoute>
+            <Login />
+          </AuthRoute>
+        } />
+        <Route path="/admin/login" element={
           <AuthRoute>
             <Login />
           </AuthRoute>
         } />
         
-        <Route path="setup-totp" element={<SetupTOTP />} />
+        {/* Admin routes - auth required */}
+        <Route path="/admin" element={<AuthenticatedApp />} />
+        <Route path="/admin/*" element={<AuthenticatedApp />} />
         
-        <Route path="setup-passkey" element={<SetupPasskey />} />
-        
-        {/* Public routes - no auth, shared Shell */}
+        {/* Public routes - no auth, catch-all at end */}
         <Route path="/*" element={<PublicAppRoutes />} />
-        
-        <Route path="*" element={<AuthenticatedApp />} />
       </Routes>
     </Suspense>
   );

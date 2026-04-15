@@ -5,7 +5,7 @@ export class PublicService {
     const cached = cacheService.getPublicSsId();
     if (cached) return cached;
 
-    const stored = localStorage.getItem('congre_public_ss_id');
+    const stored = localStorage.getItem('congre_public_ss_publico');
     if (stored) {
       cacheService.setPublicSsId(stored);
       return stored;

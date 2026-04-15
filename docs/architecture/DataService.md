@@ -115,7 +115,7 @@ interface UserMetadata {
 interface User {
   id: string;
   username: string;
-  perfilId: string;
+  perfilIds: string[];  // JSON array in DB, e.g., ["p_admin"]
   wrapped_mk?: string;
   auth_config: AuthConfig;
   metadata: UserMetadata;
@@ -125,6 +125,8 @@ interface User {
   _deleted?: boolean;
 }
 ```
+
+> **Nota:** El campo `perfilId` (singular) está deprecado. Ahora se usa `perfilIds` (array) para soporte multi-perfil.
 
 #### Tabla: `Perfiles`
 
@@ -196,7 +198,7 @@ interface LoginResponse {
   sessionToken: string;
   wrapped_mk?: string;
   expiresAt: string;
-  user: { id: string; username: string; perfilId: string };
+  user: { id: string; username: string; perfilIds: string[] };
 }
 
 interface LoginStepResponse {
@@ -395,7 +397,7 @@ class DataService {
 
   // === Auth ===
   async login(payload: LoginPayload): Promise<LoginResponse | LoginStepResponse>;
-  async register(payload: { username: string; password: string; perfilId: string; email?: string }): Promise<ApiResponse & { user: any }>;
+  async register(payload: { username: string; password: string; perfilIds?: string[]; email?: string }): Promise<ApiResponse & { user: any }>;
   async logout(sessionToken: string): Promise<ApiResponse>;
   async validateSession(sessionToken: string): Promise<ValidateSessionResponse>;
   async refreshSession(sessionToken: string): Promise<ApiResponse & { sessionToken: string }>;

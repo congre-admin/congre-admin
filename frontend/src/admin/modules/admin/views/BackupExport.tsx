@@ -109,11 +109,11 @@ export default function BackupExport() {
 
   const handleRestore = async () => {
     if (!restoreFile) {
-      setError('Seleccione un archivo de respaldo');
+      setError('Seleccioná un archivo de respaldo');
       return;
     }
     if (!restorePassword) {
-      setError('Ingrese la contraseña de respaldo');
+      setError('Ingresá la contraseña de respaldo');
       return;
     }
     if (!apiUrl || !sessionToken) {
@@ -146,7 +146,7 @@ export default function BackupExport() {
         throw new Error(result.error || 'Error al restaurar respaldo');
       }
 
-      setSuccess('✓ Respaldo restaurado exitosamente. Su clave maestra ha sido actualizada.');
+      setSuccess('✓ Respaldo restaurado exitosamente. Tu clave maestra ha sido actualizada.');
       setRestoreFile(null);
       setRestorePassword('');
     } catch (err) {
@@ -161,10 +161,10 @@ export default function BackupExport() {
       <Typography variant="h5" gutterBottom>
         Respaldo de clave maestra
       </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        Exporte su clave maestra cifrada para crear un respaldo de seguridad, 
-        o restaure un respaldo previamente guardado
-      </Typography>
+<Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+          Exportá tu clave maestra cifrada para crear un respaldo de seguridad, 
+          o restaurá un respaldo previamente guardado
+        </Typography>
 
       <Paper variant="outlined" sx={{ mb: 3 }}>
         <Tabs value={activeTab} onChange={(_, v) => setActiveTab(v)}>
@@ -176,8 +176,8 @@ export default function BackupExport() {
           {activeTab === 0 && (
             <>
               <Alert severity="warning" sx={{ mb: 3 }}>
-                Use una contraseña diferente a su contraseña de acceso. 
-                Sin esta contraseña no podrá restaurar el respaldo.
+                Usá una contraseña diferente a tu contraseña de acceso. 
+                Sin esta contraseña no vas a poder restaurar el respaldo.
               </Alert>
 
               <TextField
@@ -220,8 +220,8 @@ export default function BackupExport() {
           {activeTab === 1 && (
             <>
               <Alert severity="info" sx={{ mb: 3 }}>
-                Seleccione un archivo de respaldo (.json) e ingrese la contraseña 
-                que usó al crear el respaldo.
+                Seleccioná un archivo de respaldo (.json) e ingresá la contraseña 
+                que usaste al crear el respaldo.
               </Alert>
 
               <input
@@ -261,7 +261,7 @@ export default function BackupExport() {
                     }}
                   />
                   <Alert severity="warning" sx={{ mb: 2 }}>
-                    Advertencia: Esta acción reemplazará su clave maestra actual 
+                    Advertencia: Esta acción reemplazará tu clave maestra actual 
                     con la del respaldo.
                   </Alert>
                   <Button

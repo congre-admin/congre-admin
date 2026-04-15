@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { publicService } from '../services/publicService';
 import { QUERY_OPTIONS } from './queryConfig';
 
-const PUBLIC_SS_ID_KEY = 'congre_public_ss_id';
+const PUBLIC_SS_ID_KEY = 'congre_public_ss_publico';
 
 const QUERY_KEYS = {
   publicData: (sheet: string) => ['public', sheet] as const,

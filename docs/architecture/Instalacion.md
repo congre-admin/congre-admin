@@ -69,7 +69,7 @@ sequenceDiagram
         
         Frontend->>Backend: POST /exec action=register
         activate Backend
-        Backend->>Core: createUser(username, wrapped_mk, perfilId)
+        Backend->>Core: createUser(username, wrapped_mk, perfilIds)
         Core-->>Backend: Usuario creado
         deactivate Backend
         

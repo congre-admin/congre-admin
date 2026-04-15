@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { initializeCacheOnLogin } from '../../../hooks/useSession';
 import { dataService } from '../../../services/dataService';
-import { setCachedSettings, clearCachedSettings } from '../../../utils/settingsCache';
+import { setConfigs, clearCoreConfig, getConfig } from '../../../utils/settingsCache';
 
 interface User {
   id: string;
@@ -31,7 +31,7 @@ const API_URL_KEY = 'congre_admin_api_url';
 const SESSION_TOKEN_KEY = 'congre_admin_session_token';
 const USER_DATA_KEY = 'congre_admin_user_data';
 const ADMIN_SS_ID_KEY = 'congre_admin_ss_id';
-const PUBLIC_SS_ID_KEY = 'congre_public_ss_id';
+const PUBLIC_SS_ID_KEY = 'congre_public_ss_publico';
 
 async function fetchApi(url: string, options?: RequestInit) {
   const response = await fetch(url, {
@@ -68,8 +68,8 @@ async function fetchLinkedPublicSs(apiUrl: string, adminSsId: string): Promise<s
     const rows = result.data || [];
     const linkedRow = rows.find((r: any) => r.clave === 'ss_publico');
     
-    if (linkedRow) {
-      return JSON.parse(linkedRow.valor).ssId;
+    if (linkedRow && linkedRow.valor) {
+      return linkedRow.valor;
     }
     return null;
   } catch (err) {
@@ -102,7 +102,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             config.forEach(c => {
               settings[c.clave] = typeof c.valor === 'object' ? JSON.stringify(c.valor) : c.valor;
             });
-            setCachedSettings(settings);
+            setConfigs(settings, false); // Store as core config
+            setConfigs(settings, true);  // Also store as public config
           })
           .catch(() => {});
       }
@@ -191,7 +192,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    // Fetch and cache settings
+    // Fetch and cache settings as both core AND public keys
+    // This ensures any read method (localStorage.getItem or getCachedSettings) works
     if (adminSsId) {
       try {
         const config = await dataService.getData<{ clave: string; valor: any }[]>('Configuracion', adminSsId);
@@ -199,7 +201,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         config.forEach(c => {
           settings[c.clave] = typeof c.valor === 'object' ? JSON.stringify(c.valor) : c.valor;
         });
-        setCachedSettings(settings);
+        setConfigs(settings, false); // Store as core config
+        setConfigs(settings, true);  // Also store as public config (so reads work regardless of mode)
       } catch (err) {
         console.warn('Failed to cache settings:', err);
       }
@@ -212,14 +215,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
     localStorage.removeItem(SESSION_TOKEN_KEY);
     localStorage.removeItem(USER_DATA_KEY);
-    clearCachedSettings();
+    clearCoreConfig();
     setUser(null);
     setMasterKeyState(null);
     setSessionToken(null);
     setWrappedMk(null);
+    
+    // Load public config after clearing core config
+    const publicSsId = localStorage.getItem(PUBLIC_SS_ID_KEY);
+    if (publicSsId) {
+      try {
+        const config = await dataService.getData<{ clave: string; valor: any }[]>('Configuracion', publicSsId);
+        const settings: Record<string, string> = {};
+        config.forEach(c => {
+          settings[c.clave] = typeof c.valor === 'object' ? JSON.stringify(c.valor) : c.valor;
+        });
+        setConfigs(settings, true); // Store as public config
+      } catch (err) {
+        console.warn('Failed to load public config on logout:', err);
+      }
+    }
   };
 
   const validateSession = async () => {

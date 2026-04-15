@@ -20,7 +20,9 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
-  DialogActions
+  DialogActions,
+  Menu,
+  MenuItem
 } from '@mui/material';
 import { 
   Visibility, 
@@ -32,14 +34,20 @@ import {
   TableChart, 
   Email,
   Security,
-  Fingerprint
+  Fingerprint,
+  MoreVert,
+  Key,
+  RestartAlt,
+  RocketLaunch
 } from '@mui/icons-material';
 import { useAuth } from '../../../core/context/AuthContext';
 import { authService } from '../../../../services/authService';
 import { dataService } from '../../../../services/dataService';
+import { getAllConfigs, getConfig, setConfig } from '../../../../utils/settingsCache';
 
-const API_URL_KEY = 'congre_admin_api_url';
-const SS_ID_KEY = 'congre_admin_ss_id';
+// Config prefixes
+const PUBLIC_PREFIX = 'congre_public_';
+const CORE_PREFIX = 'congre_core_';
 
 async function getCongregationName(apiUrl: string | null, ssId: string | null): Promise<string> {
   if (!apiUrl || !ssId) return 'CongreAdmin';
@@ -99,29 +107,40 @@ export default function Login() {
   const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
   const [forgotPasswordSuccess, setForgotPasswordSuccess] = useState(false);
   const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false);
-  const [hasAutocompleteSubmitted, setHasAutocompleteSubmitted] = useState(false);
   const [defaultMethodStep, setDefaultMethodStep] = useState<AuthStep | null>(null);
   const [showMethodSelection, setShowMethodSelection] = useState(false);
   const [congregationName, setCongregationName] = useState('CongreAdmin');
 
+  // Menu state
+  const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
+  const [showConfigFields, setShowConfigFields] = useState(false);
+  
+  // Dialog states
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [newInstallDialogOpen, setNewInstallDialogOpen] = useState(false);
+
   useEffect(() => {
-    const storedGasUrl = localStorage.getItem(API_URL_KEY);
-    const storedSsId = localStorage.getItem(SS_ID_KEY);
+    // Get config from localStorage using the new naming convention
+    const publicConfigs = getAllConfigs(true);
+    const coreConfigs = getAllConfigs(false);
+    
+    // API URL: check gas_url in public first, then core
+    let storedGasUrl = publicConfigs.gas_url || coreConfigs.gas_url;
+    // SS ID: check ss_core in public first, then core
+    let storedSsId = publicConfigs.ss_core || coreConfigs.ss_core;
+    
     const hasConfig = !!(storedGasUrl && storedSsId);
     setHasConfig(hasConfig);
     if (storedGasUrl) setGasUrl(storedGasUrl);
     if (storedSsId) setCoreSsId(storedSsId);
     setShowConfig(!hasConfig);
     
-    getCongregationName(storedGasUrl, storedSsId).then(setCongregationName);
-  }, []);
-
-  useEffect(() => {
-    if (username && password && !loading && step === 'password' && !hasAutocompleteSubmitted) {
-      setHasAutocompleteSubmitted(true);
-      handlePasswordStep();
+    // Get congregation name from localStorage (no API call)
+    const storedName = publicConfigs.nombre_mostrar || coreConfigs.nombre_mostrar;
+    if (storedName) {
+      setCongregationName(storedName);
     }
-  }, [username, password]);
+  }, []);
 
   const getStatusMessage = () => {
     if (loading) {
@@ -141,23 +160,25 @@ export default function Login() {
 
   const handleSaveConfig = () => {
     if (!gasUrl.trim()) {
-      setError('Ingrese la URL del Google Apps Script');
+      setError('Ingresá la URL del Google Apps Script');
       return;
     }
     if (!coreSsId.trim()) {
-      setError('Ingrese el ID de la hoja de cálculo');
+      setError('Ingresá el ID de la hoja de cálculo');
       return;
     }
-    localStorage.setItem(API_URL_KEY, gasUrl.trim());
-    localStorage.setItem(SS_ID_KEY, coreSsId.trim());
+    setConfig('gas_url', gasUrl.trim(), true);
+    setConfig('ss_core', coreSsId.trim(), true);
     setHasConfig(true);
     setShowConfig(false);
     setError(null);
   };
 
   const handleClearConfig = () => {
-    localStorage.removeItem(API_URL_KEY);
-    localStorage.removeItem(SS_ID_KEY);
+    localStorage.removeItem(`${PUBLIC_PREFIX}gas_url`);
+    localStorage.removeItem(`${PUBLIC_PREFIX}ss_core`);
+    localStorage.removeItem(`${CORE_PREFIX}gas_url`);
+    localStorage.removeItem(`${CORE_PREFIX}ss_core`);
     localStorage.removeItem('congre_admin_session_token');
     localStorage.removeItem('congre_admin_user_data');
     setHasConfig(false);
@@ -168,20 +189,55 @@ export default function Login() {
     setPassword('');
   };
 
+  // Menu handlers
+  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
+    setMenuAnchor(event.currentTarget);
+  };
+
+  const handleMenuClose = () => {
+    setMenuAnchor(null);
+  };
+
+  const handleResetData = () => {
+    handleMenuClose();
+    setResetDialogOpen(true);
+  };
+
+  const handleConfirmReset = () => {
+    localStorage.clear();
+    // Clear cookies
+    document.cookie.split(';').forEach((c) => {
+      document.cookie = c.replace(/^ +/, '').replace(/=.*/, '=;expires=' + new Date().toUTCString() + ';path=/');
+    });
+    setResetDialogOpen(false);
+    window.location.reload();
+  };
+
+  const handleNewInstall = () => {
+    handleMenuClose();
+    setNewInstallDialogOpen(true);
+  };
+
+  const handleConfirmNewInstall = () => {
+    setNewInstallDialogOpen(false);
+    localStorage.clear();
+    navigate('/admin/setup');
+  };
+
   const handlePasswordStep = async () => {
     if (!username.trim()) {
-      setError('Ingrese su usuario');
+      setError('Ingresá tu usuario');
       return;
     }
     if (!password) {
-      setError('Ingrese su contraseña');
+      setError('Ingresá tu contraseña');
       return;
     }
 
-    const apiUrl = localStorage.getItem(API_URL_KEY);
+    const apiUrl = getConfig('gas_url');
     if (!apiUrl) {
       setShowConfig(true);
-      setError('Debe configurar la conexión primero');
+      setError('Tenés que configurar la conexión primero');
       return;
     }
 
@@ -231,7 +287,7 @@ export default function Login() {
     if (method === 'passkey') {
       await handlePasskeyLogin();
     } else if (method === 'email_otp') {
-      const apiUrl = localStorage.getItem(API_URL_KEY);
+      const apiUrl = getConfig('gas_url');
       if (!apiUrl) {
         setError('API URL no configurada');
         return;
@@ -274,7 +330,7 @@ export default function Login() {
 
   const handleCodeSubmit = async () => {
     if (!code.trim()) {
-      setError('Ingrese el código');
+      setError('Ingresá el código');
       return;
     }
 
@@ -307,7 +363,7 @@ export default function Login() {
     setStep('passkey');
 
     try {
-      const apiUrl = localStorage.getItem(API_URL_KEY);
+      const apiUrl = getConfig('gas_url');
       if (!apiUrl) {
         throw new Error('API URL no configurada');
       }
@@ -444,7 +500,7 @@ export default function Login() {
 
   const handleForgotPassword = async () => {
     if (!forgotPasswordEmail.trim()) {
-      setError('Ingrese su email o nombre de usuario');
+      setError('Ingresá tu email o nombre de usuario');
       return;
     }
 
@@ -470,7 +526,7 @@ export default function Login() {
 
   const getStepTitle = () => {
     switch (step) {
-      case 'password': return 'Iniciar Sesión';
+      case 'password': return 'Iniciar sesión';
       case 'method': return 'Seleccione método';
       case 'totp': return 'Código TOTP';
       case 'email_otp': return 'Código del email';
@@ -480,11 +536,11 @@ export default function Login() {
 
   const getStepSubtitle = () => {
     switch (step) {
-      case 'password': return 'Ingrese sus credenciales';
-      case 'method': return 'Elija cómo verificar su identidad';
-      case 'totp': return 'Ingrese el código de su app autenticadora';
-      case 'email_otp': return 'Revise su bandeja de entrada';
-      case 'passkey': return 'Use su dispositivo para autenticarse';
+      case 'password': return 'Ingresá tus credenciales';
+      case 'method': return 'Elegí cómo verificar tu identidad';
+      case 'totp': return 'Ingresá el código de tu app autenticadora';
+      case 'email_otp': return 'Revisá tu bandeja de entrada';
+      case 'passkey': return 'Usá tu dispositivo para autenticarte';
     }
   };
 
@@ -510,36 +566,114 @@ export default function Login() {
           {getStepTitle()}
         </Typography>
 
+        {/* Error Alert */}
         {error && (
           <Alert severity="error" sx={{ mb: 3 }}>
             {error}
           </Alert>
         )}
 
+        {/* Status Message */}
         {getStatusMessage() && (
           <Alert severity="info" sx={{ mb: 3 }}>
             {getStatusMessage()}
           </Alert>
         )}
 
-        <Box sx={{ mb: 2, textAlign: 'center' }}>
+        {/* Main Login Form */}
+        {step === 'password' && (
+          <>
+            <TextField
+              fullWidth
+              label="Usuario"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              sx={{ mb: 2 }}
+              autoFocus
+              autoComplete="username"
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Person />
+                  </InputAdornment>
+                ),
+              }}
+            />
+            <TextField
+              fullWidth
+              label="Contraseña"
+              type={showPassword ? 'text' : 'password'}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              sx={{ mb: 3 }}
+              autoComplete="current-password"
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Lock />
+                  </InputAdornment>
+                ),
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      onClick={() => setShowPassword(!showPassword)}
+                      edge="end"
+                    >
+                      {showPassword ? <VisibilityOff /> : <Visibility />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
+            />
+            <Button
+              variant="contained"
+              onClick={handlePasswordStep}
+              disabled={loading}
+              fullWidth
+            >
+              {loading ? <CircularProgress size={24} /> : 'Iniciar sesión'}
+            </Button>
+          </>
+        )}
+
+        {/* Más Opciones Menu */}
+        <Box sx={{ mt: 2, textAlign: 'center' }}>
           <Button
-            size="small"
             variant="text"
-            color="secondary"
-            onClick={() => {
-              if (confirm('¿Está seguro de borrar todos los datos y comenzar de nuevo? Esto cerrará su sesión.')) {
-                localStorage.clear();
-                window.location.href = '/admin/setup';
-              }
-            }}
+            size="small"
+            onClick={handleMenuOpen}
+            startIcon={<MoreVert />}
           >
-            Reiniciar instalación
+            Más opciones
           </Button>
+          <Menu
+            anchorEl={menuAnchor}
+            open={Boolean(menuAnchor)}
+            onClose={handleMenuClose}
+          >
+            <MenuItem onClick={() => { handleMenuClose(); setForgotPasswordOpen(true); }}>
+              <ListItemIcon><Key fontSize="small" /></ListItemIcon>
+              <ListItemText>Recuperar contraseña</ListItemText>
+            </MenuItem>
+            <MenuItem onClick={() => { handleMenuClose(); setShowConfigFields(!showConfigFields); }}>
+              <ListItemIcon><Settings fontSize="small" /></ListItemIcon>
+              <ListItemText>Cambiar datos de conexión</ListItemText>
+            </MenuItem>
+            <MenuItem onClick={handleResetData}>
+              <ListItemIcon><RestartAlt fontSize="small" /></ListItemIcon>
+              <ListItemText>Reestablecer datos de conexión</ListItemText>
+            </MenuItem>
+            <MenuItem onClick={handleNewInstall}>
+              <ListItemIcon><RocketLaunch fontSize="small" /></ListItemIcon>
+              <ListItemText>Desplegar instalación nueva</ListItemText>
+            </MenuItem>
+          </Menu>
         </Box>
 
-        <Collapse in={showConfig}>
-          <Box sx={{ mb: 3 }}>
+        {/* Config Fields (toggled from menu) */}
+        <Collapse in={showConfigFields || !hasConfig}>
+          <Box sx={{ mt: 2, mb: 2 }}>
+            <Divider sx={{ my: 2 }} />
             <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 2 }}>
               Configuración de conexión
             </Typography>
@@ -560,7 +694,7 @@ export default function Login() {
             />
             <TextField
               fullWidth
-              label="ID de Hoja de Cálculo (Core)"
+              label="ID de hoja de cálculo (Core)"
               placeholder="1abc123..."
               value={coreSsId}
               onChange={(e) => setCoreSsId(e.target.value)}
@@ -576,91 +710,28 @@ export default function Login() {
             <Button
               fullWidth
               variant="contained"
-              onClick={handleSaveConfig}
+              onClick={() => {
+                if (!gasUrl.trim()) {
+                  setError('Ingresá la URL del Google Apps Script');
+                  return;
+                }
+                if (!coreSsId.trim()) {
+                  setError('Ingresá el ID de la hoja de cálculo');
+                  return;
+                }
+                setConfig('gas_url', gasUrl.trim(), true);
+                setConfig('ss_core', coreSsId.trim(), true);
+                setHasConfig(true);
+                setShowConfigFields(false);
+                setError(null);
+              }}
               disabled={loading}
               startIcon={<Settings />}
             >
-              Guardar Configuración
+              Guardar configuración
             </Button>
           </Box>
         </Collapse>
-
-        {hasConfig && !showConfig && (
-          <Alert severity="info" sx={{ mb: 3 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Typography variant="body2">
-                Configuración activa
-              </Typography>
-              <Button size="small" onClick={handleClearConfig}>
-                Cambiar
-              </Button>
-            </Box>
-          </Alert>
-        )}
-
-        {step === 'password' && (
-          <>
-            <TextField
-              fullWidth
-              label="Usuario"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              sx={{ mb: 2 }}
-              autoFocus
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <Person />
-                  </InputAdornment>
-                ),
-              }}
-            />
-            <TextField
-              fullWidth
-              label="Contraseña"
-              type={showPassword ? 'text' : 'password'}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              sx={{ mb: 3 }}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <Lock />
-                  </InputAdornment>
-                ),
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton
-                      onClick={() => setShowPassword(!showPassword)}
-                      edge="end"
-                    >
-                      {showPassword ? <VisibilityOff /> : <Visibility />}
-                    </IconButton>
-                  </InputAdornment>
-                ),
-              }}
-              onKeyDown={(e) => e.key === 'Enter' && handlePasswordStep()}
-            />
-            <Button
-              variant="contained"
-              onClick={handlePasswordStep}
-              disabled={loading}
-              fullWidth
-            >
-              {loading ? <CircularProgress size={24} /> : 'Continuar'}
-            </Button>
-            <Box sx={{ mt: 2, textAlign: 'center' }}>
-              <Link
-                component="button"
-                variant="body2"
-                onClick={() => setForgotPasswordOpen(true)}
-                sx={{ cursor: 'pointer' }}
-              >
-                ¿Olvidó su contraseña?
-              </Link>
-            </Box>
-          </>
-        )}
 
         {step === 'method' && showMethodSelection && (
           <>
@@ -730,7 +801,7 @@ export default function Login() {
           <>
             <Box sx={{ mb: 3, textAlign: 'center' }}>
               <Button variant="outlined" onClick={handleShowMethodSelection}>
-                Cambiar método de autenticación
+                Cambiar método
               </Button>
             </Box>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
@@ -793,7 +864,7 @@ export default function Login() {
           <>
             <Box sx={{ mb: 3, textAlign: 'center' }}>
               <Button variant="outlined" onClick={handleShowMethodSelection}>
-                Cambiar método de autenticación
+                Cambiar método
               </Button>
             </Box>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
@@ -863,7 +934,7 @@ export default function Login() {
               <>
                 <Fingerprint sx={{ fontSize: 64, mb: 2, color: 'primary.main' }} />
                 <Typography variant="body1" sx={{ mb: 3 }}>
-                  Use su passkey para autenticarse
+                  Usá tu passkey para autenticarte
                 </Typography>
               </>
             )}
@@ -872,22 +943,11 @@ export default function Login() {
                 variant="outlined" 
                 onClick={handleShowMethodSelection}
               >
-                Cambiar método de autenticación
+                Cambiar método
               </Button>
             )}
           </Box>
         )}
-
-        <Box sx={{ mt: 3, textAlign: 'center' }}>
-          <Link
-            component="button"
-            variant="body2"
-            onClick={() => navigate('/admin/setup')}
-            sx={{ cursor: 'pointer' }}
-          >
-            ¿Necesita configurar una nueva congregación?
-          </Link>
-        </Box>
 
         <Dialog open={forgotPasswordOpen} onClose={handleCloseForgotPassword} maxWidth="sm" fullWidth>
           <DialogTitle>Restablecer Contraseña</DialogTitle>
@@ -904,7 +964,7 @@ export default function Login() {
             ) : (
               <>
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  Ingresa tu email o nombre de usuario y te enviaremos instrucciones para restablecer tu contraseña.
+                  Ingresá tu email o nombre de usuario y te vamos a enviar instrucciones para restablecer tu contraseña.
                 </Typography>
                 <TextField
                   fullWidth
@@ -919,7 +979,6 @@ export default function Login() {
                       </InputAdornment>
                     ),
                   }}
-                  onKeyDown={(e) => e.key === 'Enter' && handleForgotPassword()}
                 />
                 {error && (
                   <Alert severity="error" sx={{ mb: 2 }}>
@@ -941,6 +1000,38 @@ export default function Login() {
               </Button>
             </DialogActions>
           )}
+        </Dialog>
+
+        {/* Reset Data Dialog */}
+        <Dialog open={resetDialogOpen} onClose={() => setResetDialogOpen(false)} maxWidth="sm" fullWidth>
+          <DialogTitle>Restablecer datos de conexión</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" color="text.secondary">
+              Esta acción borrará todos los datos almacenados en este navegador, incluyendo sesión, configuración y credenciales guardadas. ¿Está seguro?
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setResetDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={handleConfirmReset} variant="contained" color="warning">
+              Restablecer
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* New Install Dialog */}
+        <Dialog open={newInstallDialogOpen} onClose={() => setNewInstallDialogOpen(false)} maxWidth="sm" fullWidth>
+          <DialogTitle>Desplegar instalación nueva</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" color="text.secondary">
+              Esta acción borrará todos los datos y mostrará el asistente de configuración. ¿Está seguro de que desea continuar?
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setNewInstallDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={handleConfirmNewInstall} variant="contained" color="primary">
+              Desplegar
+            </Button>
+          </DialogActions>
         </Dialog>
       </Paper>
     </Box>

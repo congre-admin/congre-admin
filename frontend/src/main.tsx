@@ -48,23 +48,13 @@ function AppShell() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <Routes>
-          {/* Setup routes - no auth */}
-          <Route path="/setup" element={<AdminApp />} />
-          <Route path="/setup/*" element={<AdminApp />} />
-          <Route path="/setup-totp" element={<AdminApp />} />
-          <Route path="/setup-passkey" element={<AdminApp />} />
-          
-          {/* Public routes - no auth required */}
-          <Route path="/*" element={<AdminApp />} />
-          
-          {/* Admin routes - auth required */}
-          <Route path="/admin/*" element={
-            <AuthProvider>
-              <AdminApp />
-            </AuthProvider>
-          } />
-        </Routes>
+        {/* Wrap everything in AuthProvider so useAuth() works everywhere */}
+        <AuthProvider>
+          <Routes>
+            {/* All routes handled by AdminApp */}
+            <Route path="/*" element={<AdminApp />} />
+          </Routes>
+        </AuthProvider>
       </BrowserRouter>
     </ThemeProvider>
   );

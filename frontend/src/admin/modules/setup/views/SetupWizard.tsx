@@ -187,12 +187,12 @@ export default function SetupWizard() {
 
   const handleInstall = async () => {
     if (!apiUrl.trim()) {
-      setError('Ingrese la URL del Google Apps Script');
+      setError('Ingresá la URL del Google Apps Script');
       return;
     }
 
     if (!nombreCongregacion.trim()) {
-      setError('Ingrese el nombre de la congregación');
+      setError('Ingresá el nombre de la congregación');
       return;
     }
 
@@ -223,6 +223,7 @@ export default function SetupWizard() {
       }
 
       localStorage.setItem(SS_ID_KEY, data.ssId);
+      localStorage.setItem('congre_public_ss_id', data.publicSsId);
       localStorage.setItem('congre_admin_folder_id', data.folderId);
       localStorage.setItem('congre_admin_folder_url', data.folderUrl);
       
@@ -249,7 +250,6 @@ export default function SetupWizard() {
         'numero_congregacion': numeroCongregacion,
         'nombre_mostrar': nombreMostrar.trim() || `Co. ${nombreCongregacion}`,
         'ss_publico': publicSsId,
-        'linked_public_ss': publicSsId,
         'ss_core': coreSsId,
         'gas_url': apiUrl
       };
@@ -327,18 +327,18 @@ export default function SetupWizard() {
 
   const handleCreateAdmin = async () => {
     if (!adminUsername.trim() || !adminPassword.trim()) {
-      setError('Ingrese usuario y contraseña');
+      setError('Ingresá usuario y contraseña');
       return;
     }
 
     // Email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!adminEmail.trim() || !emailRegex.test(adminEmail)) {
-      setError('Ingrese un email válido');
+      setError('Ingresá un email válido');
       return;
     }
 
-    // Password complexity validation
+      // Password complexity validation
     const pwRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^a-zA-Z0-9]).{8,128}$/;
     if (!pwRegex.test(adminPassword)) {
       setError('La contraseña debe tener: 8+ caracteres, mayúscula, minúscula, número y carácter especial');
@@ -356,8 +356,16 @@ export default function SetupWizard() {
         return;
       }
       
+      // Check Web Crypto API availability
+      if (!window.crypto || !window.crypto.subtle) {
+        throw new Error('API de cifrado no disponible en este navegador');
+      }
+      
+      console.log('Generating master key...');
       const masterKey = await generateMasterKey();
+      console.log('Wrapping master key...');
       const { wrapped_mk } = await wrapMasterKey(masterKey, adminPassword);
+      console.log('Wrapped MK:', wrapped_mk ? 'success' : 'failed');
       
       const data = await fetchApi(storedApiUrl, {
         method: 'POST',
@@ -367,7 +375,7 @@ export default function SetupWizard() {
             username: adminUsername,
             email: adminEmail,
             password: adminPassword,
-            perfilId: 'p_admin',
+            perfilIds: ['p_admin'],
             wrapped_mk,
             ssId: localStorage.getItem(SS_ID_KEY)
           }
@@ -381,6 +389,7 @@ export default function SetupWizard() {
       setRegisteredWrappedMk(wrapped_mk);
       setActiveStep(2); // Go to backup step
     } catch (err) {
+      console.error('Admin creation error:', err);
       setError(err instanceof Error ? err.message : 'Error al crear usuario');
     } finally {
       setLoading(false);
@@ -440,12 +449,12 @@ export default function SetupWizard() {
         Respaldo de Seguridad
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        Cree una contraseña de respaldo diferente a su contraseña de acceso. 
-        Este archivo le permitirá restaurar su clave maestra si la pierde.
+        Creá una contraseña de respaldo diferente a tu contraseña de acceso. 
+        Este archivo te va a permitir restaurar tu clave maestra si la perdés.
       </Typography>
 
       <Alert severity="warning" sx={{ mb: 3 }}>
-        Guarde este archivo en un lugar seguro. Sin la contraseña de respaldo no podrá restaurar sus datos.
+        Guardá este archivo en un lugar seguro. Sin la contraseña de respaldo no vas a poder restaurar tus datos.
       </Alert>
 
       {!backupCreated ? (
@@ -510,7 +519,7 @@ export default function SetupWizard() {
               Configurar Conexión al Backend
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-              Ingrese la URL de su Google Apps Script (archivo api.gs desplegado como Web App)
+              Ingresá la URL de tu Google Apps Script (archivo api.gs desplegado como Web App)
             </Typography>
 
             <Paper variant="outlined" sx={{ mb: 3 }}>

@@ -1,5 +1,6 @@
 import { dataService } from './dataService';
 import { cacheService } from '../cache/cacheService';
+import { getConfig } from '../utils/settingsCache';
 import type {
   LoginPayload,
   LoginResponse,
@@ -101,32 +102,39 @@ export class AuthService {
     return false;
   }
 
-  async setupTOTP(username: string, password: string): Promise<{ secret: string; otpURI: string }> {
+  async setupTOTP(username: string, password: string, sessionToken?: string): Promise<{ secret: string; otpURI: string }> {
     const result = await dataService.request<{ secret: string; otpURI: string }>('setupTOTP', {
       username,
       password,
+      sessionToken,
     });
     return result;
   }
 
-  async confirmTOTP(username: string, code: string): Promise<ApiResponse> {
-    return dataService.request<ApiResponse>('confirmTOTP', { username, code });
+  async confirmTOTP(username: string, code: string, sessionToken?: string): Promise<ApiResponse> {
+    return dataService.request<ApiResponse>('confirmTOTP', { username, code, sessionToken });
   }
 
-  async setupPasskey(username: string, deviceName: string): Promise<{ challenge: string; rp: { name: string } }> {
+  async setupPasskey(username: string, deviceName: string, sessionToken?: string, origin?: string): Promise<{ challenge: string; rp: { name: string } }> {
     const result = await dataService.request<{ challenge: string; rp: { name: string } }>('setupPasskey', {
       username,
       deviceName,
+      sessionToken,
+      origin,
     });
     return result;
   }
 
-  async confirmPasskey(username: string, attestation: any): Promise<ApiResponse> {
-    return dataService.request<ApiResponse>('confirmPasskey', { username, attestation });
+  async confirmPasskey(username: string, attestation: any, sessionToken?: string): Promise<ApiResponse> {
+    return dataService.request<ApiResponse>('confirmPasskey', { username, attestation, sessionToken });
   }
 
   async deletePasskey(passkeyId: string): Promise<ApiResponse> {
     return dataService.request<ApiResponse>('deletePasskey', { passkeyId });
+  }
+
+  async disableTOTP(sessionToken?: string): Promise<ApiResponse> {
+    return dataService.request<ApiResponse>('disableTOTP', { sessionToken });
   }
 
   async changePassword(oldPassword: string, newPassword: string): Promise<ApiResponse> {
@@ -183,6 +191,33 @@ export class AuthService {
 
   async disableRecovery(): Promise<ApiResponse> {
     return dataService.request<ApiResponse>('disableRecovery');
+  }
+
+  async sendEmail(
+    templateKey: string,
+    to: string,
+    vars: Record<string, string> = {},
+    locale: string = 'es'
+  ): Promise<ApiResponse> {
+    // Auto-add displayName from congregation settings
+    const displayName = getConfig('nombre_mostrar') || getConfig('nombre') || 'CongreAdmin';
+    const allVars = { ...vars, displayName };
+    
+    // Get template from frontend (i18n support)
+    const template = getEmailTemplate(templateKey, locale);
+    if (!template) {
+      return { success: false, error: 'ERR_TEMPLATE_NOT_FOUND' };
+    }
+    const { subject, body } = interpolateTemplate(template, allVars);
+    
+    return dataService.request<ApiResponse>('sendEmail', {
+      templateKey,
+      to,
+      vars: allVars,
+      locale,
+      subject,
+      body,
+    });
   }
 }
 

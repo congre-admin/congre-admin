@@ -14,6 +14,7 @@ import {
   Campaign as CampaignIcon,
 } from '@mui/icons-material';
 import { parseCsvToJson } from '@/utils/csvUtils';
+import { setConfigs, getConfig } from '@/utils/settingsCache';
 
 const PUBLIC_SS_ID_KEY = 'congre_public_ss_id';
 
@@ -90,6 +91,11 @@ export default function PublicHome() {
           } catch { /* ignore */ }
         }
         
+        // Fallback: tema_color as simple string
+        if (clave === 'tema_color' && !temaColor) {
+          temaColor = valor;
+        }
+        
         // icon_config is a JSON object with icon data - extract URL if available
         if (clave === 'icon_config') {
           try {
@@ -98,12 +104,15 @@ export default function PublicHome() {
             iconoUrl = iconConfig.url || iconConfig.text || undefined;
           } catch { /* ignore */ }
         }
+        
+        // Fallback: icono_url as simple string
+        if (clave === 'icono_url' && !iconoUrl) {
+          iconoUrl = valor;
+        }
       }
       
-      // Store each config key as its own localStorage entry
-      for (const [key, value] of Object.entries(publicConfig)) {
-        localStorage.setItem(`congre_public_${key}`, value);
-      }
+      // Store each config key using the unified settings cache
+      setConfigs(publicConfig, true);
       
       if (temaColor) {
         document.documentElement.style.setProperty('--theme-primary', temaColor);

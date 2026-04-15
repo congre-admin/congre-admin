@@ -1,5 +1,6 @@
 import { cacheService } from '../cache/cacheService';
 import { jsonataService } from './jsonataService';
+import { getConfig, setConfig } from '../utils/settingsCache';
 import type {
   ApiResponse,
   GetDataOptions,
@@ -53,7 +54,6 @@ const ERROR_MESSAGES: Record<string, string> = {
 };
 
 const SESSION_TOKEN_KEY = 'congre_admin_session_token';
-const ADMIN_SS_ID_KEY = 'congre_admin_ss_id';
 const FOLDER_ID_KEY = 'congre_admin_folder_id';
 const MODULE_MAP_KEY = 'congre_module_map';
 
@@ -65,7 +65,7 @@ export class DataService {
   private _inFlight = new Map<string, Promise<any>>();
 
   constructor() {
-    this.apiUrl = localStorage.getItem('congre_admin_api_url');
+    this.apiUrl = getConfig('gas_url');
   }
 
   private normalizeUrl(input: string): string {
@@ -78,7 +78,7 @@ export class DataService {
 
   setApiUrl(url: string): void {
     this.apiUrl = url;
-    localStorage.setItem('congre_admin_api_url', url);
+    setConfig('gas_url', url, true);
   }
 
   getApiUrl(): string | null {
@@ -93,13 +93,13 @@ export class DataService {
         this._moduleMap = {};
       }
     }
-    if (ssId === localStorage.getItem(ADMIN_SS_ID_KEY)) return 'core';
+    if (ssId === getConfig('ss_core')) return 'core';
     return this._moduleMap?.[ssId] || null;
   }
 
   async refreshModuleMap(): Promise<void> {
     this._moduleMap = null;
-    const coreSsId = localStorage.getItem(ADMIN_SS_ID_KEY);
+    const coreSsId = getConfig('ss_core');
     if (!coreSsId) return;
 
     try {
@@ -125,7 +125,7 @@ export class DataService {
     const cached = cacheService.getModuleSsId(moduleOrSsId);
     if (cached) return cached;
 
-    const coreSsId = localStorage.getItem(ADMIN_SS_ID_KEY);
+    const coreSsId = getConfig('ss_core');
     if (!coreSsId) {
       throw new Error('CORE_SS_ID not configured');
     }
@@ -158,14 +158,14 @@ export class DataService {
   }
 
   private async _doRequest<T = any>(action: string, payload: Record<string, any> = {}, accessMode?: 'admin' | 'public'): Promise<T> {
-    this.apiUrl = localStorage.getItem('congre_admin_api_url') || this.apiUrl;
+    this.apiUrl = getConfig('gas_url') || this.apiUrl;
     
     if (!this.apiUrl) {
       throw new Error('API URL not configured');
     }
-
+    
     const sessionToken = localStorage.getItem(SESSION_TOKEN_KEY);
-    const coreSsId = localStorage.getItem(ADMIN_SS_ID_KEY);
+    const coreSsId = getConfig('ss_core');
     const requestSsId = payload.ssId || coreSsId;
 
     const body: Record<string, any> = {
@@ -447,12 +447,15 @@ export class DataService {
     isPublic = false
   ): Promise<ApiResponse> {
     const existing = await this.getConfig(key, ssId);
-    return this.saveData('Configuracion', ssId, {
+    const op: BatchOp = {
+      sheet: 'Configuracion',
+      op: existing ? 'update' : 'create',
       ...(existing || {}),
       clave: key,
       valor: value,
-      is_public: isPublic,
-    });
+      is_public: isPublic ? 'true' : 'false',
+    };
+    return this.batchExecute([op], { ssId });
   }
 
   // --- File Operations ---

@@ -1,20 +1,20 @@
 import { useState } from 'react';
 import {
   Dialog,
-  DialogTitle,
   DialogContent,
-  DialogActions,
   Button,
   TextField,
   Typography,
   Box,
-  Alert,
-  Link,
+  Menu,
+  MenuItem,
+  ListItemIcon,
+  ListItemText,
 } from '@mui/material';
 import {
-  Business as BusinessIcon,
-  Link as LinkIcon,
-  HelpOutline as HelpIcon,
+  Key as KeyIcon,
+  MoreVert as MoreVertIcon,
+  RocketLaunch as RocketLaunchIcon,
 } from '@mui/icons-material';
 
 const PUBLIC_SS_ID_KEY = 'congre_public_ss_id';
@@ -28,7 +28,8 @@ interface PublicSSIDModalProps {
 export default function PublicSSIDModal({ open, onClose, onSetupWizard }: PublicSSIDModalProps) {
   const [ssidInput, setSsidInput] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [showSetupConfirm, setShowSetupConfirm] = useState(false);
+  const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
+  const [newInstallDialogOpen, setNewInstallDialogOpen] = useState(false);
 
   const extractSsId = (input: string): string | null => {
     const trimmed = input.trim();
@@ -56,7 +57,7 @@ export default function PublicSSIDModal({ open, onClose, onSetupWizard }: Public
     const ssid = extractSsId(ssidInput);
     
     if (!ssid) {
-      setError('Por favor ingresa un ID de hoja de cálculo o URL válida de Google Sheets');
+      setError('Ingresá un código válido');
       return;
     }
     
@@ -69,18 +70,23 @@ export default function PublicSSIDModal({ open, onClose, onSetupWizard }: Public
     window.location.reload();
   };
 
-  const handleSetupClick = () => {
-    setShowSetupConfirm(true);
+  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
+    setMenuAnchor(event.currentTarget);
   };
 
-  const handleSetupConfirm = () => {
-    setShowSetupConfirm(false);
-    // Navigate to admin setup
+  const handleMenuClose = () => {
+    setMenuAnchor(null);
+  };
+
+  const handleNewInstall = () => {
+    handleMenuClose();
+    setNewInstallDialogOpen(true);
+  };
+
+  const handleConfirmNewInstall = () => {
+    setNewInstallDialogOpen(false);
+    localStorage.clear();
     window.location.href = '/admin/setup';
-  };
-
-  const handleSetupCancel = () => {
-    setShowSetupConfirm(false);
   };
 
   return (
@@ -88,26 +94,25 @@ export default function PublicSSIDModal({ open, onClose, onSetupWizard }: Public
       <Dialog 
         open={open} 
         onClose={onClose}
-        maxWidth="sm"
+        maxWidth="xs"
         fullWidth
         disableEscapeKeyDown
       >
-        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <BusinessIcon color="primary" />
-          Configurar hoja pública
-        </DialogTitle>
-        
-        <DialogContent>
+        <DialogContent sx={{ textAlign: 'center', py: 4, px: 3 }}>
+          <KeyIcon sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
+          
+          <Typography variant="h6" gutterBottom>
+            Ingresá el código de tu congregación
+          </Typography>
+          
           <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-            Para ver la información pública de una congregación, ingresa el ID o enlace 
-            de su hoja de cálculo de Google Sheets.
+            Para ver el tablero de tu congregación, necesitás ingresar el código.
           </Typography>
           
           <TextField
             autoFocus
             fullWidth
-            label="ID o URL de Google Sheets"
-            placeholder="https://docs.google.com/spreadsheets/d/..."
+            placeholder="Código de tu congregación"
             value={ssidInput}
             onChange={(e) => {
               setSsidInput(e.target.value);
@@ -115,72 +120,69 @@ export default function PublicSSIDModal({ open, onClose, onSetupWizard }: Public
             }}
             error={!!error}
             helperText={error}
-            InputProps={{
-              startAdornment: <LinkIcon sx={{ mr: 1, color: 'text.secondary' }} />,
-            }}
-            sx={{ mb: 2 }}
+            sx={{ mb: 3 }}
           />
           
-          <Alert severity="info" icon={<HelpIcon />}>
-            <Typography variant="body2">
-              ¿No conoces el enlace? Pregunta a un anciano de tu congregación 
-              para que te proporcione el enlace a la hoja pública.
-            </Typography>
-          </Alert>
-        </DialogContent>
-        
-        <DialogActions sx={{ px: 3, pb: 2, justifyContent: 'space-between' }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            Si no conocés el código, podés pedirle a un anciano de tu congregación que te envíe el enlace correcto.
+          </Typography>
+          
           <Button 
-            variant="text" 
-            onClick={handleSetupClick}
-            sx={{ color: 'text.secondary' }}
+            variant="contained" 
+            onClick={handleSubmit}
+            disabled={!ssidInput.trim()}
+            fullWidth
+            size="large"
           >
-            Configurar nueva congregación
+            Aceptar
           </Button>
           
-          <Box>
-            <Button onClick={onClose} sx={{ mr: 1 }}>
-              Cancelar
-            </Button>
-            <Button 
-              variant="contained" 
-              onClick={handleSubmit}
-              disabled={!ssidInput.trim()}
+          <Box sx={{ mt: 2 }}>
+            <Button
+              variant="text"
+              size="small"
+              onClick={handleMenuOpen}
+              startIcon={<MoreVertIcon />}
             >
-              Aceptar
+              Más opciones
             </Button>
+            <Menu
+              anchorEl={menuAnchor}
+              open={Boolean(menuAnchor)}
+              onClose={handleMenuClose}
+            >
+              <MenuItem onClick={handleNewInstall}>
+                <ListItemIcon><RocketLaunchIcon fontSize="small" /></ListItemIcon>
+                <ListItemText>Desplegar instalación nueva</ListItemText>
+              </MenuItem>
+            </Menu>
           </Box>
-        </DialogActions>
+        </DialogContent>
       </Dialog>
 
-      {/* Setup confirmation dialog */}
+      {/* New Install Dialog */}
       <Dialog 
-        open={showSetupConfirm} 
-        onClose={handleSetupCancel}
+        open={newInstallDialogOpen} 
+        onClose={() => setNewInstallDialogOpen(false)}
         maxWidth="xs"
         fullWidth
       >
-        <DialogTitle>
-          ¿Configurar nueva congregación?
-        </DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" color="text.secondary">
-            Esto abrirá el asistente de configuración para crear una nueva congregación. 
-            ¿Estás seguro de que deseas continuar?
+        <DialogContent sx={{ textAlign: 'center', py: 3 }}>
+          <Typography variant="body1" sx={{ mb: 2 }}>
+            Desplegar instalación nueva
           </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            Esta acción va a borrar todos los datos y mostrar el asistente de configuración. ¿Estás seguro de que querés continuar?
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
+            <Button onClick={() => setNewInstallDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleConfirmNewInstall} variant="contained" color="warning">
+              Desplegar
+            </Button>
+          </Box>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={handleSetupCancel}>
-            Cancelar
-          </Button>
-          <Button 
-            variant="contained" 
-            color="primary"
-            onClick={handleSetupConfirm}
-          >
-            Sí, continuar
-          </Button>
-        </DialogActions>
       </Dialog>
     </>
   );

@@ -26,6 +26,7 @@ import {
 } from '@mui/icons-material';
 import { useAuth } from '../../../core/context/AuthContext';
 import { dataService } from '@/services/dataService';
+import type { BatchOp } from '@/services/dataService';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Page from '@/admin/core/components/Page';
 
@@ -130,10 +131,12 @@ export default function AdminPlugins() {
     try {
       const existing = installedPlugins?.find(p => p.plugin_id === pluginId);
       if (existing) {
-        await dataService.saveData('Registro_Plugins', coreSsId, {
+        await dataService.batchExecute([{
+          sheet: 'Registro_Plugins',
+          op: 'update',
           ...existing,
           status: enabled ? 'active' : 'inactive',
-        }, sessionToken);
+        }], { ssId: coreSsId });
       }
       queryClient.invalidateQueries({ queryKey: ['plugins', coreSsId] });
     } catch (err) {
@@ -150,34 +153,44 @@ export default function AdminPlugins() {
     try {
       const pluginId = installDialog.plugin.id;
       const existing = installedPlugins?.find(p => p.plugin_id === pluginId);
+      const field = installDialog.plugin.ssIdField;
       
+      // Get current settings for SSID update
+      const currentSettings = await dataService.getData<Record<string, string>[]>('Configuracion', coreSsId);
+      const settingsOps: BatchOp[] = [];
+      
+      // Update or create plugin registration
       if (existing) {
-        // Update existing
-        await dataService.saveData('Registro_Plugins', coreSsId, {
+        settingsOps.push({
+          sheet: 'Registro_Plugins',
+          op: 'update',
           ...existing,
           ssId: newSsId,
           status: 'active',
-        }, sessionToken);
+        });
       } else {
-        // Create new
-        await dataService.saveData('Registro_Plugins', coreSsId, {
+        settingsOps.push({
+          sheet: 'Registro_Plugins',
+          op: 'create',
           plugin_id: pluginId,
           ssId: newSsId,
           status: 'active',
           config: '{}',
           _v: 1,
-        }, sessionToken);
+        });
       }
       
       // Also save the SSID to settings
-      const field = installDialog.plugin.ssIdField;
-      const currentSettings = await dataService.getData<Record<string, string>[]>('Configuracion', coreSsId);
       if (currentSettings?.[0]) {
-        await dataService.saveData('Configuracion', coreSsId, {
+        settingsOps.push({
+          sheet: 'Configuracion',
+          op: 'update',
           ...currentSettings[0],
           [field]: newSsId,
-        }, sessionToken);
+        });
       }
+      
+      await dataService.batchExecute(settingsOps, { ssId: coreSsId, mode: 'fail-fast' });
       
       queryClient.invalidateQueries({ queryKey: ['plugins', coreSsId] });
       queryClient.invalidateQueries({ queryKey: ['settings', coreSsId] });
@@ -195,11 +208,13 @@ export default function AdminPlugins() {
     if (!coreSsId || !sessionToken) return;
     
     try {
-      await dataService.saveData('Registro_Plugins', coreSsId, {
+      await dataService.batchExecute([{
+        sheet: 'Registro_Plugins',
+        op: 'update',
         plugin_id: pluginId,
         ssId: '',
         status: 'inactive',
-      }, sessionToken);
+      }], { ssId: coreSsId });
       
       queryClient.invalidateQueries({ queryKey: ['plugins', coreSsId] });
     } catch (err) {

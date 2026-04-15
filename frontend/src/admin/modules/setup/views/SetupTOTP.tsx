@@ -16,21 +16,7 @@ import {
 import { Security, CheckCircle } from '@mui/icons-material';
 import QRCode from 'qrcode';
 import { useAuth } from '../../../core/context/AuthContext';
-
-const API_URL_KEY = 'congre_admin_api_url';
-
-async function fetchApi(url: string, options?: RequestInit) {
-  const response = await fetch(url, {
-    ...options,
-    mode: 'cors',
-    redirect: 'follow',
-    headers: {
-      'Content-Type': 'text/plain;charset=utf-8',
-      ...options?.headers,
-    },
-  });
-  return response.json();
-}
+import { authService } from '@/services/authService';
 
 export default function SetupTOTP() {
   const navigate = useNavigate();
@@ -74,32 +60,8 @@ export default function SetupTOTP() {
     setError(null);
 
     try {
-      const apiUrl = localStorage.getItem(API_URL_KEY);
-      if (!apiUrl) {
-        throw new Error('API URL no configurada');
-      }
+      const data = await authService.setupTOTP(username, password, sessionToken);
       
-      const payload: Record<string, string> = { username };
-      
-      if (isAuthenticated && sessionToken) {
-        payload.sessionToken = sessionToken;
-      } else {
-        payload.password = password;
-      }
-      
-      const ssId = localStorage.getItem('congre_admin_ss_id');
-      if (ssId) {
-        payload.ssId = ssId;
-      }
-      
-      const data = await fetchApi(apiUrl, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'setupTOTP',
-          payload
-        })
-      });
-
       if (!data.success) {
         throw new Error(data.error || 'Error al generar TOTP');
       }
@@ -118,7 +80,7 @@ export default function SetupTOTP() {
 
   const handleVerifyTOTP = async () => {
     if (!code.trim() || code.length !== 6) {
-      setError('Ingrese un código de 6 dígitos');
+      setError('Ingresá un código de 6 dígitos');
       return;
     }
 
@@ -126,31 +88,7 @@ export default function SetupTOTP() {
     setError(null);
 
     try {
-      const apiUrl = localStorage.getItem(API_URL_KEY);
-      if (!apiUrl) {
-        throw new Error('API URL no configurada');
-      }
-      
-      const payload: Record<string, string> = { username, code };
-      
-      if (isAuthenticated && sessionToken) {
-        payload.sessionToken = sessionToken;
-      } else {
-        payload.password = password;
-      }
-      
-      const ssId = localStorage.getItem('congre_admin_ss_id');
-      if (ssId) {
-        payload.ssId = ssId;
-      }
-      
-      const data = await fetchApi(apiUrl, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'confirmTOTP',
-          payload
-        })
-      });
+      const data = await authService.confirmTOTP(username, code, sessionToken);
 
       if (!data.success) {
         throw new Error(data.error || 'Error al verificar código');
@@ -176,20 +114,7 @@ export default function SetupTOTP() {
     setError(null);
 
     try {
-      const apiUrl = localStorage.getItem(API_URL_KEY);
-      if (!apiUrl) {
-        throw new Error('API URL no configurada');
-      }
-      
-      const data = await fetchApi(apiUrl, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'disableTOTP',
-          payload: {
-            sessionToken
-          }
-        })
-      });
+      const data = await authService.disableTOTP(sessionToken);
 
       if (!data.success) {
         throw new Error(data.error || 'Error al desactivar TOTP');
@@ -266,8 +191,8 @@ export default function SetupTOTP() {
         {step === 0 && (
           <Box>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-              Configure la autenticación de dos factores usando Google Authenticator (u otra app compatible).
-              Necesitará su teléfono para escanear el código QR.
+              Configurá la autenticación de dos factores usando Google Authenticator (u otra app compatible).
+              Necesitás tu teléfono para escanear el código QR.
             </Typography>
             
             <Button
@@ -295,7 +220,7 @@ export default function SetupTOTP() {
         {step === 1 && qrCode && (
           <Box sx={{ textAlign: 'center' }}>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Escanee este código QR con su app de autenticación (Google Authenticator, Authy, etc.)
+              Escaneá este código QR con tu app de autenticación (Google Authenticator, Authy, etc.)
             </Typography>
             
             <Box sx={{ mb: 3, display: 'flex', justifyContent: 'center' }}>
@@ -311,7 +236,7 @@ export default function SetupTOTP() {
             <TextField
               fullWidth
               label="Código de verificación"
-              placeholder="Ingrese el código de 6 dígitos"
+              placeholder="Ingresá el código de 6 dígitos"
               value={code}
               onChange={(e) => setCode(e.target.value)}
               inputProps={{ maxLength: 6 }}

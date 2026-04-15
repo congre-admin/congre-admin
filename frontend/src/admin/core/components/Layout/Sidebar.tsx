@@ -30,7 +30,7 @@ import {
 import { alpha } from '@mui/material/styles';
 import { useAuth } from '../../context/AuthContext';
 import { useThemeContext } from '@/core/context/ThemeContext';
-import { getCachedSettings } from '@/utils/settingsCache';
+import { getConfig } from '@/utils/settingsCache';
 import { useMenuConfig, type MenuItem as MenuItemType, type MenuSection, type MenuMode } from '@/admin/core/hooks/useMenuConfig';
 import ShareDialog from '../ShareDialog/ShareDialog';
 
@@ -78,6 +78,8 @@ function SidebarContent({ onNavigate, congregationName, congregationIcon: Congre
       onNavigate('share');
     } else if (item.action === 'logout') {
       onNavigate('logout');
+    } else if (item.action === 'admin') {
+      onNavigate('admin');
     } else if (item.path) {
       onNavigate(item.path);
     }
@@ -256,26 +258,17 @@ export default function AdminSidebar() {
   // This shows simplified menu: Inicio + module stubs → divider → Notificaciones → "Más"
   const mode: MenuMode = isAuthenticated ? 'admin' : 'public';
 
-  // Get congregation name from appropriate config based on mode
-  let congregationName = 'CongreAdmin';
-  if (mode === 'public') {
-    congregationName = localStorage.getItem('congre_public_nombre_mostrar') || 'CongreAdmin';
-  } else {
-    const cached = getCachedSettings();
-    congregationName = cached?.data.nombre_mostrar || cached?.data.nombre_congregacion || 'CongreAdmin';
-  }
-  const publicSsId = localStorage.getItem(PUBLIC_SS_ID_KEY);
+  // Get congregation name - use getConfig which falls back from core to public
+  const congregationName = getConfig('nombre_mostrar') || getConfig('nombre_congregacion') || 'CongreAdmin';
+  
+  // Get public SSID - prefer localStorage, fall back to config
+  const publicSsId = localStorage.getItem(PUBLIC_SS_ID_KEY) || getConfig('ss_publico');
   const shareUrl = `${window.location.origin}/?ssid=${publicSsId || ''}`;
 
-  // Get icon from appropriate config based on mode
+  // Get icon from config using getConfig
   let iconPreviewUrl: string | null = null;
   try {
-    let iconConfigStr: string | null = null;
-    if (mode === 'public') {
-      iconConfigStr = localStorage.getItem('congre_public_icon_config');
-    } else {
-      iconConfigStr = cached?.data.icon_config;
-    }
+    const iconConfigStr = getConfig('icon_config');
     const iconConfig = iconConfigStr ? JSON.parse(iconConfigStr) : null;
     iconPreviewUrl = iconConfig?.sizes?.['32'] || iconConfig?.sizes?.['48'] || null;
   } catch { /* ignore */ }

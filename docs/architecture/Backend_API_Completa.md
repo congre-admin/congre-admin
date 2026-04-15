@@ -1,7 +1,7 @@
 # Congre-Admin: Documentación Técnica del Backend API
 
-> **Versión:** 2.3.0
-> **Última actualización:** 2026-04-11
+> **Versión:** 2.4.0
+> **Última actualización:** 2026-04-14
 > **Archivo fuente:** `backend/src/api.gs`
 > **Plataforma:** Google Apps Script (GAS)
 
@@ -10,6 +10,15 @@
 ## 1. Resumen Ejecutivo
 
 El Backend de Congre-Admin es un proveedor de servicios implementado como Google Apps Script que utiliza Google Sheets como base de datos distribuida. El sistema sigue una arquitectura de **Segmentación Física de Datos** donde cada módulo/plugin tiene su propio spreadsheet.
+
+### Cambios en v2.4
+
+| Cambio | Descripción |
+|--------|-------------|
+| **Sistema de emails con plantillas** | Plantillas multi-idioma definidas en frontend (`email.ts`). Backend tiene fallbacks. |
+| **Display Name dinámico** | El nombre de la congregación se usa en subject y sender name del email. |
+| **Nueva acción `sendEmail`** | API endpoint que acepta `templateKey`, `vars`, `locale`, `subject`, `body` |
+| **Soporte i18n** | 3 idiomas: `es`, `en`, `pt` |
 
 ### Cambios en v2.3
 
@@ -83,7 +92,7 @@ Almacena las credenciales y configuración de usuarios.
 | `id` | UUID | Identificador único del usuario |
 | `username` | string | Nombre de usuario (único) |
 | `wrapped_mk` | string | Master Key cifrada con la contraseña |
-| `perfilId` | string | ID del perfil asignado (ej: `p_admin`) |
+| `perfilIds` | JSON string | Array de IDs de perfiles (ej: `["p_admin"]`). Antes `perfilId` (singular). |
 | `auth_config` | JSON | Objeto con configuración de autenticación |
 | `metadata` | JSON | Objeto con metadatos del usuario |
 | `created_at` | ISO 8601 | Fecha de creación |
@@ -346,6 +355,8 @@ Ejecuta múltiples operaciones en una sola llamada API. Reemplaza `batchGetData`
 | `moveFileToFolder` | `fileId`, `subfolder` | `write` en `core` | `{ fileId, fileName, folderId, fileUrl }` |
 
 ##### `saveData`
+> **@deprecated (v2.3):** Esta función será eliminada en v3.0. Usar `batchExecute` con ops `update`/`create`.
+
 Guarda o actualiza un registro (operación upsert). Requiere sesión + permiso `write`.
 
 ```javascript
@@ -442,7 +453,7 @@ Crea un nuevo usuario. A partir de v2.3, si ya existen usuarios en el sistema, r
     "email": "admin@congregacion.com",
     "password": "MiContraseña123!",
     "wrapped_mk": "MASTER_KEY_CIFRADA",
-    "perfilId": "p_admin"
+    "perfilIds": ["p_admin"]
   }
 }
 
@@ -456,7 +467,7 @@ Crea un nuevo usuario. A partir de v2.3, si ya existen usuarios en el sistema, r
     "email": "usuario@congregacion.com",
     "password": "MiContraseña123!",
     "wrapped_mk": "MASTER_KEY_CIFRADA",
-    "perfilId": "p_publicador"
+    "perfilIds": ["p_publicador"]
   }
 }
 
@@ -504,9 +515,11 @@ Autentica al usuario. La contraseña siempre es el primer paso.
   "sessionToken": "uuid_token",
   "wrapped_mk": "MASTER_KEY_CIFRADA",
   "expiresAt": "2026-04-04T10:00:00Z",
-  "user": { "id": "uuid", "username": "admin", "perfilId": "p_admin" }
+  "user": { "id": "uuid", "username": "admin", "perfilIds": ["p_admin"] }
 }
 ```
+
+> **Nota:** El response retorna `perfilIds` (array). El campo en la base de datos es `perfilIds` (JSON string array). El campo `perfilId` (singular) está deprecado.
 
 ##### `challenge`
 Genera un desafío para Passkey/WebAuthn durante el login.
@@ -937,7 +950,7 @@ Los permisos se validan internamente en el backend para cada operación de escri
     "ssId": "CORE_SS_ID",
     "isSetup": true,
     "operations": [
-      { "op": "initSheet", "sheet": "Usuarios", "headers": ["id","username","email","wrapped_mk","perfilId","auth_config","metadata","created_at","_v","_ts","_deleted"] },
+      { "op": "initSheet", "sheet": "Usuarios", "headers": ["id","username","email","wrapped_mk","perfilIds","auth_config","metadata","created_at","_v","_ts","_deleted"] },
       { "op": "initSheet", "sheet": "Perfiles", "headers": ["id","nombre","permisos","descripcion","_v","_ts","_deleted"] },
       { "op": "initSheet", "sheet": "Configuracion", "headers": ["clave","valor","is_public","_v","_ts","_deleted"] },
       { "op": "initSheet", "sheet": "Registro_Plugins", "headers": ["plugin_id","ssId","status","config","_v","_ts","_deleted"] },
@@ -975,6 +988,12 @@ Los permisos se validan internamente en el backend para cada operación de escri
 | `updateAuthConfig` | `batchExecute` con op `save` en `Usuarios` |
 | `deleteSheet` | No disponible (usar Google Sheets UI) |
 | `actionResetPassword` | Renombrada a `confirmPasswordReset` |
+
+### 5.3 Funciones Deprecated (v2.3)
+
+| Función | Deprecated Por | Nota |
+|--------|---------------|------|
+| `saveData` | `batchExecute` con op `update`/`create` | **@deprecated** será removida en v3.0. Migrar a `batchExecute`. |
 
 ---
 
@@ -1404,7 +1423,7 @@ fetch(url, {
   "payload": {
     "ssId": "CORE_SS_ID",
     "operations": [
-      { "op": "initSheet", "sheet": "Usuarios", "headers": ["id","username","email","wrapped_mk","perfilId","auth_config","metadata","created_at","_v","_ts","_deleted"] },
+      { "op": "initSheet", "sheet": "Usuarios", "headers": ["id","username","email","wrapped_mk","perfilIds","auth_config","metadata","created_at","_v","_ts","_deleted"] },
       { "op": "initSheet", "sheet": "Perfiles", "headers": ["id","nombre","permisos","descripcion","_v","_ts","_deleted"] },
       { "op": "initSheet", "sheet": "Configuracion", "headers": ["clave","valor","is_public","_v","_ts","_deleted"] },
       { "op": "save", "sheet": "Perfiles", "data": { "id": "p_admin", "nombre": "Super-Admin", "permisos": {"core":"RW","personas":"RW"}, "descripcion": "Admin" } },
@@ -1468,9 +1487,120 @@ fetch(url, {
 
 ---
 
-## 16. Archivos Relacionados
+## 16. Sistema de Emails con Plantillas (v2.4)
+
+### 16.1 Arquitectura
+
+A partir de v2.4, los emails se envían usando plantillas con soporte multi-idioma. El sistema permite:
+
+- **Plantillas en Frontend:** Definidas en `frontend/src/types/email.ts` con variables interpolables
+- **Fallbacks en Backend:** Templates hardcodeados en `api.gs` como respaldo
+- **Display Name dinámico:** El nombre de la congregación se usa en el sender name del email
+
+### 16.2 Claves de Plantillas
+
+| Clave | Descripción | Variables |
+|-------|-----------|----------|
+| `sendOTP` | Código de verificación | `{code}`, `{displayName}` |
+| `sendWelcome` | Bienvenida al registrar | `{username}`, `{congregationName}`, `{displayName}` |
+| `sendPasswordReset` | Restablecer contraseña | `{username}`, `{resetLink}`, `{displayName}` |
+| `sendPasswordChanged` | Contraseña actualizada | `{username}`, `{displayName}` |
+
+### 16.3 Idiomas Soportados
+
+- `es` — Español (default)
+- `en` — Inglés
+- `pt` — Portugués
+
+### 16.4 Acción `sendEmail`
+
+Envía un email usando plantilla del frontend o fallback del backend.
+
+```javascript
+{
+  "action": "sendEmail",
+  "payload": {
+    "templateKey": "sendOTP",
+    "to": "usuario@email.com",
+    "vars": {
+      "code": "123456",
+      "displayName": "Mi Congregación",
+      "congregationName": "Congregación Central"
+    },
+    "locale": "es",
+    "subject": "Código de verificación - Mi Congregación",
+    "body": "Tu código de verificación es: 123456\n\nEste código expira en 10 minutos."
+  }
+}
+
+// Response
+{ "success": true }
+```
+
+**Parámetros:**
+
+| Parámetro | Requerido | Descripción |
+|----------|---------|-----------|
+| `templateKey` | Sí | Clave de plantilla (ej: `sendOTP`) |
+| `to` | Sí | Email del destinatario |
+| `vars` | No | Variables para interpolación |
+| `locale` | No | Idioma (`es`, `en`, `pt`) — default `es` |
+| `subject` | No | Subject custom (usa fallback si no se provee) |
+| `body` | No | Body custom (usa fallback si no se provee) |
+
+**Flujo:**
+
+1. Frontend obtiene template de `EMAIL_TEMPLATES` por locale
+2. Frontend interpol variables y envía `{templateKey, to, vars, locale, subject, body}`
+3. Backend usa `subject` y `body` si se proveen, si no usa fallbacks internos
+4. Backend usa `vars.displayName` como sender name del email
+
+### 16.5 Display Name
+
+El nombre de la congregación (`displayName`) se obtiene de:
+1. Variable `vars.displayName` proveída por el llamador
+2. Configuración `nombre_mostrar` de la hoja `Configuracion`
+3. Default: `CongreAdmin`
+
+El `displayName` aparece en:
+- Subject del email: `Código de verificación - {displayName}`
+- Sender name del email (usado en `MailApp.sendEmail({ name: displayName })`)
+
+### 16.6 Fallbacks del Backend
+
+Si el frontend no provee `subject` y `body`, el backend usa los templates internos:
+
+```javascript
+// Backend fallback ejemplo (es)
+const EMAIL_TEMPLATES = {
+  es: {
+    sendOTP: { subject: 'Código de verificación - {displayName}', body: '...' },
+    sendWelcome: { subject: 'Bienvenido a {displayName}', body: '...' },
+    sendPasswordReset: { subject: 'Restablecer contraseña - {displayName}', body: '...' },
+    sendPasswordChanged: { subject: 'Contraseña actualizada - {displayName}', body: '...' },
+  },
+  // en, pt...
+};
+```
+
+---
+
+## 17. Archivos Relacionados
 
 - `backend/src/api.gs` — Implementación fuente (~1,750 líneas)
+- `backend/data/seed_perfiles.json` — Perfiles base para instalación
+- `docs/architecture/Backend.md` — Especificación de la interfaz
+- `docs/architecture/Core.md` — Arquitectura del núcleo del sistema
+- `docs/architecture/Autenticacion.md` — Sistema de autenticación y flujos
+- `docs/architecture/Arquitectura.md` — Arquitectura general
+- `docs/architecture/Tecnologia.md` — Especificación tecnológica
+- `docs/architecture/DataService.md` — Cliente frontend (DataService, JSONata, TanStack Query)
+- `docs/architecture/Instalacion.md` — Guía de instalación
+## 17. Archivos Relacionados
+
+- `backend/src/api.gs` — Implementación fuente (~2,750 líneas)
+- `frontend/src/types/email.ts` — Plantillas de email multi-idioma
+- `frontend/src/services/authService.ts` — Servicio con `sendEmail()` y auto displayName
 - `backend/data/seed_perfiles.json` — Perfiles base para instalación
 - `docs/architecture/Backend.md` — Especificación de la interfaz
 - `docs/architecture/Core.md` — Arquitectura del núcleo del sistema
@@ -1484,4 +1614,4 @@ fetch(url, {
 
 ---
 
-*Documento actualizado el 2026-04-11 — v2.3.0*
+*Documento actualizado el 2026-04-14 — v2.4.0*

@@ -198,7 +198,7 @@ export async function initializeCacheOnLogin(queryClient?: QueryClient): Promise
   let publicSsId: string | null = null;
   configResult.forEach((c) => {
     config[c.clave] = c.valor;
-    if (c.clave === 'ss_publico') {
+    if (c.clave === 'ss_publico' && c.valor) {
       publicSsId = c.valor;
     }
   });
