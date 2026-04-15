@@ -1,7 +1,7 @@
 import { Outlet } from 'react-router-dom';
 import { Box } from '@mui/material';
 import type { ReactNode } from 'react';
-import Sidebar from '../components/Layout/Sidebar';
+import Sidebar from '../../admin/core/components/Layout/Sidebar';
 
 interface ShellProps {
   children?: ReactNode;

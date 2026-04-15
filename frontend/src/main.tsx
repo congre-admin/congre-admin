@@ -7,7 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { persistQueryClient } from '@tanstack/react-query-persist-client';
 import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
 import AdminApp from './admin/AdminApp';
-import { AuthProvider } from './admin/core/context/AuthContext';
+import { AuthProvider } from './core/context/AuthContext';
 import { ThemeContextProvider, useThemeContext } from './core/context/ThemeContext';
 import './index.css';
 

@@ -70,6 +70,7 @@ function doPost(e) {
       confirmAction: () => actionConfirmAction(payload, sessionToken, ssId),
       refreshSession: () => refreshSessionToken(payload.sessionToken),
       logout: () => { invalidateSession(payload.sessionToken); return { success: true }; },
+      sendEmail: () => actionSendEmail(payload),
     };
 
     if (authActions[action]) return createResponse(authActions[action]());
@@ -501,6 +502,11 @@ function batchExecute(session, ss, ssId, payload, module, accessMode) {
     }
   }
 
+  // Auto-sync Configuracion to public spreadsheet after batch save
+  if (sheetCache['Configuracion'] && sheetCache['Configuracion'].dirty) {
+    syncConfigToPublic(ss);
+  }
+
   return {
     success: failed === 0,
     results: results,
@@ -590,7 +596,11 @@ function dataActionClearSheet(session, ss, ssId, sheetName, module) {
   return { success: true };
 }
 
+/**
+ * @deprecated Use batchExecute instead. saveData will be removed in v3.0.
+ */
 function dataActionSaveData(session, ss, ssId, sheetName, module, payload, postData) {
+  console.warning('saveData is deprecated. Use batchExecute instead. Will be removed in v3.0.');
   if (!session || !session.valid) return { error: 'ERR_AUTH_REQUIRED' };
   const permCheck = checkPermission(session, 'write', sheetName, ssId, module);
   if (!permCheck.allowed) return { error: permCheck.error };
@@ -615,8 +625,8 @@ function dataActionSaveData(session, ss, ssId, sheetName, module, payload, postD
  * Syncs public settings (is_public=true) from Configuracion to public spreadsheet.
  */
 function syncConfigToPublic(ss) {
-  // Get public spreadsheet ID
-  const configData = getCachedSheetData(ss, 'Configuracion');
+  // Get public spreadsheet ID - use getSheetData to read FRESH data (bypass cache)
+  const configData = getSheetData(ss.getSheetByName('Configuracion'));
   const publicSsRow = configData.find(r => r.clave === 'ss_publico');
   if (!publicSsRow || !publicSsRow.valor) return; // No public SS configured
   const publicSsId = publicSsRow.valor;
@@ -716,13 +726,9 @@ const CACHE_TTL_DATA = 600; // 10 minutes
 const CACHE_TTL_LOOKUP = 300; // 5 minutes
 
 function getCachedSheetData(ss, sheetName) {
-  Logger.log('getCachedSheetData: ssId=' + ss.getId() + ', sheetName=' + sheetName);
   const sheet = ss.getSheetByName(sheetName);
-  Logger.log('getCachedSheetData: sheet=' + (sheet ? sheet.getName() : 'null'));
   if (!sheet) return [];
-  const data = getSheetData(sheet);
-  Logger.log('getCachedSheetData: rows=' + data.length);
-  return data;
+  return getSheetData(sheet);
 }
 
 function getCached(key, fetchFn) {
@@ -738,7 +744,6 @@ function getCached(key, fetchFn) {
 function invalidateCache(pattern) {
   // GAS CacheService doesn't support pattern-based invalidation.
   // Cache expires automatically per TTL. This function is a no-op.
-  Logger.log('Cache invalidation requested for pattern: ' + pattern + ' (no-op — cache expires automatically)');
 }
 
 // ================================================================= //
@@ -2098,11 +2103,22 @@ function normalizePermisos(permisos) {
  * Resolves a permission from flat or granular format.
  * Flat: "RW" → returns "RW"
  * Granular: {"configuracion":"RW","*":"R"} → returns permiso[key] or permiso['*']
+ * Simplified: { read: true, write: true } → returns the object directly
  */
 function resolvePermission(modulePerm, sheetName) {
   if (!modulePerm) return null;
+  
+  // If it's a string (flat format like "RW"), return as-is
   if (typeof modulePerm === 'string') return modulePerm;
+  
+  // If it's an object, check if it's simplified format { read: true, write: true }
+  // vs granular format { configuracion: "RW", *: "R" }
   if (typeof modulePerm === 'object') {
+    // Check has known permission keys (simplified format from getUserPermissions merge)
+    if ('read' in modulePerm || 'write' in modulePerm || 'delete' in modulePerm) {
+      return modulePerm; // Return the simplified permission object directly
+    }
+    // Otherwise it's granular format - look up by sheet name
     var key = sheetName.toLowerCase();
     return modulePerm[key] || modulePerm['*'] || null;
   }
@@ -2121,11 +2137,41 @@ function getPermiso(perfilId, modulo, ssId) {
  */
 function getUserPermissions(userId, ssId) {
   const user = getUserById(userId, ssId);
-  if (!user) return {};
+  if (!user) {
+    return {};
+  }
   
-  // Parse perfilIds
+  // Parse perfilIds (can be JSON array, single string, or already parsed by getSheetData)
   let perfilIds = [];
-  try { perfilIds = user.perfilIds ? JSON.parse(user.perfilIds) : []; } catch (e) { perfilIds = []; }
+  const pfRaw = user.perfilIds;
+  
+  // Case 1: Already parsed by getSheetData (object with numeric keys like {"0":"p_admin","1":"p_user"})
+  if (typeof pfRaw === 'object' && pfRaw !== null && !Array.isArray(pfRaw)) {
+    perfilIds = Object.values(pfRaw).filter(v => typeof v === 'string' && v.startsWith('p_'));
+  }
+  // Case 2: Array (from JSON.parse in getSheetData or direct array)
+  else if (Array.isArray(pfRaw)) {
+    perfilIds = pfRaw.filter(v => typeof v === 'string' && v.startsWith('p_'));
+  }
+  // Case 3: JSON string like '["p_admin","p_user"]'
+  else if (typeof pfRaw === 'string') {
+    try { 
+      const parsed = JSON.parse(pfRaw);
+      perfilIds = Array.isArray(parsed) ? parsed.filter(v => typeof v === 'string' && v.startsWith('p_')) : [];
+    } catch (e) {
+      // Case 4: Single string like 'p_admin'
+      if (pfRaw.startsWith('p_')) perfilIds = [pfRaw];
+    }
+  }
+  
+  // Also check legacy perfilId field
+  if (!perfilIds.length && user.perfilId) {
+    if (typeof user.perfilId === 'string' && user.perfilId.startsWith('p_')) {
+      perfilIds = [user.perfilId];
+    } else if (Array.isArray(user.perfilId)) {
+      perfilIds = user.perfilId.filter(v => typeof v === 'string' && v.startsWith('p_'));
+    }
+  }
   
   // Default to p_publicador if empty
   if (!perfilIds.length) perfilIds = ['p_publicador'];
@@ -2164,29 +2210,32 @@ function getUserPermissions(userId, ssId) {
 
 /**
  * Validate user permission, merging from all profiles.
- * For granular: checks { read, write, delete } directly
- * For flat: maps "R"→read, "W"→write, "RW"→all
+ * Uses resolvePermission to handle both flat and granular formats.
  */
 function validarPermiso(userId, modulo, accion, ssId, sheetName) {
   const perms = getUserPermissions(userId, ssId);
-  const modulePerm = perms[modulo] || perms[sheetName] || perms['*'];
   
+  // Get the module permission (could be string "RW" or object { read: true, write: true })
+  const modulePerm = perms[modulo];
   if (!modulePerm) return false;
   
-  // Handle granular object format
-  if (typeof modulePerm === 'object') {
-    if (accion === 'read') return !!modulePerm.read;
-    if (accion === 'write') return !!modulePerm.write;
-    if (accion === 'delete') return !!modulePerm.delete;
-    if (accion === 'export') return !!modulePerm.export;
-    return false;
-  }
+  // Resolve the specific permission for this sheet
+  const resolvedPerm = resolvePermission(modulePerm, sheetName);
+  if (!resolvedPerm) return false;
   
-  // Handle flat string format
-  if (typeof modulePerm === 'string') {
-    const p = modulePerm.toUpperCase();
+  // Handle string format: "RW", "R", "W"
+  if (typeof resolvedPerm === 'string') {
+    const p = resolvedPerm.toUpperCase();
     const map = { read: ['R', 'RW'], write: ['W', 'RW'], delete: ['RW'], export: ['E', 'RW'] };
     return (map[accion] || []).includes(p);
+  }
+  
+  // Handle simplified object format: { read: true, write: true, ... }
+  if (typeof resolvedPerm === 'object') {
+    if (accion === 'read') return !!resolvedPerm.read;
+    if (accion === 'write') return !!resolvedPerm.write;
+    if (accion === 'delete') return !!resolvedPerm.delete;
+    if (accion === 'export') return !!resolvedPerm.export;
   }
   
   return false;
@@ -2286,23 +2335,117 @@ function verifyTOTP(secret, code) {
 }
 
 // ================================================================= //
-// EMAIL
+// EMAIL TEMPLATES (Frontend-provided)
 // ================================================================= //
 
+// Fallback templates for when frontend doesn't provide them
+// Note: Backend fallbacks use 'CongreAdmin' as default displayName. Frontend should provide {displayName} var.
+const DEFAULT_DISPLAY_NAME = 'CongreAdmin';
+const EMAIL_TEMPLATES = {
+  es: {
+    sendOTP: { subject: 'Código de verificación - {displayName}', body: 'Tu código de verificación es: {code}\n\nEste código expira en 10 minutos.\n\nSi no solicitaste este código, ignorá este email.' },
+    sendWelcome: { subject: 'Bienvenido a {displayName}', body: 'Hola {username},\n\nTu cuenta en {displayName} ha sido creada exitosamente.\n\nCongregación: {congregationName}\nUsuario: {username}\n\nYa podés iniciar sesión en la aplicación.' },
+    sendPasswordReset: { subject: 'Restablecer contraseña - {displayName}', body: 'Hola {username},\n\nSolicitaste restablecer tu contraseña.\n\nEnlace para crear una nueva contraseña:\n{resetLink}\n\nEste enlace va a expirar en 1 hora.\n\nSi no solicitaste este cambio, ignorá este email.' },
+    sendPasswordChanged: { subject: 'Contraseña actualizada - {displayName}', body: 'Hola {username},\n\nTu contraseña ha sido actualizada exitosamente.\n\nSi no realizaste este cambio, contactá al administrador inmediatamente.' },
+  },
+  en: {
+    sendOTP: { subject: 'Verification code - {displayName}', body: 'Your verification code is: {code}\n\nThis code expires in 10 minutes.\n\nIf you didn\'t request this code, you can ignore this email.' },
+    sendWelcome: { subject: 'Welcome to {displayName}', body: 'Hello {username},\n\nYour {displayName} account has been successfully created.\n\nCongregation: {congregationName}\nUsername: {username}\n\nYou can now log in to the application.' },
+    sendPasswordReset: { subject: 'Reset password - {displayName}', body: 'Hello {username},\n\nYou requested to reset your password.\n\nLink to create a new password:\n{resetLink}\n\nThis link will expire in 1 hour.\n\nIf you didn\'t request this change, ignore this email.' },
+    sendPasswordChanged: { subject: 'Password updated - {displayName}', body: 'Hello {username},\n\nYour password has been successfully updated.\n\nIf you didn\'t make this change, contact the administrator immediately.' },
+  },
+  pt: {
+    sendOTP: { subject: 'Código de verificação - {displayName}', body: 'Seu código de verificação é: {code}\n\nEste código expira em 10 minutos.\n\nSe você não solicitou este código, pode ignorar este email.' },
+    sendWelcome: { subject: 'Bem-vindo ao {displayName}', body: 'Olá {username},\n\nSua conta em {displayName} foi criada com sucesso.\n\nCongregação: {congregationName}\nUsuário: {username}\n\nVocê já pode fazer login no aplicativo.' },
+    sendPasswordReset: { subject: 'Redefinir senha - {displayName}', body: 'Olá {username},\n\nVocê solicitou redefinir sua senha.\n\nLink para criar uma nova senha:\n{resetLink}\n\nEste link vai expirar em 1 hora.\n\nSe você não solicitou esta mudança, ignore este email.' },
+    sendPasswordChanged: { subject: 'Senha atualizada - {displayName}', body: 'Olá {username},\n\nSua senha foi atualizada com sucesso.\n\nSe você não fez essa mudança, entre em contato com o administrador imediatamente.' },
+  },
+};
+
+function getEmailTemplate(key, locale) {
+  try {
+    const templates = EMAIL_TEMPLATES[locale] || EMAIL_TEMPLATES['es'];
+    return templates[key] || null;
+  } catch (e) { return null; }
+}
+
+function interpolateTemplate(template, vars) {
+  let subject = template.subject;
+  let body = template.body;
+  
+  // Use default displayName if not provided
+  const allVars = { ...vars, displayName: vars.displayName || DEFAULT_DISPLAY_NAME };
+  
+  Object.keys(allVars).forEach(key => {
+    const value = allVars[key] || '';
+    subject = subject.replace(new RegExp('{' + key + '}', 'g'), value);
+    body = body.replace(new RegExp('{' + key + '}', 'g'), value);
+  });
+  return { subject, body };
+}
+
+function sendTemplatedEmail(templateKey, to, vars, locale) {
+  const template = getEmailTemplate(templateKey, locale);
+  if (!template) {
+    Logger.log('Template not found: ' + templateKey + ' for locale ' + locale);
+    return;
+  }
+  const { subject, body } = interpolateTemplate(template, vars);
+  MailApp.sendEmail({ to: to, subject: subject, name: 'CongreAdmin', body: body });
+}
+
+/**
+ * Send email with frontend-provided template
+ * Payload: { templateKey, to, vars, locale, subject?, body? }
+ * If subject/body provided, use them; otherwise fallback to EMAIL_TEMPLATES
+ */
+function actionSendEmail(payload) {
+  const { templateKey, to, vars, locale, subject, body } = payload;
+  
+  if (!templateKey || !to) {
+    return { success: false, error: 'ERR_TEMPLATE_KEY_AND_TO_REQUIRED' };
+  }
+  
+  try {
+    // Use frontend-provided template if available, otherwise fallback
+    let template: { subject: string; body: string };
+    
+    if (subject && body) {
+      template = { subject, body };
+      Logger.log('Using frontend-provided template for: ' + templateKey);
+    } else {
+      template = getEmailTemplate(templateKey, locale || 'es');
+      if (!template) {
+        return { success: false, error: 'ERR_TEMPLATE_NOT_FOUND: ' + templateKey };
+      }
+      Logger.log('Using fallback template for: ' + templateKey);
+    }
+    
+    const { subject: finalSubject, body: finalBody } = interpolateTemplate(template, vars || {});
+    const displayName = vars.displayName || DEFAULT_DISPLAY_NAME;
+    MailApp.sendEmail({ to: to, subject: finalSubject, name: displayName, body: finalBody });
+    return { success: true };
+  } catch (e) {
+    Logger.log('actionSendEmail error: ' + e.message);
+    return { success: false, error: 'ERR_EMAIL_SEND: ' + e.message };
+  }
+}
+
+// Legacy wrappers for backward compatibility
 function sendOTPEmail(email, code, congregationName) {
-  MailApp.sendEmail({ to: email, subject: 'Código de verificación - Congre-Admin', name: 'Congre-Admin', body: 'Tu código de verificación es: ' + code + '\n\nEste código expira en 10 minutos.\n\nSi no solicitaste este código, puedes ignorar este email.' });
+  sendTemplatedEmail('sendOTP', email, { code: code, congregationName: congregationName }, 'es');
 }
 
 function sendWelcomeEmail(email, username, congregationName) {
-  MailApp.sendEmail({ to: email, subject: 'Bienvenido a Congre-Admin', name: 'Congre-Admin', body: 'Hola ' + username + ',\n\nTu cuenta en Congre-Admin ha sido creada exitosamente.\n\nCongregación: ' + congregationName + '\nUsuario: ' + username + '\n\nYa puedes iniciar sesión en la aplicación.' });
+  sendTemplatedEmail('sendWelcome', email, { username: username, congregationName: congregationName }, 'es');
 }
 
 function sendPasswordResetEmail(email, username, resetLink) {
-  MailApp.sendEmail({ to: email, subject: 'Restablecer contraseña - Congre-Admin', name: 'Congre-Admin', body: 'Hola ' + username + ',\n\nHas solicitado restablecer tu contraseña.\n\nEnlace para crear una nueva contraseña:\n' + resetLink + '\n\nEste enlace expirará en 1 hora.\n\nSi no solicitaste este cambio, ignora este email.' });
+  sendTemplatedEmail('sendPasswordReset', email, { username: username, resetLink: resetLink }, 'es');
 }
 
 function sendPasswordChangedEmail(email, username) {
-  MailApp.sendEmail({ to: email, subject: 'Contraseña actualizada - Congre-Admin', name: 'Congre-Admin', body: 'Hola ' + username + ',\n\nTu contraseña ha sido actualizada exitosamente.\n\nSi no realizaste este cambio, contacta al administrador inmediatamente.' });
+  sendTemplatedEmail('sendPasswordChanged', email, { username: username }, 'es');
 }
 
 function verifyEmailOTP(username, code) {

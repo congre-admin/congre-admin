@@ -1,12 +1,12 @@
 import { lazy, Suspense, useState, useEffect } from 'react';
 import { Routes, Route, Navigate, useNavigate, Link } from 'react-router-dom';
 import { CssBaseline, Button } from '@mui/material';
-import { useAuth } from './core/context/AuthContext';
+import { useAuth } from '../core/context/AuthContext';
 import SetupWizard from './modules/setup/views/SetupWizard';
 import Login from './modules/setup/views/Login';
 import SetupTOTP from './modules/setup/views/SetupTOTP';
 import SetupPasskey from './modules/setup/views/SetupPasskey';
-import Shell from './core/shell/Shell';
+import Shell from '../core/shell/Shell';
 import PublicSSIDModal from './core/components/PublicSSIDModal/PublicSSIDModal';
 
 // Public plugin routes (no auth required)

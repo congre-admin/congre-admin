@@ -9,7 +9,7 @@
     "prebuild": "node -e \"const fs=require('fs');const p='../backend/src/api.gs';d='public/api/api.gs';if(fs.existsSync(p)){fs.mkdirSync('public/api',{recursive:true});fs.copyFileSync(p,d);console.log('✓ api.gs synced')}\"",
     "dev": "vite",
     "dev:spa": "node dev-server.js",
-    "build": "vite build --config vite.config.ts",
+    "build": "vite build --config vite.config.js",
     "postbuild": "node -e \"const fs=require('fs');fs.copyFileSync('dist/index.html','dist/404.html')\"",
     "lint": "eslint .",
     "preview": "vite preview",

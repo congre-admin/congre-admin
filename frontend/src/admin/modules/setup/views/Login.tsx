@@ -40,7 +40,7 @@ import {
   RestartAlt,
   RocketLaunch
 } from '@mui/icons-material';
-import { useAuth } from '../../../core/context/AuthContext';
+import { useAuth } from '../../../../core/context/AuthContext';
 import { authService } from '../../../../services/authService';
 import { dataService } from '../../../../services/dataService';
 import { getAllConfigs, getConfig, setConfig } from '../../../../utils/settingsCache';

@@ -18,7 +18,7 @@ import {
   ListItemText
 } from '@mui/material';
 import { Security, CheckCircle, Devices, Keyboard, PhoneIphone } from '@mui/icons-material';
-import { useAuth } from '../../../core/context/AuthContext';
+import { useAuth } from '../../../../core/context/AuthContext';
 import { useCongregacion } from '@/hooks/useCongregacion';
 import { authService } from '@/services/authService';
 

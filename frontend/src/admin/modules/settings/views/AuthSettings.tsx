@@ -32,7 +32,7 @@ import {
   Warning,
   CheckCircle
 } from '@mui/icons-material';
-import { useAuth } from '../../../core/context/AuthContext';
+import { useAuth } from '../../../../core/context/AuthContext';
 import { useAuthMethods } from '@/hooks/useSession';
 import { authService } from '@/services/authService';
 import { dataService } from '@/services/dataService';

@@ -15,7 +15,7 @@ import {
 } from '@mui/material';
 import { Security, CheckCircle } from '@mui/icons-material';
 import QRCode from 'qrcode';
-import { useAuth } from '../../../core/context/AuthContext';
+import { useAuth } from '../../../../core/context/AuthContext';
 import { authService } from '@/services/authService';
 
 export default function SetupTOTP() {

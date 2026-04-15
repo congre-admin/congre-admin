@@ -22,7 +22,7 @@ import {
   Brightness4 as DarkModeIcon,
   Brightness7 as LightModeIcon
 } from '@mui/icons-material';
-import { useAuth } from '../../context/AuthContext';
+import { useAuth } from '../../../../core/context/AuthContext';
 import { useThemeContext } from '@/core/context/ThemeContext';
 import { useNavigate } from 'react-router-dom';
 

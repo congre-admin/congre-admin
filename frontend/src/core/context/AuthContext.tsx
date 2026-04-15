@@ -1,4 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { initializeCacheOnLogin } from '../../hooks/useSession';
+import { dataService } from '../../services/dataService';
+import { setConfigs, clearCoreConfig } from '../../utils/settingsCache';
 
 interface User {
   id: string;
@@ -15,6 +18,7 @@ interface AuthContextType {
   logout: () => void;
   validateSession: () => Promise<void>;
   setMasterKey: (mk: string) => void;
+  setSession: (sessionToken: string, user: User, wrapped_mk?: string) => void;
   masterKey: string | null;
   wrapped_mk: string | null;
   sessionToken: string | null;
@@ -26,6 +30,8 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const API_URL_KEY = 'congre_admin_api_url';
 const SESSION_TOKEN_KEY = 'congre_admin_session_token';
 const USER_DATA_KEY = 'congre_admin_user_data';
+const ADMIN_SS_ID_KEY = 'congre_admin_ss_id';
+const PUBLIC_SS_ID_KEY = 'congre_public_ss_publico';
 
 async function fetchApi(url: string, options?: RequestInit) {
   const response = await fetch(url, {
@@ -40,6 +46,38 @@ async function fetchApi(url: string, options?: RequestInit) {
   return response.json();
 }
 
+async function fetchLinkedPublicSs(apiUrl: string, adminSsId: string): Promise<string | null> {
+  try {
+    const url = apiUrl.includes('script.google.com')
+      ? apiUrl.endsWith('/exec') ? apiUrl : `${apiUrl}/exec`
+      : `https://script.google.com/macros/s/${apiUrl}/exec`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'getData',
+        ssId: adminSsId,
+        payload: { sheet: 'Configuracion' }
+      }),
+      mode: 'cors',
+      redirect: 'follow',
+    });
+
+    const result = await response.json();
+    const rows = result.data || [];
+    const linkedRow = rows.find((r: any) => r.clave === 'ss_publico');
+
+    if (linkedRow && linkedRow.valor) {
+      return linkedRow.valor;
+    }
+    return null;
+  } catch (err) {
+    console.warn('Failed to fetch linked public SSID:', err);
+    return null;
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -51,15 +89,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const storedUser = localStorage.getItem(USER_DATA_KEY);
     const token = localStorage.getItem(SESSION_TOKEN_KEY);
-    
+
     if (storedUser && token) {
       setUser(JSON.parse(storedUser));
+      setSessionToken(token);
+
+      const adminSsId = localStorage.getItem(ADMIN_SS_ID_KEY);
+      if (adminSsId) {
+        dataService.getData<{ clave: string; valor: any }[]>('Configuracion', adminSsId)
+          .then(config => {
+            const settings: Record<string, string> = {};
+            config.forEach(c => {
+              settings[c.clave] = typeof c.valor === 'object' ? JSON.stringify(c.valor) : c.valor;
+            });
+            setConfigs(settings, false);
+            setConfigs(settings, true);
+          })
+          .catch(() => {});
+      }
     }
     setIsLoading(false);
   }, []);
 
   const setMasterKey = (mk: string) => {
     setMasterKeyState(mk);
+  };
+
+  const setSession = (sessionToken: string, user: User, wrapped_mk?: string) => {
+    localStorage.setItem(SESSION_TOKEN_KEY, sessionToken);
+    localStorage.setItem(USER_DATA_KEY, JSON.stringify(user));
+    setUser(user);
+    setSessionToken(sessionToken);
+    if (wrapped_mk) {
+      setMasterKeyState(wrapped_mk);
+      setWrappedMk(wrapped_mk);
+    }
   };
 
   const login = async (username: string, totpCode?: string, authType?: string, password?: string) => {
@@ -80,7 +144,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         payload
       })
     });
-    
+
     if (!data.success) {
       throw new Error(data.error || 'Error en el login');
     }
@@ -90,20 +154,84 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(data.user);
     setSessionToken(data.sessionToken);
     setApiUrl(apiUrl);
-    
+
     if (data.wrapped_mk) {
       setMasterKeyState(data.wrapped_mk);
       setWrappedMk(data.wrapped_mk);
     }
+
+    const adminSsId = localStorage.getItem(ADMIN_SS_ID_KEY);
+    if (adminSsId && apiUrl) {
+      try {
+        const linkedPublicSs = await fetchLinkedPublicSs(apiUrl, adminSsId);
+        if (linkedPublicSs) {
+          localStorage.setItem(PUBLIC_SS_ID_KEY, linkedPublicSs);
+        }
+      } catch (err) {
+        console.warn('Failed to fetch linked public SSID:', err);
+      }
+    }
+
+    try {
+      await dataService.refreshModuleMap();
+    } catch (err) {
+      console.warn('Failed to refresh module map:', err);
+    }
+
+    if (adminSsId) {
+      try {
+        const themeConfigResult = await dataService.getConfig('theme_config', adminSsId);
+        if (themeConfigResult?.valor) {
+          localStorage.setItem('congre_theme_config', themeConfigResult.valor);
+        }
+      } catch (err) {
+        console.warn('Failed to fetch theme config:', err);
+      }
+    }
+
+    if (adminSsId) {
+      try {
+        const config = await dataService.getData<{ clave: string; valor: any }[]>('Configuracion', adminSsId);
+        const settings: Record<string, string> = {};
+        config.forEach(c => {
+          settings[c.clave] = typeof c.valor === 'object' ? JSON.stringify(c.valor) : c.valor;
+        });
+        setConfigs(settings, false);
+        setConfigs(settings, true);
+      } catch (err) {
+        console.warn('Failed to cache settings:', err);
+      }
+    }
+
+    try {
+      await initializeCacheOnLogin();
+    } catch (error) {
+      console.error('Failed to initialize cache:', error);
+    }
   };
 
-  const logout = () => {
+  const logout = async () => {
     localStorage.removeItem(SESSION_TOKEN_KEY);
     localStorage.removeItem(USER_DATA_KEY);
+    clearCoreConfig();
     setUser(null);
     setMasterKeyState(null);
     setSessionToken(null);
     setWrappedMk(null);
+
+    const publicSsId = localStorage.getItem(PUBLIC_SS_ID_KEY);
+    if (publicSsId) {
+      try {
+        const config = await dataService.getData<{ clave: string; valor: any }[]>('Configuracion', publicSsId);
+        const settings: Record<string, string> = {};
+        config.forEach(c => {
+          settings[c.clave] = typeof c.valor === 'object' ? JSON.stringify(c.valor) : c.valor;
+        });
+        setConfigs(settings, true);
+      } catch (err) {
+        console.warn('Failed to load public config on logout:', err);
+      }
+    }
   };
 
   const validateSession = async () => {
@@ -127,7 +255,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           sessionToken: token
         })
       });
-      
+
       if (!data.valid) {
         logout();
       } else {
@@ -157,6 +285,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout,
       validateSession,
       setMasterKey,
+      setSession,
       masterKey,
       wrapped_mk,
       sessionToken,
@@ -170,7 +299,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error('useAuth debe ser usado dentro de un AuthProvider');
+    return {
+      isAuthenticated: false,
+      isLoading: false,
+      login: async () => {},
+      logout: async () => {},
+      session: null,
+      user: null,
+      masterKey: null,
+      wrapped_mk: null,
+      sessionToken: null,
+      apiUrl: null,
+      validateSession: async () => {},
+      setMasterKey: () => {},
+      setSession: () => {},
+    };
   }
   return context;
 }

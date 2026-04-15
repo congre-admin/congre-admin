@@ -1,10 +1,10 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { useAuth } from './core/context/AuthContext';
+import { useAuth } from '../core/context/AuthContext';
 import SetupWizard from './modules/setup/views/SetupWizard';
 import Login from './modules/setup/views/Login';
 import SetupTOTP from './modules/setup/views/SetupTOTP';
 import SetupPasskey from './modules/setup/views/SetupPasskey';
-import Shell from './core/shell/Shell';
+import Shell from '../core/shell/Shell';
 import Dashboard from './modules/dashboard/views/Dashboard';
 import BackupExport from './modules/admin/views/BackupExport';
 import AuthSettings from './modules/settings/views/AuthSettings';

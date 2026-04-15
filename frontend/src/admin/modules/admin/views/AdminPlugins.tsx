@@ -24,7 +24,7 @@ import {
   Error as ErrorIcon,
   TableChart as TableIcon,
 } from '@mui/icons-material';
-import { useAuth } from '../../../core/context/AuthContext';
+import { useAuth } from '../../../../core/context/AuthContext';
 import { dataService } from '@/services/dataService';
 import type { BatchOp } from '@/services/dataService';
 import { useQuery, useQueryClient } from '@tanstack/react-query';

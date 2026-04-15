@@ -28,7 +28,7 @@ import {
   Logout as LogoutIcon,
 } from '@mui/icons-material';
 import { alpha } from '@mui/material/styles';
-import { useAuth } from '../../context/AuthContext';
+import { useAuth } from '../../../../core/context/AuthContext';
 import { useThemeContext } from '@/core/context/ThemeContext';
 import { getConfig } from '@/utils/settingsCache';
 import { useMenuConfig, type MenuItem as MenuItemType, type MenuSection, type MenuMode } from '@/admin/core/hooks/useMenuConfig';
