@@ -140,6 +140,7 @@ export function getCachedSettings(): { fetchedAt: string; data: Record<string, s
 
 export function setCachedSettings(data: Record<string, string>): void {
   setConfigs(data, false);
+  localStorage.setItem('congre_settings_fetched_at', Date.now().toString());
 }
 
 export function clearCachedSettings(): void {

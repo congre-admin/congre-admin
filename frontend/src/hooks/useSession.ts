@@ -3,6 +3,7 @@ import { authService } from '../services/authService';
 import { cacheService } from '../cache/cacheService';
 import { dataService } from '../services/dataService';
 import { QUERY_OPTIONS } from './queryConfig';
+import { getConfig, setConfigs, setSettingsFetchedAt } from '../utils/settingsCache';
 
 const QUERY_KEYS = {
   session: ['session'] as const,
@@ -180,7 +181,7 @@ export function useDeleteData(sheet: string, ssId: string) {
 }
 
 export async function initializeCacheOnLogin(queryClient?: QueryClient): Promise<void> {
-  const coreSsId = localStorage.getItem('congre_admin_ss_id');
+  const coreSsId = getConfig('ss_core');
   if (!coreSsId) return;
 
   const [pluginsResult, configResult, perfilesResult] = await Promise.all([
@@ -202,6 +203,16 @@ export async function initializeCacheOnLogin(queryClient?: QueryClient): Promise
       publicSsId = c.valor;
     }
   });
+
+  // Store config to localStorage (core only - the getConfig fallback handles public)
+  setConfigs(config, false);
+  // Set timestamp for TTL tracking
+  setSettingsFetchedAt();
+
+  // Also store theme_config specifically if present
+  if (config.theme_config) {
+    localStorage.setItem('congre_theme_config', config.theme_config);
+  }
 
   const userPerfilId = localStorage.getItem('congre_perfil_id');
   const perfil = perfilesResult.find((p) => p.id === userPerfilId);

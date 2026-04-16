@@ -2408,7 +2408,7 @@ function actionSendEmail(payload) {
   
   try {
     // Use frontend-provided template if available, otherwise fallback
-    let template;
+    let template: { subject: string; body: string };
     
     if (subject && body) {
       template = { subject, body };

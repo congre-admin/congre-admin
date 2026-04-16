@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { initializeCacheOnLogin } from '../../../hooks/useSession';
 import { dataService } from '../../../services/dataService';
-import { setConfigs, clearCoreConfig, getConfig } from '../../../utils/settingsCache';
+import { setConfigs, clearCoreConfig, getConfig, setConfig } from '../../../utils/settingsCache';
 
 interface User {
   id: string;
@@ -94,7 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(JSON.parse(storedUser));
       setSessionToken(token);
       
-      const adminSsId = localStorage.getItem(ADMIN_SS_ID_KEY);
+      const adminSsId = getConfig('ss_core') || localStorage.getItem(ADMIN_SS_ID_KEY);
       if (adminSsId) {
         dataService.getData<{ clave: string; valor: any }[]>('Configuracion', adminSsId)
           .then(config => {
@@ -102,8 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             config.forEach(c => {
               settings[c.clave] = typeof c.valor === 'object' ? JSON.stringify(c.valor) : c.valor;
             });
-            setConfigs(settings, false); // Store as core config
-            setConfigs(settings, true);  // Also store as public config
+            setConfigs(settings, false); // Store as core config only
           })
           .catch(() => {});
       }
@@ -127,7 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const login = async (username: string, totpCode?: string, authType?: string, password?: string) => {
-    const apiUrl = localStorage.getItem(API_URL_KEY);
+    const apiUrl = getConfig('gas_url');
     if (!apiUrl) {
       throw new Error('API URL no configurada');
     }
@@ -160,8 +159,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setWrappedMk(data.wrapped_mk);
     }
 
+    // Store config keys for gas_url and ss_core if not already set
+    const existingGasUrl = getConfig('gas_url');
+    const existingSsCore = getConfig('ss_core');
+    if (!existingGasUrl && apiUrl) {
+      setConfig('gas_url', apiUrl, true);
+    }
+    if (!existingSsCore) {
+      const ssCoreFromLegacy = localStorage.getItem(ADMIN_SS_ID_KEY);
+      if (ssCoreFromLegacy) {
+        setConfig('ss_core', ssCoreFromLegacy, true);
+      }
+    }
+
     // Fetch linked public SSID from Admin Sheet Configuracion
-    const adminSsId = localStorage.getItem(ADMIN_SS_ID_KEY);
+    const adminSsId = getConfig('ss_core') || localStorage.getItem(ADMIN_SS_ID_KEY);
     if (adminSsId && apiUrl) {
       try {
         const linkedPublicSs = await fetchLinkedPublicSs(apiUrl, adminSsId);
@@ -173,41 +185,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    // Fetch and cache module map for granular permissions
+    // Refresh module map for granular permissions
     try {
       await dataService.refreshModuleMap();
     } catch (err) {
       console.warn('Failed to refresh module map:', err);
     }
 
-    // Fetch and cache theme config
-    if (adminSsId) {
-      try {
-        const themeConfigResult = await dataService.getConfig('theme_config', adminSsId);
-        if (themeConfigResult?.valor) {
-          localStorage.setItem('congre_theme_config', themeConfigResult.valor);
-        }
-      } catch (err) {
-        console.warn('Failed to fetch theme config:', err);
-      }
-    }
-
-    // Fetch and cache settings as both core AND public keys
-    // This ensures any read method (localStorage.getItem or getCachedSettings) works
-    if (adminSsId) {
-      try {
-        const config = await dataService.getData<{ clave: string; valor: any }[]>('Configuracion', adminSsId);
-        const settings: Record<string, string> = {};
-        config.forEach(c => {
-          settings[c.clave] = typeof c.valor === 'object' ? JSON.stringify(c.valor) : c.valor;
-        });
-        setConfigs(settings, false); // Store as core config
-        setConfigs(settings, true);  // Also store as public config (so reads work regardless of mode)
-      } catch (err) {
-        console.warn('Failed to cache settings:', err);
-      }
-    }
-
+    // Initialize cache (fetches Configuracion once via initializeCacheOnLogin)
     try {
       await initializeCacheOnLogin();
     } catch (error) {
@@ -247,7 +232,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const storedApiUrl = localStorage.getItem(API_URL_KEY);
+    const storedApiUrl = getConfig('gas_url');
     if (!storedApiUrl) {
       logout();
       return;

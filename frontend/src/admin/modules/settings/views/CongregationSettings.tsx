@@ -18,7 +18,7 @@ import { useSheetData } from '@/hooks/useSession';
 import { useQueryClient } from '@tanstack/react-query';
 import { dataService } from '@/services/dataService';
 import { useThemeContext } from '@/core/context/ThemeContext';
-import { getCachedSettings, setCachedSettings, isSettingsStale } from '@/utils/settingsCache';
+import { getCachedSettings, setCachedSettings, isSettingsStale, getConfig } from '@/utils/settingsCache';
 import type { ThemeConfig, IconConfig, BgSetting, HarmonyMode } from '@/types';
 import {
   generatePalette,
@@ -86,7 +86,7 @@ const PUBLIC_FIELDS: (keyof CongregacionSettings)[] = [
 ];
 
 export default function CongregationSettings() {
-  const adminSsId = localStorage.getItem(ADMIN_SS_ID_KEY);
+  const adminSsId = getConfig('ss_core') || localStorage.getItem(ADMIN_SS_ID_KEY);
   const queryClient = useQueryClient();
   const { updateThemeConfig } = useThemeContext();
 
