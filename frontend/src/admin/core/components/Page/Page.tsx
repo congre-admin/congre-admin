@@ -1,5 +1,5 @@
-import { Box, Typography, Breadcrumbs, Link, Paper, Skeleton, Button, ButtonProps } from '@mui/material';
-import { NavigateNext, NavigateBefore } from '@mui/icons-material';
+import { Box, Typography, Skeleton, Button, ButtonProps } from '@mui/material';
+import { PageContainer } from '@toolpad/core/PageContainer';
 import type { ReactNode } from 'react';
 
 interface BreadcrumbItem {
@@ -13,7 +13,7 @@ interface PageActions {
 }
 
 interface PageProps {
-  title: string;
+  title?: string;
   subtitle?: string;
   breadcrumbs?: BreadcrumbItem[];
   actions?: PageActions;
@@ -53,90 +53,38 @@ export default function Page({
     return children;
   };
 
-  return (
-    <Box sx={{ width: '100%', maxWidth: containerWidth, mx: 'auto' }}>
-      {/* Header Section */}
-      <Box sx={{ mb: 3 }}>
-        {/* Breadcrumbs */}
-        {breadcrumbs && breadcrumbs.length > 0 && (
-          <Breadcrumbs
-            separator={<NavigateNext fontSize="small" />}
-            sx={{ mb: 1.5 }}
-          >
-            <Link
-              underline="hover"
-              color="inherit"
-              href="/admin"
-              sx={{ display: 'flex', alignItems: 'center' }}
-            >
-              <NavigateBefore sx={{ mr: 0.5, fontSize: 20 }} />
-              Inicio
-            </Link>
-            {breadcrumbs.map((item, index) => {
-              const isLast = index === breadcrumbs.length - 1;
-              return isLast ? (
-                <Typography key={index} color="text.primary" sx={{ display: 'flex', alignItems: 'center' }}>
-                  {item.label}
-                </Typography>
-              ) : (
-                <Link
-                  key={index}
-                  underline="hover"
-                  color="inherit"
-                  href={item.href}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
-          </Breadcrumbs>
-        )}
+  const toolpadBreadcrumbs = breadcrumbs?.map(b => ({ title: b.label, path: b.href }));
 
-        {/* Title + Actions Row */}
-        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2 }}>
-          <Box sx={{ flex: 1 }}>
-            <Typography
-              variant="h5"
-              component="h1"
-              sx={{ fontWeight: 600, mb: subtitle ? 0.5 : 0 }}
-            >
-              {title}
-            </Typography>
+  return (
+    <PageContainer title={title} breadcrumbs={toolpadBreadcrumbs}>
+      <Box sx={{ width: '100%', maxWidth: containerWidth, mx: 'auto' }}>
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: subtitle || actions ? 3 : 0 }}>
+          <Box>
             {subtitle && (
-              <Typography variant="body2" color="text.secondary">
+              <Typography variant="body1" color="text.secondary">
                 {subtitle}
               </Typography>
             )}
           </Box>
-
-          {/* Action Buttons */}
+          
           {(actions?.primary || actions?.secondary) && (
             <Box sx={{ display: 'flex', gap: 1 }}>
               {actions.secondary && (
-                <Button
-                  variant="outlined"
-                  size="small"
-                  {...actions.secondary}
-                >
+                <Button variant="outlined" size="small" {...actions.secondary}>
                   {actions.secondary.children}
                 </Button>
               )}
               {actions?.primary && (
-                <Button
-                  variant="contained"
-                  size="small"
-                  {...actions.primary}
-                >
+                <Button variant="contained" size="small" {...actions.primary}>
                   {actions.primary.children}
                 </Button>
               )}
             </Box>
           )}
         </Box>
-      </Box>
 
-      {/* Content Section */}
-      {renderContent()}
-    </Box>
+        {renderContent()}
+      </Box>
+    </PageContainer>
   );
 }

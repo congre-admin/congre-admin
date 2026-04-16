@@ -97,11 +97,14 @@ export interface ColorPalette {
   secondary: { main: string; light: string; dark: string };
 }
 
-export function generatePalette(baseHex: string, harmony: HarmonyMode): ColorPalette {
+export function generatePalette(baseHex: string, harmony: HarmonyMode, manualSecondary?: string): ColorPalette {
   const { h, s, l } = hexToHsl(baseHex);
   const secH = getSecondaryHue(h, harmony);
   const secS = harmony === 'monochromatic' ? Math.max(0, s - 10) : s;
   const secL = harmony === 'monochromatic' ? Math.max(0, l - 10) : l;
+
+  const secondaryColor = manualSecondary || hslToHex(secH, secS, secL);
+  const { h: sh, s: ss, l: sl } = hexToHsl(secondaryColor);
 
   return {
     primary: {
@@ -110,9 +113,9 @@ export function generatePalette(baseHex: string, harmony: HarmonyMode): ColorPal
       dark: hslToHex(h, s, Math.max(l - 15, 10)),
     },
     secondary: {
-      main: hslToHex(secH, secS, secL),
-      light: hslToHex(secH, secS, Math.min(secL + 15, 95)),
-      dark: hslToHex(secH, secS, Math.max(secL - 15, 10)),
+      main: secondaryColor,
+      light: hslToHex(sh, ss, Math.min(sl + 15, 95)),
+      dark: hslToHex(sh, ss, Math.max(sl - 15, 10)),
     },
   };
 }

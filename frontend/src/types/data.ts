@@ -196,6 +196,7 @@ export interface BgSetting {
 
 export interface ThemeConfig {
   primary: string;
+  secondary?: string;
   harmony: HarmonyMode;
   backgrounds: {
     lightPage: BgSetting;
@@ -208,7 +209,7 @@ export interface ThemeConfig {
 export interface IconConfig {
   mode: 'default' | 'custom';
   text: string;
-  bgMode: 'primary' | 'custom';
+  bgMode: 'primary' | 'secondary' | 'custom';
   bgColor: string;
   textMode: 'white' | 'auto' | 'custom';
   textColor: string;

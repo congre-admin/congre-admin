@@ -146,7 +146,19 @@ export function clearCachedSettings(): void {
   clearCoreConfig();
 }
 
+const SETTINGS_FETCHED_AT_KEY = 'congre_settings_fetched_at';
+const STALE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
+
 export function isSettingsStale(): boolean {
-  // Always return false since we now always fetch fresh on session
-  return false;
+  const fetchedAt = localStorage.getItem(SETTINGS_FETCHED_AT_KEY);
+  if (!fetchedAt) return true;
+  
+  const timestamp = parseInt(fetchedAt, 10);
+  if (isNaN(timestamp)) return true;
+  
+  return Date.now() - timestamp > STALE_THRESHOLD_MS;
+}
+
+export function setSettingsFetchedAt(): void {
+  localStorage.setItem(SETTINGS_FETCHED_AT_KEY, Date.now().toString());
 }

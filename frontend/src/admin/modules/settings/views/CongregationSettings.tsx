@@ -8,16 +8,10 @@ import {
   ButtonProps,
   Alert,
   CircularProgress,
-  Grid2,
-  Select,
-  MenuItem,
-  FormControl,
-  InputLabel,
+  Grid2 as Grid,
   InputAdornment,
-  Radio,
-  RadioGroup,
-  FormControlLabel,
-  FormHelperText,
+  Divider,
+  MenuItem,
 } from '@mui/material';
 import { ColorLens as ColorLensIcon, Save as SaveIcon } from '@mui/icons-material';
 import { useSheetData } from '@/hooks/useSession';
@@ -28,12 +22,8 @@ import { getCachedSettings, setCachedSettings, isSettingsStale } from '@/utils/s
 import type { ThemeConfig, IconConfig, BgSetting, HarmonyMode } from '@/types';
 import {
   generatePalette,
-  generateBackgrounds,
-  resolveBackground,
-  resolveBackgroundDark,
   getAutoTextColor,
 } from '@/utils/color';
-import ThemePreview from '@/core/components/ThemePreview';
 import IconCreator from '@/core/components/IconCreator';
 import Page from '@/admin/core/components/Page';
 
@@ -58,6 +48,7 @@ const DEFAULT_SETTINGS: CongregacionSettings = {
 
 const DEFAULT_THEME_CONFIG: ThemeConfig = {
   primary: '#1976d2',
+  secondary: '#dc004e',
   harmony: 'complementary',
   backgrounds: {
     lightPage: { mode: 'auto', value: null },
@@ -66,6 +57,14 @@ const DEFAULT_THEME_CONFIG: ThemeConfig = {
     darkPanel: { mode: 'auto', value: null },
   },
 };
+
+const HARMONY_OPTIONS: { value: HarmonyMode; label: string }[] = [
+  { value: 'complementary', label: 'Complementario' },
+  { value: 'analogous', label: 'Análogo' },
+  { value: 'triadic', label: 'Triádico' },
+  { value: 'split', label: 'Split Complementario' },
+  { value: 'monochromatic', label: 'Monocromático' },
+];
 
 const DEFAULT_ICON_CONFIG: IconConfig = {
   mode: 'default',
@@ -77,16 +76,7 @@ const DEFAULT_ICON_CONFIG: IconConfig = {
   sizes: {},
 };
 
-const HARMONY_OPTIONS: { value: HarmonyMode; label: string }[] = [
-  { value: 'complementary', label: 'Complementario' },
-  { value: 'analogous', label: 'Análogo' },
-  { value: 'triadic', label: 'Triádico' },
-  { value: 'split', label: 'Split Complementario' },
-  { value: 'monochromatic', label: 'Monocromático' },
-];
-
-// All these fields will be synced to the public sheet (is_public=true)
-// Remove from this list if you want a field to stay private
+// Fields synced to public sheet
 const PUBLIC_FIELDS: (keyof CongregacionSettings)[] = [
   'nombre_mostrar',
   'ciudad',
@@ -97,7 +87,6 @@ const PUBLIC_FIELDS: (keyof CongregacionSettings)[] = [
 
 export default function CongregationSettings() {
   const adminSsId = localStorage.getItem(ADMIN_SS_ID_KEY);
-  const publicSsId = localStorage.getItem(PUBLIC_SS_ID_KEY);
   const queryClient = useQueryClient();
   const { updateThemeConfig } = useThemeContext();
 
@@ -164,7 +153,6 @@ export default function CongregationSettings() {
   useEffect(() => { themeConfigRef.current = themeConfig; }, [themeConfig]);
   useEffect(() => { iconConfigRef.current = iconConfig; }, [iconConfig]);
 
-  // Fetch settings if cache is empty or stale
   useEffect(() => {
     if (!adminSsId) return;
     if (!isSettingsStale() && cached) { setIsInitializing(false); return; }
@@ -204,16 +192,6 @@ export default function CongregationSettings() {
   const handleChange = (field: keyof CongregacionSettings, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
-
-  const palette = generatePalette(themeConfig.primary, themeConfig.harmony);
-  const autoBg = generateBackgrounds(themeConfig.primary);
-
-  const lightBgPage = resolveBackground(themeConfig.backgrounds.lightPage, autoBg.light.page);
-  const lightBgPanel = resolveBackground(themeConfig.backgrounds.lightPanel, autoBg.light.panel);
-  const darkBgPage = resolveBackgroundDark(themeConfig.backgrounds.darkPage, autoBg.dark.page);
-  const darkBgPanel = resolveBackgroundDark(themeConfig.backgrounds.darkPanel, autoBg.dark.panel);
-
-  const iconPreviewUrl = iconConfig.sizes?.['32'] || null;
 
   const handleSaveBasic = async () => {
     if (!adminSsId) return;
@@ -285,6 +263,32 @@ export default function CongregationSettings() {
     }
   };
 
+  const updateFaviconLink = (sizes: Record<string, string>) => {
+    const ico = sizes['ico'];
+    const p32 = sizes['32'];
+    const p192 = sizes['192'];
+
+    if (ico) {
+      let link = document.querySelector("link[rel*='icon']") as HTMLLinkElement;
+      if (!link) {
+        link = document.createElement('link');
+        link.rel = 'shortcut icon';
+        document.head.appendChild(link);
+      }
+      link.href = ico;
+    }
+
+    if (p192) {
+      let apple = document.querySelector("link[rel='apple-touch-icon']") as HTMLLinkElement;
+      if (!apple) {
+        apple = document.createElement('link');
+        apple.rel = 'apple-touch-icon';
+        document.head.appendChild(apple);
+      }
+      apple.href = p192;
+    }
+  };
+
   const handleSaveIcon = useCallback(async () => {
     if (!adminSsId) return;
     setSaving(prev => ({ ...prev, icon: true }));
@@ -298,8 +302,11 @@ export default function CongregationSettings() {
       if (iconConfig.mode === 'custom' && customIconFile) {
         generated = await generateIconFromImage(customIconFile);
       } else {
-        const text = iconConfig.text || formData.nombre_congregacion.charAt(0).toUpperCase() || '?';
-        const bgColor = iconConfig.bgMode === 'primary' ? themeConfig.primary : iconConfig.bgColor;
+        const text = iconConfig.text || formData.nombre_mostrar.substring(0, 4) || '?';
+        let bgColor = iconConfig.bgColor;
+        if (iconConfig.bgMode === 'primary') bgColor = themeConfig.primary;
+        else if (iconConfig.bgMode === 'secondary') bgColor = themeConfig.secondary || '#dc004e';
+        
         const textColor = iconConfig.textMode === 'auto'
           ? getAutoTextColor(bgColor)
           : iconConfig.textMode === 'white' ? '#ffffff' : iconConfig.textColor;
@@ -351,6 +358,10 @@ export default function CongregationSettings() {
       queryClient.invalidateQueries({ queryKey: ['sheet', 'Configuracion', adminSsId] });
       const existing = getCachedSettings();
       setCachedSettings({ ...existing?.data, icon_config: JSON.stringify(fullIconConfig) });
+      
+      // Trigger favicon update immediately
+      updateFaviconLink(sizes);
+      
       setSuccess('Icono guardado correctamente');
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
@@ -358,7 +369,7 @@ export default function CongregationSettings() {
     } finally {
       setSaving(prev => ({ ...prev, icon: false }));
     }
-  }, [adminSsId, iconConfig, customIconFile, themeConfig.primary, formData.nombre_congregacion]);
+  }, [adminSsId, iconConfig, customIconFile, themeConfig.primary, themeConfig.secondary, formData.nombre_mostrar]);
 
   const hasBasicChanges = JSON.stringify(formData) !== JSON.stringify(originalData);
   const hasAppearanceChanges = JSON.stringify(themeConfig) !== JSON.stringify(originalThemeConfig);
@@ -383,227 +394,112 @@ export default function CongregationSettings() {
   return (
     <Page
       title="Configuración de la congregación"
-      subtitle="Configure la información, apariencia e icono del sitio público"
-      actions={{
-        primary: {
-          children: 'Guardar',
-          startIcon: <SaveIcon />,
-          onClick: handleSaveBasic,
-        } as ButtonProps,
-      }}
+      subtitle="Defina la identidad visual y la información de contacto"
     >
       <Box sx={{ maxWidth: 800 }}>
-        {error && (
-          <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
-            {error}
-          </Alert>
-        )}
-        {success && (
-          <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess(null)}>
-            {success}
-          </Alert>
-        )}
+        {error && <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>{error}</Alert>}
+        {success && <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess(null)}>{success}</Alert>}
 
         {/* Información Básica */}
-        <Paper sx={{ p: 3, mb: 3 }}>
-          <Typography variant="h6" sx={{ mb: 2 }}>Información Básica</Typography>
-          <Grid2 container spacing={2}>
-            <Grid2 size={{ xs: 12, md: 6 }}>
-              <TextField
-                fullWidth
-                label="Nombre de la Congregación"
-                value={formData.nombre_congregacion}
-                disabled
-                helperText="Definido durante la instalación"
-              />
-            </Grid2>
-            <Grid2 size={{ xs: 12, md: 6 }}>
-              <TextField
-                fullWidth
-                label="Número de Congregación"
-                value={formData.numero_congregacion}
-                onChange={(e) => handleChange('numero_congregacion', e.target.value)}
-                helperText="Número identificador"
-              />
-            </Grid2>
-            <Grid2 size={{ xs: 12, md: 6 }}>
-              <TextField
-                fullWidth
-                label="Nombre a Mostrar"
-                value={formData.nombre_mostrar}
-                onChange={(e) => handleChange('nombre_mostrar', e.target.value)}
-                helperText="Nombre que se muestra en el sitio público"
-              />
-            </Grid2>
-            <Grid2 size={{ xs: 12, md: 6 }}>
-              <TextField
-                fullWidth
-                label="Ciudad"
-                value={formData.ciudad}
-                onChange={(e) => handleChange('ciudad', e.target.value)}
-                helperText="Ciudad de la congregación (opcional)"
-              />
-            </Grid2>
-            <Grid2 size={{ xs: 12, md: 6 }}>
-              <TextField
-                fullWidth
-                label="Provincia / Estado"
-                value={formData.provincia}
-                onChange={(e) => handleChange('provincia', e.target.value)}
-                helperText="Provincia o estado (opcional)"
-              />
-            </Grid2>
-          </Grid2>
-          <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
-            <Button
-              variant="contained"
-              startIcon={saving.basic ? <CircularProgress size={20} /> : <SaveIcon />}
-              onClick={handleSaveBasic}
-              disabled={saving.basic || !hasBasicChanges}
-            >
-              {saving.basic ? 'Guardando...' : 'Guardar'}
+        <Paper sx={{ p: 3, mb: 4, borderRadius: 2 }}>
+          <Typography variant="h6" sx={{ mb: 3 }}>Información Básica</Typography>
+          <Grid container spacing={3}>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <TextField fullWidth label="Nombre de la Congregación" value={formData.nombre_congregacion} disabled helperText="Inmodificable (usado en criptografía)" />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <TextField fullWidth label="Número de Congregación" value={formData.numero_congregacion} onChange={(e) => handleChange('numero_congregacion', e.target.value)} />
+            </Grid>
+            <Grid size={{ xs: 12 }}>
+              <TextField fullWidth label="Nombre a Mostrar" value={formData.nombre_mostrar} onChange={(e) => handleChange('nombre_mostrar', e.target.value)} helperText="Como se verá en el sitio público" />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <TextField fullWidth label="Ciudad" value={formData.ciudad} onChange={(e) => handleChange('ciudad', e.target.value)} />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <TextField fullWidth label="Provincia / Estado" value={formData.provincia} onChange={(e) => handleChange('provincia', e.target.value)} />
+            </Grid>
+          </Grid>
+          <Box sx={{ mt: 4, display: 'flex', justifyContent: 'flex-end' }}>
+             <Button variant="contained" startIcon={saving.basic ? <CircularProgress size={20} /> : <SaveIcon />} onClick={handleSaveBasic} disabled={saving.basic || !hasBasicChanges}>
+              {saving.basic ? 'Guardando...' : 'Guardar Información'}
             </Button>
           </Box>
         </Paper>
 
-        {/* Apariencia + Fondos + ThemePreview */}
-        <Paper sx={{ p: 3, mb: 3 }}>
-          <Typography variant="h6" sx={{ mb: 2 }}>Apariencia</Typography>
-          <Grid2 container spacing={2}>
-            <Grid2 size={{ xs: 12, md: 6 }}>
-              <TextField
-                fullWidth
+        {/* Apariencia */}
+        <Paper sx={{ p: 3, mb: 4, borderRadius: 2 }}>
+          <Typography variant="h6" sx={{ mb: 3 }}>Paleta de Colores</Typography>
+          <Grid container spacing={3}>
+            <Grid size={{ xs: 12, md: 4 }}>
+              <ColorPickerField
                 label="Color Primario"
                 value={themeConfig.primary}
-                onChange={(e) => setThemeConfig(prev => ({ ...prev, primary: e.target.value }))}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <Box
-                        component="input"
-                        type="color"
-                        value={themeConfig.primary}
-                        onChange={(e) => setThemeConfig(prev => ({ ...prev, primary: e.target.value }))}
-                        sx={{ width: 28, height: 28, border: 'none', p: 0, cursor: 'pointer', bgcolor: 'transparent' }}
-                      />
-                    </InputAdornment>
-                  ),
+                onChange={(val) => {
+                  const palette = generatePalette(val, themeConfig.harmony);
+                  setThemeConfig(prev => ({ 
+                    ...prev, 
+                    primary: val,
+                    secondary: palette.secondary.main
+                  }));
                 }}
               />
-            </Grid2>
-            <Grid2 size={{ xs: 12, md: 6 }}>
-              <FormControl fullWidth>
-                <InputLabel>Armonía</InputLabel>
-                <Select
-                  value={themeConfig.harmony}
-                  label="Armonía"
-                  onChange={(e) => setThemeConfig(prev => ({ ...prev, harmony: e.target.value as HarmonyMode }))}
-                >
-                  {HARMONY_OPTIONS.map(opt => (
-                    <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid2>
-            <Grid2 size={{ xs: 12, md: 6 }}>
+            </Grid>
+            <Grid size={{ xs: 12, md: 4 }}>
               <TextField
                 fullWidth
-                label="Color Secundario"
-                value={palette.secondary.main}
-                InputProps={{
-                  readOnly: true,
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <Box sx={{ width: 24, height: 24, borderRadius: 1, bgcolor: palette.secondary.main, border: 1, borderColor: 'grey.400' }} />
-                    </InputAdornment>
-                  ),
+                select
+                label="Armonía"
+                value={themeConfig.harmony}
+                onChange={(e) => {
+                  const harmony = e.target.value as HarmonyMode;
+                  const palette = generatePalette(themeConfig.primary, harmony);
+                  setThemeConfig(prev => ({ 
+                    ...prev, 
+                    harmony,
+                    secondary: palette.secondary.main
+                  }));
                 }}
-                helperText="Generado automáticamente"
+              >
+                {HARMONY_OPTIONS.map((option) => (
+                  <MenuItem key={option.value} value={option.value}>
+                    {option.label}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </Grid>
+            <Grid size={{ xs: 12, md: 4 }}>
+              <ColorPickerField
+                label="Color Secundario"
+                value={themeConfig.secondary || '#dc004e'}
+                onChange={(val) => setThemeConfig(prev => ({ ...prev, secondary: val }))}
               />
-            </Grid2>
-          </Grid2>
-
-          <Box sx={{ mt: 3, pt: 2, borderTop: 1, borderColor: 'divider' }}>
-            <Typography variant="subtitle1" sx={{ mb: 2 }}>Fondos</Typography>
-            <Grid2 container spacing={2}>
-              <Grid2 size={{ xs: 12, md: 6 }}>
-                <Typography variant="body2" sx={{ mb: 1 }}>Modo claro</Typography>
-                <BgSettingControl
-                  label="Página"
-                  setting={themeConfig.backgrounds.lightPage}
-                  autoValue={autoBg.light.page}
-                  onChange={(s) => setThemeConfig(prev => ({ ...prev, backgrounds: { ...prev.backgrounds, lightPage: s } }))}
-                />
-                <BgSettingControl
-                  label="Panel"
-                  setting={themeConfig.backgrounds.lightPanel}
-                  autoValue={autoBg.light.panel}
-                  onChange={(s) => setThemeConfig(prev => ({ ...prev, backgrounds: { ...prev.backgrounds, lightPanel: s } }))}
-                />
-              </Grid2>
-              <Grid2 size={{ xs: 12, md: 6 }}>
-                <Typography variant="body2" sx={{ mb: 1 }}>Modo oscuro</Typography>
-                <BgSettingControl
-                  label="Página"
-                  setting={themeConfig.backgrounds.darkPage}
-                  autoValue={autoBg.dark.page}
-                  onChange={(s) => setThemeConfig(prev => ({ ...prev, backgrounds: { ...prev.backgrounds, darkPage: s } }))}
-                />
-                <BgSettingControl
-                  label="Panel"
-                  setting={themeConfig.backgrounds.darkPanel}
-                  autoValue={autoBg.dark.panel}
-                  onChange={(s) => setThemeConfig(prev => ({ ...prev, backgrounds: { ...prev.backgrounds, darkPanel: s } }))}
-                />
-              </Grid2>
-            </Grid2>
-          </Box>
-
-          <Box sx={{ mt: 3, pt: 2, borderTop: 1, borderColor: 'divider' }}>
-            <ThemePreview
-              primaryColor={themeConfig.primary}
-              secondaryColor={palette.secondary.main}
-              lightBgPage={lightBgPage}
-              lightBgPanel={lightBgPanel}
-              darkBgPage={darkBgPage}
-              darkBgPanel={darkBgPanel}
-              congregationName={formData.nombre_mostrar || formData.nombre_congregacion || 'Congregación'}
-              iconPreview={iconPreviewUrl || undefined}
-            />
-          </Box>
-
-          <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
-            <Button
-              variant="contained"
-              startIcon={saving.appearance ? <CircularProgress size={20} /> : <SaveIcon />}
-              onClick={handleSaveAppearance}
-              disabled={saving.appearance || !hasAppearanceChanges}
-            >
-              {saving.appearance ? 'Guardando...' : 'Guardar'}
+            </Grid>
+          </Grid>
+          
+          <Box sx={{ mt: 4, display: 'flex', justifyContent: 'flex-end' }}>
+            <Button variant="contained" startIcon={saving.appearance ? <CircularProgress size={20} /> : <SaveIcon />} onClick={handleSaveAppearance} disabled={saving.appearance || !hasAppearanceChanges}>
+              {saving.appearance ? 'Guardando...' : 'Aplicar Colores'}
             </Button>
           </Box>
         </Paper>
 
         {/* Icono del Sitio */}
-        <Paper sx={{ p: 3, mb: 3 }}>
-          <Typography variant="h6" sx={{ mb: 2 }}>Icono del Sitio</Typography>
+        <Paper sx={{ p: 3, borderRadius: 2 }}>
+          <Typography variant="h6" sx={{ mb: 3 }}>Logotipo e Icono (Favicon)</Typography>
           <IconCreator
             congregationName={formData.nombre_congregacion}
             primaryColor={themeConfig.primary}
+            secondaryColor={themeConfig.secondary || '#dc004e'}
             config={iconConfig}
             onChange={setIconConfig}
             onModeChange={(mode) => setIconConfig(prev => ({ ...prev, mode }))}
             customFile={customIconFile}
             onCustomFileChange={setCustomIconFile}
           />
-          <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
-            <Button
-              variant="contained"
-              startIcon={saving.icon ? <CircularProgress size={20} /> : <SaveIcon />}
-              onClick={handleSaveIcon}
-              disabled={saving.icon || !hasIconChanges}
-            >
-              {saving.icon ? 'Guardando...' : 'Guardar'}
+          <Box sx={{ mt: 4, display: 'flex', justifyContent: 'flex-end' }}>
+            <Button variant="contained" startIcon={saving.icon ? <CircularProgress size={20} /> : <SaveIcon />} onClick={handleSaveIcon} disabled={saving.icon || !hasIconChanges}>
+              {saving.icon ? 'Guardando...' : 'Guardar Icono'}
             </Button>
           </Box>
         </Paper>
@@ -612,40 +508,37 @@ export default function CongregationSettings() {
   );
 }
 
-function BgSettingControl({ label, setting, autoValue, onChange }: {
-  label: string;
-  setting: BgSetting;
-  autoValue: string;
-  onChange: (s: BgSetting) => void;
-}) {
-  const displayValue = setting.mode === 'auto' ? autoValue : setting.mode === 'neutral' ? (label === 'Página' ? '#f5f5f5' : '#ffffff') : setting.value || autoValue;
-
+function ColorPickerField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
-    <Box sx={{ mb: 1.5 }}>
-      <Typography variant="caption" color="text.secondary">{label}</Typography>
-      <RadioGroup
-        row
-        value={setting.mode}
-        onChange={(e) => onChange({ mode: e.target.value as BgSetting['mode'], value: null })}
-        sx={{ my: 0.25 }}
-      >
-        <FormControlLabel value="auto" control={<Radio size="small" />} label="Auto" />
-        <FormControlLabel value="neutral" control={<Radio size="small" />} label="Neutral" />
-        <FormControlLabel value="custom" control={<Radio size="small" />} label="Custom" />
-      </RadioGroup>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-        <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{displayValue}</Typography>
-        {setting.mode === 'custom' && (
-          <TextField
-            size="small"
-            type="color"
-            value={setting.value || autoValue}
-            onChange={(e) => onChange({ mode: 'custom', value: e.target.value })}
-            sx={{ width: 40, height: 28 }}
-            InputProps={{ sx: { p: 0 } }}
-          />
-        )}
-      </Box>
-    </Box>
+    <TextField
+      fullWidth
+      label={label}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      slotProps={{
+        input: {
+          startAdornment: (
+            <InputAdornment position="start">
+              <Box
+                component="input"
+                type="color"
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                sx={{ 
+                  width: 32, 
+                  height: 32, 
+                  border: 'none', 
+                  p: 0, 
+                  outline: 'none',
+                  cursor: 'pointer', 
+                  bgcolor: 'transparent',
+                  borderRadius: '4px'
+                }}
+              />
+            </InputAdornment>
+          ),
+        }
+      }}
+    />
   );
 }

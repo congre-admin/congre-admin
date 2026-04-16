@@ -40,12 +40,39 @@ function generateTextIconDataUrl(
   ctx.fillStyle = bgColor;
   ctx.fillRect(0, 0, size, size);
 
-  const fontSize = text.length <= 1 ? size * 0.6 : size * 0.45;
+  // Responsive base font size
+  let fontSize = size * 0.6;
+  if (text.length === 2) fontSize = size * 0.45;
+  else if (text.length === 3) fontSize = size * 0.38;
+  else if (text.length >= 4) fontSize = size * 0.32;
+
   ctx.fillStyle = textColor;
-  ctx.font = `bold ${fontSize}px Arial, Helvetica, sans-serif`;
+  // Use Google Sans Flex if available
+  ctx.font = `bold ${fontSize}px 'Google Sans Flex', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(text.toUpperCase(), size / 2, size / 2 + size * 0.03);
+
+  // Measure text and apply aggressive horizontal scaling
+  const metrics = ctx.measureText(text);
+  const measuredWidth = metrics.width;
+  const targetWidth = size * 0.85; // Aim for 85% width coverage for a strong look
+  
+  // Calculate horizontal scale factor
+  let scaleX = 1.0;
+  if (measuredWidth > 0) {
+    // If text is too narrow (e.g. "I"), widen it. If too wide (4 chars), narrow it.
+    scaleX = targetWidth / measuredWidth;
+    
+    // Clamp widening to avoid looking too distorted, but allow aggressive narrowing
+    if (text.length <= 2) scaleX = Math.min(scaleX, 1.4); 
+    else scaleX = Math.min(scaleX, 1.1); // Minor widening for 3-4 chars if they are thin
+  }
+
+  ctx.save();
+  ctx.translate(size / 2, size / 2 + size * 0.03);
+  ctx.scale(scaleX, 1.0);
+  ctx.fillText(text, 0, 0);
+  ctx.restore();
 
   return canvas.toDataURL('image/png');
 }
