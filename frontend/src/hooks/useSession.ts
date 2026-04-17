@@ -3,7 +3,7 @@ import { authService } from '../services/authService';
 import { cacheService } from '../cache/cacheService';
 import { dataService } from '../services/dataService';
 import { QUERY_OPTIONS } from './queryConfig';
-import { getConfig, setConfigs, setSettingsFetchedAt } from '../utils/settingsCache';
+import { getSys, getConfig, setConfigs } from '../utils/settingsCache';
 
 const QUERY_KEYS = {
   session: ['session'] as const,
@@ -55,11 +55,6 @@ export function useAuthMethods() {
   });
 }
 
-/**
- * Generic hook for fetching sheet data.
- * Uses TanStack Query cache with 5min stale time.
- * Automatically deduplicates concurrent requests via DataService.
- */
 export function useSheetData<T = any>(sheet: string, ssId: string, options = {}) {
   return useQuery({
     queryKey: QUERY_KEYS.sheet(sheet, ssId),
@@ -69,10 +64,6 @@ export function useSheetData<T = any>(sheet: string, ssId: string, options = {})
   });
 }
 
-/**
- * Hook for fetching sheet data with JSONata filtering, mapping, and sorting.
- * The filter/map/sort expressions are included in the query key for proper caching.
- */
 export function useFilteredData<T = any>(
   sheet: string,
   ssId: string,
@@ -94,10 +85,6 @@ export function useFilteredData<T = any>(
   });
 }
 
-/**
- * Batch hook that fetches core tables in a single HTTP call.
- * Returns { perfiles, config, plugins } from one batchExecute.
- */
 export function useCoreData(ssId: string, options = {}) {
   return useQuery({
     queryKey: QUERY_KEYS.coreData(ssId),
@@ -119,9 +106,6 @@ export function useCoreData(ssId: string, options = {}) {
   });
 }
 
-/**
- * Mutation for saving data with optimistic updates and cache invalidation.
- */
 export function useSaveData(sheet: string, ssId: string) {
   const queryClient = useQueryClient();
 
@@ -153,9 +137,6 @@ export function useSaveData(sheet: string, ssId: string) {
   });
 }
 
-/**
- * Mutation for deleting data with optimistic updates.
- */
 export function useDeleteData(sheet: string, ssId: string) {
   const queryClient = useQueryClient();
 
@@ -181,7 +162,7 @@ export function useDeleteData(sheet: string, ssId: string) {
 }
 
 export async function initializeCacheOnLogin(queryClient?: QueryClient): Promise<void> {
-  const coreSsId = getConfig('ss_core');
+  const coreSsId = getSys('core_ss_id');
   if (!coreSsId) return;
 
   const [pluginsResult, configResult, perfilesResult] = await Promise.all([
@@ -195,32 +176,28 @@ export async function initializeCacheOnLogin(queryClient?: QueryClient): Promise
     modules[p.plugin_id] = p.ssId;
   });
 
-  const config: Record<string, string> = {};
   let publicSsId: string | null = null;
-  configResult.forEach((c) => {
-    config[c.clave] = c.valor;
+  for (const c of configResult) {
     if (c.clave === 'ss_publico' && c.valor) {
       publicSsId = c.valor;
     }
-  });
-
-  // Store config to localStorage (core only - the getConfig fallback handles public)
-  setConfigs(config, false);
-  // Set timestamp for TTL tracking
-  setSettingsFetchedAt();
-
-  // Also store theme_config specifically if present
-  if (config.theme_config) {
-    localStorage.setItem('congre_theme_config', config.theme_config);
   }
 
-  const userPerfilId = localStorage.getItem('congre_perfil_id');
+  setConfigs(configResult);
+
+  const session = getSession();
+  const userPerfilId = session?.userData?.perfilId;
   const perfil = perfilesResult.find((p) => p.id === userPerfilId);
+
+  const configObj: Record<string, string> = {};
+  configResult.forEach((c) => {
+    configObj[c.clave] = c.valor;
+  });
 
   if (perfil) {
     await cacheService.refreshOnLogin(
       modules,
-      config,
+      configObj,
       perfil,
       publicSsId || ''
     );

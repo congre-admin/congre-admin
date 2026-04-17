@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback, ReactNode 
 import { Theme } from '@mui/material/styles';
 import type { ThemeConfig } from '../../types';
 import { createCongregacionTheme } from '../theme/theme';
-import { getCachedSettings, setCachedSettings, getAllConfigs, setConfig } from '../../utils/settingsCache';
+import { getAllConfigs, setConfig } from '../../utils/settingsCache';
 
 const DEFAULT_THEME_CONFIG: ThemeConfig = {
   primary: '#1976d2',
@@ -16,13 +16,9 @@ const DEFAULT_THEME_CONFIG: ThemeConfig = {
 };
 
 function loadThemeConfigFromCache(): ThemeConfig {
-  const coreConfigs = getAllConfigs(false);
-  if (coreConfigs.theme_config) {
-    try { return JSON.parse(coreConfigs.theme_config); } catch { /* ignore */ }
-  }
-  const publicConfigs = getAllConfigs(true);
-  if (publicConfigs.theme_config) {
-    try { return JSON.parse(publicConfigs.theme_config); } catch { /* ignore */ }
+  const allConfigs = getAllConfigs();
+  if (allConfigs.theme_config) {
+    try { return JSON.parse(allConfigs.theme_config); } catch { /* ignore */ }
   }
   return DEFAULT_THEME_CONFIG;
 }
@@ -60,9 +56,8 @@ export function ThemeContextProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const checkForConfigUpdates = () => {
       const freshConfig = loadThemeConfigFromCache();
-      const coreConfigs = getAllConfigs(false);
-      const publicConfigs = getAllConfigs(true);
-      const hasStoredConfig = !!coreConfigs.theme_config || !!publicConfigs.theme_config;
+      const allConfigs = getAllConfigs();
+      const hasStoredConfig = !!allConfigs.theme_config;
       
       if (hasStoredConfig) {
         setThemeConfig(freshConfig);
@@ -100,9 +95,7 @@ export function ThemeContextProvider({ children }: { children: ReactNode }) {
 
   const updateThemeConfig = useCallback((config: ThemeConfig) => {
     setThemeConfig(config);
-    setCachedSettings({ ...getCachedSettings()?.data, theme_config: JSON.stringify(config) });
-    setConfig('theme_config', JSON.stringify(config), false);
-    setConfig('theme_config', JSON.stringify(config), true);
+    setConfig('theme_config', JSON.stringify(config));
   }, []);
 
   return (

@@ -14,9 +14,7 @@ import {
   Campaign as CampaignIcon,
 } from '@mui/icons-material';
 import { parseCsvToJson } from '@/utils/csvUtils';
-import { setConfigs, getConfig } from '@/utils/settingsCache';
-
-const PUBLIC_SS_ID_KEY = 'congre_public_ss_id';
+import { setConfigs, getSys } from '@/utils/settingsCache';
 
 export default function PublicHome() {
   const navigate = useNavigate();
@@ -31,11 +29,10 @@ export default function PublicHome() {
   } | null>(null);
 
   useEffect(() => {
-    const storedSsId = localStorage.getItem(PUBLIC_SS_ID_KEY);
+    const storedSsId = getSys('public_ss_id');
     if (storedSsId) {
       loadPublicData(storedSsId);
     } else {
-      // No SSID - let modal handle this, show loading until modal appears
       setLoading(false);
     }
   }, []);
@@ -63,27 +60,12 @@ export default function PublicHome() {
       
       const configData = parseCsvToJson(configText);
       
-      // Store ALL config keys in localStorage
-      const publicConfig: Record<string, string> = {};
-      
-      // First pass: collect all raw key-value pairs
-      for (const row of configData) {
-        const clave = row.clave;
-        const valor = row.valor;
-        
-        if (clave && valor !== undefined) {
-          publicConfig[clave] = valor;
-        }
-      }
-      
-      // Second pass: extract specific formatted values for display
       for (const row of configData) {
         const clave = row.clave;
         const valor = row.valor;
         
         if (clave === 'nombre_mostrar') nombreMostrar = valor;
         
-        // theme_config is a JSON object with primary color
         if (clave === 'theme_config') {
           try {
             const themeConfig = JSON.parse(valor);
@@ -91,28 +73,23 @@ export default function PublicHome() {
           } catch { /* ignore */ }
         }
         
-        // Fallback: tema_color as simple string
         if (clave === 'tema_color' && !temaColor) {
           temaColor = valor;
         }
         
-        // icon_config is a JSON object with icon data - extract URL if available
         if (clave === 'icon_config') {
           try {
             const iconConfig = JSON.parse(valor);
-            // Check for text-based icon URL (not emoji)
             iconoUrl = iconConfig.url || iconConfig.text || undefined;
           } catch { /* ignore */ }
         }
         
-        // Fallback: icono_url as simple string
         if (clave === 'icono_url' && !iconoUrl) {
           iconoUrl = valor;
         }
       }
       
-      // Store each config key using the unified settings cache
-      setConfigs(publicConfig, true);
+      setConfigs(configData);
       
       if (temaColor) {
         document.documentElement.style.setProperty('--theme-primary', temaColor);

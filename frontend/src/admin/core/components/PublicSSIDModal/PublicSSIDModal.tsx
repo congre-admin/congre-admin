@@ -16,8 +16,7 @@ import {
   MoreVert as MoreVertIcon,
   RocketLaunch as RocketLaunchIcon,
 } from '@mui/icons-material';
-
-const PUBLIC_SS_ID_KEY = 'congre_public_ss_id';
+import { getSys, setSys } from '@/utils/settingsCache';
 
 interface PublicSSIDModalProps {
   open: boolean;
@@ -61,7 +60,7 @@ export default function PublicSSIDModal({ open, onClose, onSetupWizard }: Public
       return;
     }
     
-    localStorage.setItem(PUBLIC_SS_ID_KEY, ssid);
+    setSys('public_ss_id', ssid);
     setError(null);
     setSsidInput('');
     onClose();

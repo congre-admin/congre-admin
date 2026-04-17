@@ -18,7 +18,7 @@ import { useSheetData } from '@/hooks/useSession';
 import { useQueryClient } from '@tanstack/react-query';
 import { dataService } from '@/services/dataService';
 import { useThemeContext } from '@/core/context/ThemeContext';
-import { getCachedSettings, setCachedSettings, isSettingsStale, getConfig } from '@/utils/settingsCache';
+import { getConfig, getSys, setConfig, setConfigs, getAllConfigs } from '@/utils/settingsCache';
 import type { ThemeConfig, IconConfig, BgSetting, HarmonyMode } from '@/types';
 import {
   generatePalette,
@@ -26,9 +26,6 @@ import {
 } from '@/utils/color';
 import IconCreator from '@/core/components/IconCreator';
 import Page from '@/admin/core/components/Page';
-
-const ADMIN_SS_ID_KEY = 'congre_admin_ss_id';
-const PUBLIC_SS_ID_KEY = 'congre_public_ss_id';
 
 interface CongregacionSettings {
   nombre_congregacion: string;
@@ -86,68 +83,69 @@ const PUBLIC_FIELDS: (keyof CongregacionSettings)[] = [
 ];
 
 export default function CongregationSettings() {
-  const adminSsId = getConfig('ss_core') || localStorage.getItem(ADMIN_SS_ID_KEY);
+  let adminSsId = getSys('core_ss_id');
+  if (!adminSsId) adminSsId = getConfig('ss_core');
   const queryClient = useQueryClient();
   const { updateThemeConfig } = useThemeContext();
 
-  const cached = getCachedSettings();
+  const allConfigs = getAllConfigs();
 
   const [saving, setSaving] = useState<Record<string, boolean>>({ basic: false, appearance: false, icon: false });
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   const [formData, setFormData] = useState<CongregacionSettings>(() => {
-    if (cached?.data) {
+    if (allConfigs) {
       return {
-        nombre_congregacion: cached.data.nombre_congregacion || '',
-        numero_congregacion: cached.data.numero_congregacion || '',
-        nombre_mostrar: cached.data.nombre_mostrar || '',
-        ciudad: cached.data.ciudad || '',
-        provincia: cached.data.provincia || '',
+        nombre_congregacion: allConfigs.nombre_congregacion || '',
+        numero_congregacion: allConfigs.numero_congregacion || '',
+        nombre_mostrar: allConfigs.nombre_mostrar || '',
+        ciudad: allConfigs.ciudad || '',
+        provincia: allConfigs.provincia || '',
       };
     }
     return DEFAULT_SETTINGS;
   });
   const [originalData, setOriginalData] = useState<CongregacionSettings>(() => {
-    if (cached?.data) {
+    if (allConfigs) {
       return {
-        nombre_congregacion: cached.data.nombre_congregacion || '',
-        numero_congregacion: cached.data.numero_congregacion || '',
-        nombre_mostrar: cached.data.nombre_mostrar || '',
-        ciudad: cached.data.ciudad || '',
-        provincia: cached.data.provincia || '',
+        nombre_congregacion: allConfigs.nombre_congregacion || '',
+        numero_congregacion: allConfigs.numero_congregacion || '',
+        nombre_mostrar: allConfigs.nombre_mostrar || '',
+        ciudad: allConfigs.ciudad || '',
+        provincia: allConfigs.provincia || '',
       };
     }
     return DEFAULT_SETTINGS;
   });
 
   const [themeConfig, setThemeConfig] = useState<ThemeConfig>(() => {
-    if (cached?.data.theme_config) {
-      try { return JSON.parse(cached.data.theme_config); } catch { /* ignore */ }
+    if (allConfigs.theme_config) {
+      try { return JSON.parse(allConfigs.theme_config); } catch { /* ignore */ }
     }
     return DEFAULT_THEME_CONFIG;
   });
   const [originalThemeConfig, setOriginalThemeConfig] = useState<ThemeConfig>(() => {
-    if (cached?.data.theme_config) {
-      try { return JSON.parse(cached.data.theme_config); } catch { /* ignore */ }
+    if (allConfigs.theme_config) {
+      try { return JSON.parse(allConfigs.theme_config); } catch { /* ignore */ }
     }
     return DEFAULT_THEME_CONFIG;
   });
 
   const [iconConfig, setIconConfig] = useState<IconConfig>(() => {
-    if (cached?.data.icon_config) {
-      try { return JSON.parse(cached.data.icon_config); } catch { /* ignore */ }
+    if (allConfigs.icon_config) {
+      try { return JSON.parse(allConfigs.icon_config); } catch { /* ignore */ }
     }
     return DEFAULT_ICON_CONFIG;
   });
   const [originalIconConfig, setOriginalIconConfig] = useState<IconConfig>(() => {
-    if (cached?.data.icon_config) {
-      try { return JSON.parse(cached.data.icon_config); } catch { /* ignore */ }
+    if (allConfigs.icon_config) {
+      try { return JSON.parse(allConfigs.icon_config); } catch { /* ignore */ }
     }
     return DEFAULT_ICON_CONFIG;
   });
   const [customIconFile, setCustomIconFile] = useState<File | null>(null);
-  const [isInitializing, setIsInitializing] = useState(!cached);
+  const [isInitializing, setIsInitializing] = useState(!Object.keys(allConfigs).length);
   const themeConfigRef = useRef(themeConfig);
   const iconConfigRef = useRef(iconConfig);
   useEffect(() => { themeConfigRef.current = themeConfig; }, [themeConfig]);
@@ -155,15 +153,10 @@ export default function CongregationSettings() {
 
   useEffect(() => {
     if (!adminSsId) return;
-    if (!isSettingsStale() && cached) { setIsInitializing(false); return; }
 
     dataService.getData<{ clave: string; valor: any }[]>('Configuracion', adminSsId)
       .then(config => {
-        const settings: Record<string, string> = {};
-        config.forEach(c => {
-          settings[c.clave] = typeof c.valor === 'object' ? JSON.stringify(c.valor) : c.valor;
-        });
-        setCachedSettings(settings);
+        setConfigs(config);
 
         const loadedSettings = { ...DEFAULT_SETTINGS };
         let loadedTheme: ThemeConfig | null = null;
@@ -219,10 +212,7 @@ export default function CongregationSettings() {
       await dataService.batchExecute(ops, { mode: 'fail-fast' });
       setOriginalData(formData);
       queryClient.invalidateQueries({ queryKey: ['sheet', 'Configuracion', adminSsId] });
-      const existing = getCachedSettings();
-      const updated = { ...existing?.data };
-      changedFields.forEach(field => { updated[field] = formData[field]; });
-      setCachedSettings(updated);
+      changedFields.forEach(field => { setConfig(field, formData[field]); });
       setSuccess('Información guardada correctamente');
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
@@ -248,9 +238,7 @@ export default function CongregationSettings() {
       setOriginalThemeConfig(themeConfig);
       queryClient.invalidateQueries({ queryKey: ['sheet', 'Configuracion', adminSsId] });
       
-      const existing = getCachedSettings();
-      const updatedSettings = { ...existing?.data, theme_config: JSON.stringify(themeConfig) };
-      setCachedSettings(updatedSettings);
+      setConfig('theme_config', JSON.stringify(themeConfig));
       
       updateThemeConfig(themeConfigRef.current);
       
@@ -313,7 +301,7 @@ export default function CongregationSettings() {
         generated = generateIconFromText(text, bgColor, textColor);
       }
 
-      const folderId = localStorage.getItem('congre_admin_folder_id');
+      const folderId = getSys('folder_id');
       if (!folderId) throw new Error('Folder ID no configurado');
 
       const uploadOps = Object.entries(generated.pngs).map(([size, dataUrl]) => ({
@@ -356,8 +344,7 @@ export default function CongregationSettings() {
       setOriginalIconConfig(fullIconConfig);
       setCustomIconFile(null);
       queryClient.invalidateQueries({ queryKey: ['sheet', 'Configuracion', adminSsId] });
-      const existing = getCachedSettings();
-      setCachedSettings({ ...existing?.data, icon_config: JSON.stringify(fullIconConfig) });
+      setConfig('icon_config', JSON.stringify(fullIconConfig));
       
       // Trigger favicon update immediately
       updateFaviconLink(sizes);

@@ -1,165 +1,142 @@
-/**
- * Configuration cache for CongreAdmin
- * 
- * Stores config as individual localStorage keys:
- * - Logged users: congre_core_<key>
- * - Public: congre_public_<key>
- * 
- * On logout, config is replaced with public sheet values.
- */
+const CFG_KEY = 'ca.cfg';
+const SYS_KEY = 'ca.sys';
+const SESSION_KEY = 'ca.session';
+const ADMIN_KEYS_KEY = 'ca.admin_keys';
 
-const CORE_PREFIX = 'congre_core_';
-const PUBLIC_PREFIX = 'congre_public_';
-const CONFIG_SS_KEY = 'congre_config_ss_id';
+const LEGACY_PREFIXES = ['congre_core_', 'congre_public_', 'congre_admin_'];
 
-/**
- * Set a config value for the current session type
- */
-export function setConfig(key: string, value: string, isPublic = false): void {
-  const prefix = isPublic ? PUBLIC_PREFIX : CORE_PREFIX;
-  localStorage.setItem(`${prefix}${key}`, value);
+export function initSettingsStore(): void {
+  if (!localStorage.getItem(SYS_KEY)) {
+    localStorage.setItem(SYS_KEY, JSON.stringify({}));
+  }
+
+  if (!localStorage.getItem(CFG_KEY)) {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && LEGACY_PREFIXES.some(prefix => key.startsWith(prefix))) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach(key => localStorage.removeItem(key));
+  }
 }
 
-/**
- * Get a config value - checks core first, then public as fallback
- */
+function getJson<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function setJson(key: string, value: unknown): void {
+  localStorage.setItem(key, JSON.stringify(value));
+}
+
+export function getSys(key: string): string | null {
+  const sys = getJson<Record<string, string>>(SYS_KEY, {});
+  return sys[key] ?? null;
+}
+
+export function setSys(key: string, value: string): void {
+  const sys = getJson<Record<string, string>>(SYS_KEY, {});
+  sys[key] = value;
+  setJson(SYS_KEY, sys);
+}
+
+export function setSysMany(entries: Record<string, string>): void {
+  const sys = getJson<Record<string, string>>(SYS_KEY, {});
+  Object.assign(sys, entries);
+  setJson(SYS_KEY, sys);
+}
+
 export function getConfig(key: string): string | null {
-  const coreValue = localStorage.getItem(`${CORE_PREFIX}${key}`);
-  if (coreValue !== null) return coreValue;
-  return localStorage.getItem(`${PUBLIC_PREFIX}${key}`);
+  const cfg = getJson<Record<string, string>>(CFG_KEY, {});
+  return cfg[key] ?? null;
 }
 
-/**
- * Set multiple config values at once
- */
-export function setConfigs(entries: Record<string, string>, isPublic = false): void {
-  const prefix = isPublic ? PUBLIC_PREFIX : CORE_PREFIX;
-  Object.entries(entries).forEach(([key, value]) => {
-    localStorage.setItem(`${prefix}${key}`, value);
-  });
+export function setConfig(key: string, value: string): void {
+  const cfg = getJson<Record<string, string>>(CFG_KEY, {});
+  cfg[key] = value;
+  setJson(CFG_KEY, cfg);
 }
 
-/**
- * Get all config keys for current session (core or public)
- */
-export function getAllConfigKeys(isPublic: boolean): string[] {
-  const prefix = isPublic ? PUBLIC_PREFIX : CORE_PREFIX;
-  const keys: string[] = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (key?.startsWith(prefix)) {
-      keys.push(key.slice(prefix.length));
+export function getAllConfigs(): Record<string, string> {
+  return getJson<Record<string, string>>(CFG_KEY, {});
+}
+
+export interface ConfigRow {
+  clave: string;
+  valor: any;
+  is_public?: boolean | string;
+}
+
+function isPublicValue(val: boolean | string | undefined): boolean {
+  if (val === undefined || val === null) return true;
+  if (typeof val === 'boolean') return val;
+  const lower = String(val).toLowerCase().trim();
+  if (lower === 'false' || lower === 'no' || lower === '0') return false;
+  return true;
+}
+
+export function setConfigs(rows: ConfigRow[]): void {
+  const cfg: Record<string, string> = {};
+  const adminKeys: string[] = [];
+
+  for (const row of rows) {
+    const value = typeof row.valor === 'object' ? JSON.stringify(row.valor) : String(row.valor ?? '');
+    cfg[row.clave] = value;
+
+    if (!isPublicValue(row.is_public)) {
+      adminKeys.push(row.clave);
     }
   }
-  return keys;
-}
 
-/**
- * Get all config entries as Record
- */
-export function getAllConfigs(isPublic: boolean): Record<string, string> {
-  const prefix = isPublic ? PUBLIC_PREFIX : CORE_PREFIX;
-  const configs: Record<string, string> = {};
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (key?.startsWith(prefix)) {
-      const configKey = key.slice(prefix.length);
-      configs[configKey] = localStorage.getItem(key) || '';
-    }
+  const existingCfg = getJson<Record<string, string>>(CFG_KEY, {});
+  const mergedCfg = { ...existingCfg, ...cfg };
+  setJson(CFG_KEY, mergedCfg);
+
+  if (adminKeys.length > 0) {
+    const existingAdminKeys = getJson<string[]>(ADMIN_KEYS_KEY, []);
+    const allAdminKeys = [...new Set([...existingAdminKeys, ...adminKeys])];
+    setJson(ADMIN_KEYS_KEY, allAdminKeys);
+  } else {
+    localStorage.removeItem(ADMIN_KEYS_KEY);
   }
-  return configs;
 }
 
-/**
- * Clear core config (called on logout, then replaced with public)
- */
-export function clearCoreConfig(): void {
-  const keysToRemove: string[] = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (key?.startsWith(CORE_PREFIX)) {
-      keysToRemove.push(key);
-    }
+export function getSession(): { sessionToken: string; userData: any } | null {
+  return getJson<{ sessionToken: string; userData: any } | null>(SESSION_KEY, null);
+}
+
+export function setSession(token: string, user: any): void {
+  setJson(SESSION_KEY, { sessionToken: token, userData: user });
+}
+
+export function clearSession(): void {
+  localStorage.removeItem(SESSION_KEY);
+}
+
+export function getAdminKeys(): string[] {
+  return getJson<string[]>(ADMIN_KEYS_KEY, []);
+}
+
+export function clearAdminConfigs(): void {
+  const adminKeys = getAdminKeys();
+  const cfg = getJson<Record<string, string>>(CFG_KEY, {});
+
+  for (const key of adminKeys) {
+    delete cfg[key];
   }
-  keysToRemove.forEach(key => localStorage.removeItem(key));
+
+  setJson(CFG_KEY, cfg);
+  localStorage.removeItem(ADMIN_KEYS_KEY);
+  clearSession();
 }
 
-/**
- * Clear public config
- */
-export function clearPublicConfig(): void {
-  const keysToRemove: string[] = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (key?.startsWith(PUBLIC_PREFIX)) {
-      keysToRemove.push(key);
-    }
-  }
-  keysToRemove.forEach(key => localStorage.removeItem(key));
-}
-
-/**
- * Check if config exists for a given key (core or public)
- */
 export function hasConfig(key: string): boolean {
   return getConfig(key) !== null;
-}
-
-/**
- * Store which spreadsheet ID was used to load current config
- */
-export function setConfigSsId(ssId: string, isPublic: boolean): void {
-  const prefix = isPublic ? 'public' : 'core';
-  localStorage.setItem(`${CONFIG_SS_KEY}_${prefix}`, ssId);
-}
-
-/**
- * Get the spreadsheet ID used to load current config
- */
-export function getConfigSsId(isPublic: boolean): string | null {
-  const prefix = isPublic ? 'public' : 'core';
-  return localStorage.getItem(`${CONFIG_SS_KEY}_${prefix}`);
-}
-
-// Legacy compatibility
-export function getCachedSettings(): { fetchedAt: string; data: Record<string, string> } | null {
-  const coreConfigs = getAllConfigs(false);
-  if (Object.keys(coreConfigs).length === 0) {
-    const publicConfigs = getAllConfigs(true);
-    if (Object.keys(publicConfigs).length === 0) return null;
-    return {
-      fetchedAt: new Date().toISOString(),
-      data: publicConfigs,
-    };
-  }
-  return {
-    fetchedAt: new Date().toISOString(),
-    data: coreConfigs,
-  };
-}
-
-export function setCachedSettings(data: Record<string, string>): void {
-  setConfigs(data, false);
-  localStorage.setItem('congre_settings_fetched_at', Date.now().toString());
-}
-
-export function clearCachedSettings(): void {
-  clearCoreConfig();
-}
-
-const SETTINGS_FETCHED_AT_KEY = 'congre_settings_fetched_at';
-const STALE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
-
-export function isSettingsStale(): boolean {
-  const fetchedAt = localStorage.getItem(SETTINGS_FETCHED_AT_KEY);
-  if (!fetchedAt) return true;
-  
-  const timestamp = parseInt(fetchedAt, 10);
-  if (isNaN(timestamp)) return true;
-  
-  return Date.now() - timestamp > STALE_THRESHOLD_MS;
-}
-
-export function setSettingsFetchedAt(): void {
-  localStorage.setItem(SETTINGS_FETCHED_AT_KEY, Date.now().toString());
 }

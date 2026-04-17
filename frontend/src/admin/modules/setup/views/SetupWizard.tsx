@@ -43,8 +43,7 @@ import {
 } from '@mui/icons-material';
 import { wrapMasterKey, generateMasterKey, createMasterKeyBackup } from '@/core/crypto/cryptoUtils';
 import { dataService } from '@/services/dataService';
-
-const API_URL_KEY = 'congre_admin_api_url';
+import { getSys, setSys, clearSession } from '@/utils/settingsCache';
 
 async function fetchApi(url: string, options?: RequestInit) {
   const response = await fetch(url, {
@@ -58,7 +57,14 @@ async function fetchApi(url: string, options?: RequestInit) {
   });
   return response.json();
 }
-const SS_ID_KEY = 'congre_admin_ss_id';
+
+function clearSettings() {
+  clearSession();
+  setSys('gas_url', '');
+  setSys('core_ss_id', '');
+  setSys('public_ss_id', '');
+  setSys('folder_id', '');
+}
 
 interface Perfil {
   id: string;
@@ -118,18 +124,10 @@ export default function SetupWizard() {
   const [loadingCode, setLoadingCode] = useState(false);
 
   useEffect(() => {
-    // Clear old installation data for fresh start
-    localStorage.removeItem('congre_admin_api_url');
-    localStorage.removeItem('congre_admin_ss_id');
-    localStorage.removeItem('congre_admin_session_token');
-    localStorage.removeItem('congre_perfil_id');
-    localStorage.removeItem('congre_public_ss_id');
-    localStorage.removeItem('congre_admin_user_data');
-    localStorage.removeItem('congre_admin_folder_id');
-    localStorage.removeItem('congre_admin_folder_url');
+    clearSettings();
     
-    const storedApiUrl = localStorage.getItem(API_URL_KEY);
-    const storedSsId = localStorage.getItem(SS_ID_KEY);
+    const storedApiUrl = getSys('gas_url');
+    const storedSsId = getSys('core_ss_id');
     
     if (storedApiUrl && storedSsId) {
       navigate('/admin/login');
@@ -200,7 +198,7 @@ export default function SetupWizard() {
     setError(null);
 
     try {
-      localStorage.setItem(API_URL_KEY, apiUrl);
+      setSys('gas_url', apiUrl);
       dataService.setApiUrl(apiUrl);
       
       const nombreDisplay = nombreMostrar.trim() || `Co. ${nombreCongregacion}`;
@@ -222,10 +220,9 @@ export default function SetupWizard() {
         throw new Error(data.error || 'Error en la instalación');
       }
 
-      localStorage.setItem(SS_ID_KEY, data.ssId);
-      localStorage.setItem('congre_public_ss_id', data.publicSsId);
-      localStorage.setItem('congre_admin_folder_id', data.folderId);
-      localStorage.setItem('congre_admin_folder_url', data.folderUrl);
+      setSys('core_ss_id', data.ssId);
+      setSys('public_ss_id', data.publicSsId);
+      setSys('folder_id', data.folderId);
       
       const coreSsId = data.ssId;
       const publicSsId = data.publicSsId;
@@ -349,7 +346,7 @@ export default function SetupWizard() {
     setError(null);
 
     try {
-      const storedApiUrl = localStorage.getItem(API_URL_KEY);
+      const storedApiUrl = getSys('gas_url');
       if (!storedApiUrl) {
         setError('URL de API no configurada');
         setLoading(false);
@@ -377,7 +374,7 @@ export default function SetupWizard() {
             password: adminPassword,
             perfilIds: ['p_admin'],
             wrapped_mk,
-            ssId: localStorage.getItem(SS_ID_KEY)
+            ssId: getSys('core_ss_id')
           }
         })
       });

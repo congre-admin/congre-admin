@@ -13,7 +13,7 @@ import LightModeIcon from '@mui/icons-material/Brightness7';
 import { useAuth } from '../core/context/AuthContext';
 import { useThemeContext } from '../core/context/ThemeContext';
 import { useMenuConfig } from './core/hooks/useMenuConfig';
-import { getConfig } from '../utils/settingsCache';
+import { getSys, setSys, getConfig } from '../utils/settingsCache';
 
 import { AppProvider } from '@toolpad/core/AppProvider';
 import { DashboardLayout } from '@toolpad/core/DashboardLayout';
@@ -53,7 +53,7 @@ function CustomToolbarActions() {
   const navigate = useNavigate();
   
   const [shareOpen, setShareOpen] = useState(false);
-  const publicSsId = localStorage.getItem('congre_public_ss_id') || getConfig('ss_publico');
+  const publicSsId = getSys('public_ss_id') || getConfig('ss_publico');
   const shareUrl = `${window.location.origin}/?ssid=${publicSsId || ''}`;
   
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
@@ -200,14 +200,14 @@ function PublicAppRoutes() {
     const params = new URLSearchParams(window.location.search);
     const urlSsId = params.get('ssid');
     if (urlSsId) {
-      localStorage.setItem('congre_public_ss_id', urlSsId);
+      setSys('public_ss_id', urlSsId);
       window.history.replaceState({}, '', window.location.pathname);
       setSsidFromUrl(urlSsId);
     }
   }, []);
 
   useEffect(() => {
-    const storedSsId = localStorage.getItem('congre_public_ss_id');
+    const storedSsId = getSys('public_ss_id');
     if (!storedSsId && !ssidFromUrl) {
       setShowSSIDModal(true);
     }

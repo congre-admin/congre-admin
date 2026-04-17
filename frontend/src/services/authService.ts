@@ -1,18 +1,11 @@
 import { dataService } from './dataService';
 import { cacheService } from '../cache/cacheService';
-import { getConfig } from '../utils/settingsCache';
-import type {
-  LoginPayload,
-  LoginResponse,
-  LoginStepResponse,
-  User,
-  ApiResponse,
-} from '../types';
+import { getSession, clearSession, setSession } from '../utils/settingsCache';
 
 const SESSION_TOKEN_KEY = 'congre_admin_session_token';
-const WRAPPED_MK_KEY = 'congre_wrapped_mk';
-const USER_ID_KEY = 'congre_user_id';
-const USERNAME_KEY = 'congre_username';
+const WRAPPED_MK_KEY = 'congre_admin_wrapped_mk';
+const USER_ID_KEY = 'congre_admin_user_id';
+const USERNAME_KEY = 'congre_admin_username';
 const PERFIL_ID_KEY = 'congre_perfil_id';
 
 export class AuthService {
@@ -55,44 +48,40 @@ export class AuthService {
   }
 
   async logout(): Promise<void> {
-    const sessionToken = localStorage.getItem(SESSION_TOKEN_KEY);
-    if (sessionToken) {
+    const session = getSession();
+    if (session?.sessionToken) {
       try {
-        await dataService.logout(sessionToken);
+        await dataService.logout(session.sessionToken);
       } catch {
         // Ignore errors on logout
       }
     }
 
-    localStorage.removeItem(SESSION_TOKEN_KEY);
-    localStorage.removeItem(WRAPPED_MK_KEY);
-    localStorage.removeItem(USER_ID_KEY);
-    localStorage.removeItem(USERNAME_KEY);
-    localStorage.removeItem(PERFIL_ID_KEY);
+    clearSession();
 
     await cacheService.clearAll();
   }
 
   async validateSession(): Promise<{ valid: boolean; userId?: string; username?: string }> {
-    const sessionToken = localStorage.getItem(SESSION_TOKEN_KEY);
-    if (!sessionToken) {
+    const session = getSession();
+    if (!session?.sessionToken) {
       return { valid: false };
     }
 
-    const result = await dataService.validateSession(sessionToken);
+    const result = await dataService.validateSession(session.sessionToken);
     return result;
   }
 
   async refreshSession(): Promise<boolean> {
-    const sessionToken = localStorage.getItem(SESSION_TOKEN_KEY);
-    if (!sessionToken) {
+    const session = getSession();
+    if (!session?.sessionToken) {
       return false;
     }
 
     try {
-      const result = await dataService.refreshSession(sessionToken);
+      const result = await dataService.refreshSession(session.sessionToken);
       if (result.success && result.sessionToken) {
-        localStorage.setItem(SESSION_TOKEN_KEY, result.sessionToken);
+        setSession(result.sessionToken, session.userData);
         return true;
       }
     } catch {

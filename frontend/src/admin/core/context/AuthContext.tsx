@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { initializeCacheOnLogin } from '../../../hooks/useSession';
 import { dataService } from '../../../services/dataService';
-import { setConfigs, clearCoreConfig, getConfig, setConfig } from '../../../utils/settingsCache';
+import { getSys, setSys, getConfig, getSession, setSession, clearAdminConfigs } from '../../../utils/settingsCache';
 
 interface User {
   id: string;
@@ -26,12 +26,6 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-const API_URL_KEY = 'congre_admin_api_url';
-const SESSION_TOKEN_KEY = 'congre_admin_session_token';
-const USER_DATA_KEY = 'congre_admin_user_data';
-const ADMIN_SS_ID_KEY = 'congre_admin_ss_id';
-const PUBLIC_SS_ID_KEY = 'congre_public_ss_publico';
 
 async function fetchApi(url: string, options?: RequestInit) {
   const response = await fetch(url, {
@@ -87,22 +81,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [wrapped_mk, setWrappedMk] = useState<string | null>(null);
 
   useEffect(() => {
-    const storedUser = localStorage.getItem(USER_DATA_KEY);
-    const token = localStorage.getItem(SESSION_TOKEN_KEY);
-    
-    if (storedUser && token) {
-      setUser(JSON.parse(storedUser));
-      setSessionToken(token);
+    const session = getSession();
+    if (session) {
+      setUser(session.userData);
+      setSessionToken(session.sessionToken);
       
-      const adminSsId = getConfig('ss_core') || localStorage.getItem(ADMIN_SS_ID_KEY);
+      const adminSsId = getSys('core_ss_id');
       if (adminSsId) {
         dataService.getData<{ clave: string; valor: any }[]>('Configuracion', adminSsId)
           .then(config => {
-            const settings: Record<string, string> = {};
+            const cfg: Record<string, string> = {};
             config.forEach(c => {
-              settings[c.clave] = typeof c.valor === 'object' ? JSON.stringify(c.valor) : c.valor;
+              cfg[c.clave] = typeof c.valor === 'object' ? JSON.stringify(c.valor) : c.valor;
             });
-            setConfigs(settings, false); // Store as core config only
+            const { setConfigs } = require('../../../utils/settingsCache');
+            setConfigs(config);
           })
           .catch(() => {});
       }
@@ -114,9 +107,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setMasterKeyState(mk);
   };
 
-  const setSession = (sessionToken: string, user: User, wrapped_mk?: string) => {
-    localStorage.setItem(SESSION_TOKEN_KEY, sessionToken);
-    localStorage.setItem(USER_DATA_KEY, JSON.stringify(user));
+  const setSessionFn = (sessionToken: string, user: User, wrapped_mk?: string) => {
+    setSession(sessionToken, user);
     setUser(user);
     setSessionToken(sessionToken);
     if (wrapped_mk) {
@@ -126,7 +118,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const login = async (username: string, totpCode?: string, authType?: string, password?: string) => {
-    const apiUrl = getConfig('gas_url');
+    const apiUrl = getSys('gas_url');
     if (!apiUrl) {
       throw new Error('API URL no configurada');
     }
@@ -148,8 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error(data.error || 'Error en el login');
     }
 
-    localStorage.setItem(SESSION_TOKEN_KEY, data.sessionToken);
-    localStorage.setItem(USER_DATA_KEY, JSON.stringify(data.user));
+    setSession(data.sessionToken, data.user);
     setUser(data.user);
     setSessionToken(data.sessionToken);
     setApiUrl(apiUrl);
@@ -159,40 +150,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setWrappedMk(data.wrapped_mk);
     }
 
-    // Store config keys for gas_url and ss_core if not already set
-    const existingGasUrl = getConfig('gas_url');
-    const existingSsCore = getConfig('ss_core');
+    const existingGasUrl = getSys('gas_url');
+    const existingSsCore = getSys('core_ss_id');
     if (!existingGasUrl && apiUrl) {
-      setConfig('gas_url', apiUrl, true);
+      setSys('gas_url', apiUrl);
     }
     if (!existingSsCore) {
-      const ssCoreFromLegacy = localStorage.getItem(ADMIN_SS_ID_KEY);
-      if (ssCoreFromLegacy) {
-        setConfig('ss_core', ssCoreFromLegacy, true);
+      const legacySsCore = getConfig('ss_core');
+      if (legacySsCore) {
+        setSys('core_ss_id', legacySsCore);
       }
     }
 
-    // Fetch linked public SSID from Admin Sheet Configuracion
-    const adminSsId = getConfig('ss_core') || localStorage.getItem(ADMIN_SS_ID_KEY);
+    const adminSsId = getSys('core_ss_id') || getConfig('ss_core');
     if (adminSsId && apiUrl) {
       try {
         const linkedPublicSs = await fetchLinkedPublicSs(apiUrl, adminSsId);
         if (linkedPublicSs) {
-          localStorage.setItem(PUBLIC_SS_ID_KEY, linkedPublicSs);
+          setSys('public_ss_id', linkedPublicSs);
         }
       } catch (err) {
         console.warn('Failed to fetch linked public SSID:', err);
       }
     }
 
-    // Refresh module map for granular permissions
     try {
       await dataService.refreshModuleMap();
     } catch (err) {
       console.warn('Failed to refresh module map:', err);
     }
 
-    // Initialize cache (fetches Configuracion once via initializeCacheOnLogin)
     try {
       await initializeCacheOnLogin();
     } catch (error) {
@@ -201,24 +188,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
-    localStorage.removeItem(SESSION_TOKEN_KEY);
-    localStorage.removeItem(USER_DATA_KEY);
-    clearCoreConfig();
+    clearAdminConfigs();
     setUser(null);
     setMasterKeyState(null);
     setSessionToken(null);
     setWrappedMk(null);
     
-    // Load public config after clearing core config
-    const publicSsId = localStorage.getItem(PUBLIC_SS_ID_KEY);
+    const publicSsId = getSys('public_ss_id');
     if (publicSsId) {
       try {
         const config = await dataService.getData<{ clave: string; valor: any }[]>('Configuracion', publicSsId);
-        const settings: Record<string, string> = {};
-        config.forEach(c => {
-          settings[c.clave] = typeof c.valor === 'object' ? JSON.stringify(c.valor) : c.valor;
-        });
-        setConfigs(settings, true); // Store as public config
+        const { setConfigs } = require('../../../utils/settingsCache');
+        setConfigs(config);
       } catch (err) {
         console.warn('Failed to load public config on logout:', err);
       }
@@ -226,13 +207,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const validateSession = async () => {
-    const token = localStorage.getItem(SESSION_TOKEN_KEY);
-    if (!token) {
+    const session = getSession();
+    if (!session) {
       setUser(null);
       return;
     }
 
-    const storedApiUrl = getConfig('gas_url');
+    const storedApiUrl = getSys('gas_url');
     if (!storedApiUrl) {
       logout();
       return;
@@ -243,23 +224,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         method: 'POST',
         body: JSON.stringify({
           action: 'validateSession',
-          sessionToken: token
+          sessionToken: session.sessionToken
         })
       });
       
       if (!data.valid) {
         logout();
       } else {
-        const userData = localStorage.getItem(USER_DATA_KEY);
-        if (userData) {
-          const parsed = JSON.parse(userData);
-          setUser(parsed);
-          setSessionToken(token);
-          setApiUrl(storedApiUrl);
-          if (parsed.wrapped_mk) {
-            setMasterKeyState(parsed.wrapped_mk);
-            setWrappedMk(parsed.wrapped_mk);
-          }
+        setUser(session.userData);
+        setSessionToken(session.sessionToken);
+        setApiUrl(storedApiUrl);
+        if (session.userData.wrapped_mk) {
+          setMasterKeyState(session.userData.wrapped_mk);
+          setWrappedMk(session.userData.wrapped_mk);
         }
       }
     } catch {
@@ -276,7 +253,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout,
       validateSession,
       setMasterKey,
-      setSession,
+      setSession: setSessionFn,
       masterKey,
       wrapped_mk,
       sessionToken,
@@ -289,7 +266,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  // Return default values if outside AuthProvider (public routes)
   if (context === undefined) {
     return {
       isAuthenticated: false,

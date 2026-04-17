@@ -28,6 +28,7 @@ import { useAuth } from '../../../../core/context/AuthContext';
 import { dataService } from '@/services/dataService';
 import type { BatchOp } from '@/services/dataService';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { getSys } from '@/utils/settingsCache';
 import Page from '@/admin/core/components/Page';
 
 // Static plugin manifests - in production these would be loaded dynamically
@@ -77,7 +78,7 @@ interface InstalledPlugin {
 export default function AdminPlugins() {
   const { sessionToken, user } = useAuth();
   const queryClient = useQueryClient();
-  const coreSsId = localStorage.getItem('congre_admin_ss_id');
+  const coreSsId = getSys('core_ss_id');
   
   const [installDialog, setInstallDialog] = useState<{ open: boolean; plugin: typeof BUILT_IN_PLUGINS[0] | null }>({
     open: false,

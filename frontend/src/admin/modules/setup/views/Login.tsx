@@ -43,11 +43,7 @@ import {
 import { useAuth } from '../../../../core/context/AuthContext';
 import { authService } from '../../../../services/authService';
 import { dataService } from '../../../../services/dataService';
-import { getAllConfigs, getConfig, setConfig } from '../../../../utils/settingsCache';
-
-// Config prefixes
-const PUBLIC_PREFIX = 'congre_public_';
-const CORE_PREFIX = 'congre_core_';
+import { getSys, setSys, getConfig, setSession, clearSession } from '../../../../utils/settingsCache';
 
 async function getCongregationName(apiUrl: string | null, ssId: string | null): Promise<string> {
   if (!apiUrl || !ssId) return 'CongreAdmin';
@@ -120,14 +116,11 @@ export default function Login() {
   const [newInstallDialogOpen, setNewInstallDialogOpen] = useState(false);
 
   useEffect(() => {
-    // Get config from localStorage using the new naming convention
-    const publicConfigs = getAllConfigs(true);
-    const coreConfigs = getAllConfigs(false);
+    let storedGasUrl = getConfig('gas_url');
+    let storedSsId = getConfig('ss_core');
     
-    // API URL: check gas_url in public first, then core
-    let storedGasUrl = publicConfigs.gas_url || coreConfigs.gas_url;
-    // SS ID: check ss_core in public first, then core
-    let storedSsId = publicConfigs.ss_core || coreConfigs.ss_core;
+    if (!storedGasUrl) storedGasUrl = getSys('gas_url');
+    if (!storedSsId) storedSsId = getSys('core_ss_id');
     
     const hasConfig = !!(storedGasUrl && storedSsId);
     setHasConfig(hasConfig);
@@ -135,8 +128,7 @@ export default function Login() {
     if (storedSsId) setCoreSsId(storedSsId);
     setShowConfig(!hasConfig);
     
-    // Get congregation name from localStorage (no API call)
-    const storedName = publicConfigs.nombre_mostrar || coreConfigs.nombre_mostrar;
+    const storedName = getConfig('nombre_mostrar') || getConfig('nombre_congregacion');
     if (storedName) {
       setCongregationName(storedName);
     }
@@ -167,20 +159,17 @@ export default function Login() {
       setError('Ingresá el ID de la hoja de cálculo');
       return;
     }
-    setConfig('gas_url', gasUrl.trim(), true);
-    setConfig('ss_core', coreSsId.trim(), true);
+    setSys('gas_url', gasUrl.trim());
+    setSys('core_ss_id', coreSsId.trim());
     setHasConfig(true);
     setShowConfig(false);
     setError(null);
   };
 
   const handleClearConfig = () => {
-    localStorage.removeItem(`${PUBLIC_PREFIX}gas_url`);
-    localStorage.removeItem(`${PUBLIC_PREFIX}ss_core`);
-    localStorage.removeItem(`${CORE_PREFIX}gas_url`);
-    localStorage.removeItem(`${CORE_PREFIX}ss_core`);
-    localStorage.removeItem('congre_admin_session_token');
-    localStorage.removeItem('congre_admin_user_data');
+    clearSession();
+    setSys('gas_url', '');
+    setSys('core_ss_id', '');
     setHasConfig(false);
     setShowConfig(true);
     setGasUrl('');
@@ -234,7 +223,7 @@ export default function Login() {
       return;
     }
 
-    const apiUrl = getConfig('gas_url');
+    const apiUrl = getConfig('gas_url') || getSys('gas_url');
     if (!apiUrl) {
       setShowConfig(true);
       setError('Tenés que configurar la conexión primero');
@@ -287,7 +276,7 @@ export default function Login() {
     if (method === 'passkey') {
       await handlePasskeyLogin();
     } else if (method === 'email_otp') {
-      const apiUrl = getConfig('gas_url');
+      const apiUrl = getConfig('gas_url') || getSys('gas_url');
       if (!apiUrl) {
         setError('API URL no configurada');
         return;
@@ -363,7 +352,7 @@ export default function Login() {
     setStep('passkey');
 
     try {
-      const apiUrl = getConfig('gas_url');
+      const apiUrl = getConfig('gas_url') || getSys('gas_url');
       if (!apiUrl) {
         throw new Error('API URL no configurada');
       }
@@ -719,8 +708,8 @@ export default function Login() {
                   setError('Ingresá el ID de la hoja de cálculo');
                   return;
                 }
-                setConfig('gas_url', gasUrl.trim(), true);
-                setConfig('ss_core', coreSsId.trim(), true);
+                setSys('gas_url', gasUrl.trim());
+                setSys('core_ss_id', coreSsId.trim());
                 setHasConfig(true);
                 setShowConfigFields(false);
                 setError(null);

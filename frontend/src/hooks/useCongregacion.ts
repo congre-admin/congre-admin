@@ -1,8 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { dataService } from '../services/dataService';
 import { QUERY_OPTIONS } from './queryConfig';
-
-const ADMIN_SS_ID_KEY = 'congre_admin_ss_id';
+import { getSys } from '../utils/settingsCache';
 
 export interface CongregacionSettings {
   nombre?: string;
@@ -16,7 +15,7 @@ export interface CongregacionSettings {
 }
 
 export function useCongregacion() {
-  const adminSsId = localStorage.getItem(ADMIN_SS_ID_KEY);
+  const adminSsId = getSys('core_ss_id');
   
   return useQuery<CongregacionSettings | null>({
     queryKey: ['congregacion'],

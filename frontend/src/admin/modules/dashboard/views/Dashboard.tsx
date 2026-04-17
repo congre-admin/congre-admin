@@ -2,10 +2,9 @@ import { Box, Typography, Grid, Card, CardContent, CardHeader, CircularProgress 
 import { People, EventNote, Campaign, Map } from '@mui/icons-material';
 import { useSheetData } from '@/hooks/useSession';
 import { useCongregacion } from '@/hooks/useCongregacion';
+import { getSys } from '@/utils/settingsCache';
 import Page from '@/admin/core/components/Page';
 import type { Perfil } from '@/types';
-
-const ADMIN_SS_ID_KEY = 'congre_admin_ss_id';
 
 interface StatCardProps {
   title: string;
@@ -42,7 +41,7 @@ function StatCard({ title, value, icon, color }: StatCardProps) {
 }
 
 export default function Dashboard() {
-  const adminSsId = localStorage.getItem(ADMIN_SS_ID_KEY) || '';
+  const adminSsId = getSys('core_ss_id') || '';
   const { data: perfiles, isLoading } = useSheetData<Perfil[]>('Perfiles', adminSsId, {
     enabled: !!adminSsId,
   });

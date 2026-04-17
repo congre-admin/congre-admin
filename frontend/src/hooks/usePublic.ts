@@ -1,8 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { publicService } from '../services/publicService';
 import { QUERY_OPTIONS } from './queryConfig';
-
-const PUBLIC_SS_ID_KEY = 'congre_public_ss_publico';
+import { getSys } from '../utils/settingsCache';
 
 const QUERY_KEYS = {
   publicData: (sheet: string) => ['public', sheet] as const,
@@ -14,7 +13,7 @@ export function usePublicData<T = any[]>(sheet: string, query?: string) {
     queryFn: async () => {
       return publicService.getPublicData<T>(sheet, query);
     },
-    enabled: !!localStorage.getItem(PUBLIC_SS_ID_KEY),
+    enabled: !!getSys('public_ss_id'),
     ...QUERY_OPTIONS,
   });
 }

@@ -1,6 +1,6 @@
 import { cacheService } from '../cache/cacheService';
 import { jsonataService } from './jsonataService';
-import { getConfig, setConfig } from '../utils/settingsCache';
+import { getSys, setSys, getSession, getConfig } from '../utils/settingsCache';
 import type {
   ApiResponse,
   GetDataOptions,
@@ -53,32 +53,34 @@ const ERROR_MESSAGES: Record<string, string> = {
   ERR_UNKNOWN_OP: 'Operación desconocida',
 };
 
-const SESSION_TOKEN_KEY = 'congre_admin_session_token';
-const FOLDER_ID_KEY = 'congre_admin_folder_id';
-const MODULE_MAP_KEY = 'congre_module_map';
-
 const BATCH_MAX_OPS = 50;
 
-export class DataService {
+const SESSION_TOKEN_KEY = 'congre_admin_session_token';
+
+function getFolderId(): string | undefined {
+  return getSys('folder_id') ?? undefined;
+}
+
+function normalizeUrl(input: string): string {
+  if (!input) return '';
+  if (input.includes('script.google.com')) {
+    return input.endsWith('/exec') ? input : `${input}/exec`;
+  }
+  return `https://script.google.com/macros/s/${input}/exec`;
+}
+
+class DataService {
   private apiUrl: string | null = null;
   private _moduleMap: Record<string, string> | null = null;
   private _inFlight = new Map<string, Promise<any>>();
 
   constructor() {
-    this.apiUrl = getConfig('gas_url');
-  }
-
-  private normalizeUrl(input: string): string {
-    if (!input) return '';
-    if (input.includes('script.google.com')) {
-      return input.endsWith('/exec') ? input : `${input}/exec`;
-    }
-    return `https://script.google.com/macros/s/${input}/exec`;
+    this.apiUrl = getSys('gas_url');
   }
 
   setApiUrl(url: string): void {
     this.apiUrl = url;
-    setConfig('gas_url', url, true);
+    setSys('gas_url', url);
   }
 
   getApiUrl(): string | null {
@@ -88,18 +90,19 @@ export class DataService {
   resolveModule(sheetName: string, ssId: string): string | null {
     if (!this._moduleMap) {
       try {
-        this._moduleMap = JSON.parse(localStorage.getItem(MODULE_MAP_KEY) || '{}');
+        const moduleMapStr = getSys('module_map');
+        this._moduleMap = moduleMapStr ? JSON.parse(moduleMapStr) : {};
       } catch {
         this._moduleMap = {};
       }
     }
-    if (ssId === getConfig('ss_core')) return 'core';
+    if (ssId === getSys('core_ss_id')) return 'core';
     return this._moduleMap?.[ssId] || null;
   }
 
   async refreshModuleMap(): Promise<void> {
     this._moduleMap = null;
-    const coreSsId = getConfig('ss_core');
+    const coreSsId = getSys('core_ss_id');
     if (!coreSsId) return;
 
     try {
@@ -110,7 +113,7 @@ export class DataService {
           map[p.ssId] = p.plugin_id;
         }
       }
-      localStorage.setItem(MODULE_MAP_KEY, JSON.stringify(map));
+      setSys('module_map', JSON.stringify(map));
       this._moduleMap = map;
     } catch {
       this._moduleMap = null;
@@ -125,7 +128,7 @@ export class DataService {
     const cached = cacheService.getModuleSsId(moduleOrSsId);
     if (cached) return cached;
 
-    const coreSsId = getConfig('ss_core');
+    const coreSsId = getSys('core_ss_id');
     if (!coreSsId) {
       throw new Error('CORE_SS_ID not configured');
     }
@@ -158,14 +161,16 @@ export class DataService {
   }
 
   private async _doRequest<T = any>(action: string, payload: Record<string, any> = {}, accessMode?: 'admin' | 'public'): Promise<T> {
-    this.apiUrl = getConfig('gas_url') || this.apiUrl;
+    this.apiUrl = getSys('gas_url') || this.apiUrl;
     
     if (!this.apiUrl) {
       throw new Error('API URL not configured');
     }
     
-    const sessionToken = localStorage.getItem(SESSION_TOKEN_KEY);
-    const coreSsId = getConfig('ss_core');
+    const session = getSession();
+    const sessionToken = session?.sessionToken ?? null;
+    let coreSsId = getSys('core_ss_id');
+    if (!coreSsId) coreSsId = getConfig('ss_core') || undefined;
     const requestSsId = payload.ssId || coreSsId;
 
     const body: Record<string, any> = {
@@ -192,7 +197,7 @@ export class DataService {
       }
     }
 
-    const url = this.normalizeUrl(this.apiUrl);
+    const url = normalizeUrl(this.apiUrl);
     
     let response: Response;
     try {
@@ -322,7 +327,7 @@ export class DataService {
 
     const chunkSize = BATCH_MAX_OPS;
     const mode = options?.mode || 'continue';
-    const folderId = options?.folderId || localStorage.getItem(FOLDER_ID_KEY) || undefined;
+    const folderId = options?.folderId || getFolderId();
     const allResults: BatchResult[] = [];
     let totalSucceeded = 0;
     let totalFailed = 0;
@@ -461,7 +466,7 @@ export class DataService {
   // --- File Operations ---
 
   async listFolderFiles(folderId?: string, subfolder?: string): Promise<ListFilesResponse> {
-    const resolvedFolder = folderId || localStorage.getItem(FOLDER_ID_KEY);
+    const resolvedFolder = folderId || getFolderId();
     if (!resolvedFolder) {
       throw new Error('ERR_FOLDER_NOT_FOUND: No folder ID configured');
     }
@@ -477,7 +482,7 @@ export class DataService {
     mimeType: string,
     options?: { folderId?: string; subfolder?: string }
   ): Promise<UploadFileResponse> {
-    const resolvedFolder = options?.folderId || localStorage.getItem(FOLDER_ID_KEY);
+    const resolvedFolder = options?.folderId || getFolderId();
     if (!resolvedFolder) {
       throw new Error('ERR_FOLDER_NOT_FOUND: No folder ID configured');
     }
@@ -514,7 +519,7 @@ export class DataService {
     fileId: string,
     options?: { folderId?: string; subfolder?: string }
   ): Promise<MoveFileResponse> {
-    const resolvedFolder = options?.folderId || localStorage.getItem(FOLDER_ID_KEY);
+    const resolvedFolder = options?.folderId || getFolderId();
     if (!resolvedFolder) {
       throw new Error('ERR_FOLDER_NOT_FOUND: No folder ID configured');
     }

@@ -1,11 +1,12 @@
 import { cacheService } from '../cache/cacheService';
+import { getSys } from '../utils/settingsCache';
 
 export class PublicService {
   private getPublicSsId(): string {
     const cached = cacheService.getPublicSsId();
     if (cached) return cached;
 
-    const stored = localStorage.getItem('congre_public_ss_publico');
+    const stored = getSys('public_ss_id');
     if (stored) {
       cacheService.setPublicSsId(stored);
       return stored;

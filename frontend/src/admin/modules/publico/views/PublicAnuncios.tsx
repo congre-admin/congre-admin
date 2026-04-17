@@ -1,8 +1,7 @@
 import { Container, Typography, Box, CircularProgress } from '@mui/material';
 import { useState, useEffect } from 'react';
 import { parseCsvToJson } from '@/utils/csvUtils';
-
-const PUBLIC_SS_ID_KEY = 'congre_public_ss_id';
+import { getSys } from '@/utils/settingsCache';
 
 interface Anuncio {
   titulo: string;
@@ -20,7 +19,7 @@ export default function PublicAnuncios() {
   }, []);
 
   const loadAnuncios = async () => {
-    const ssId = localStorage.getItem(PUBLIC_SS_ID_KEY);
+    const ssId = getSys('public_ss_id');
     if (!ssId) {
       // Let modal handle this - just show loading until modal appears
       setLoading(false);

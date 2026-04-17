@@ -9,7 +9,10 @@ import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persist
 import AdminApp from './admin/AdminApp';
 import { AuthProvider } from './core/context/AuthContext';
 import { ThemeContextProvider, useThemeContext } from './core/context/ThemeContext';
+import { initSettingsStore } from './utils/settingsCache';
 import './index.css';
+
+initSettingsStore();
 
 const queryClient = new QueryClient({
   defaultOptions: {
